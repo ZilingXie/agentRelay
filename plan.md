@@ -60,7 +60,8 @@ Progress:
 - [x] Encode requester-side completion ownership in task metadata and API payloads.
 - [x] Implement controlled delivery back to Zac's origin thread.
 - [x] Package Codex App bridge into a reusable connector/MCP flow.
-- [ ] Implement AgentRelay MCP tools that wrap the relay HTTP API.
+- [x] Implement AgentRelay MCP tools that wrap the relay HTTP API.
+- [ ] Configure Codex App to use AgentRelay MCP and run the full Phase 1 meeting scenario.
 
 第一阶段不以 CLI 作为用户体验入口，而以 Codex App thread 作为入口。
 
