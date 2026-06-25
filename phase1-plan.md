@@ -16,6 +16,7 @@ GitHub repository: https://github.com/ZilingXie/agentRelay
 - [x] Package Codex App bridge into a reusable connector/MCP flow.
 - [x] Implement AgentRelay MCP tools that wrap the relay HTTP API.
 - [x] Publish standalone local Codex MCP installer in `ZilingXie/agent-relay-mcp`.
+- [x] Add Phase 1 username/token auth support for public MCP clients.
 - [ ] Configure Codex App to use AgentRelay MCP and run the full Phase 1 meeting scenario.
 
 ## 1. 第一阶段目标
@@ -307,3 +308,7 @@ Possible approaches:
 - Periodic Codex thread wakeup/automation: the relay wakes or messages the original thread when a reply arrives.
 
 The implementation should start by proving that a connector can call `create_thread` for Frank and `send_message_to_thread` for Zac's original thread.
+
+## Auth update
+
+Phase 1 auth is documented in `docs/relay-auth.md`. The cloud relay issues `username + agent_id + token`; the public MCP client stores these in `.env` and sends bearer-token headers.

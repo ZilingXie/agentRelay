@@ -62,6 +62,7 @@ Progress:
 - [x] Package Codex App bridge into a reusable connector/MCP flow.
 - [x] Implement AgentRelay MCP tools that wrap the relay HTTP API.
 - [x] Publish standalone local Codex MCP installer in `ZilingXie/agent-relay-mcp`.
+- [x] Add Phase 1 username/token auth support for public MCP clients.
 - [ ] Configure Codex App to use AgentRelay MCP and run the full Phase 1 meeting scenario.
 
 第一阶段不以 CLI 作为用户体验入口，而以 Codex App thread 作为入口。
@@ -340,3 +341,7 @@ Folder PoC -> MCP mailbox server -> remote transport -> A2A-compatible gateway
 - IBM Research ACP note: https://research.ibm.com/projects/agent-communication-protocol
 - Agent Client Protocol introduction: https://agentclientprotocol.com/get-started/introduction
 - Agent Network Protocol: https://agent-network-protocol.com/
+
+## Auth update
+
+Phase 1 auth is documented in `docs/relay-auth.md`. The cloud relay issues `username + agent_id + token`; the public MCP client stores these in `.env` and sends bearer-token headers.

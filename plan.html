@@ -574,6 +574,7 @@ AgentRelay delivery
 
       <h3>Local MCP install decision</h3>
       <p>Because the AgentRelay server repo is private, the installable MCP client and local Codex setup guide now live in the public repo <a href="https://github.com/ZilingXie/agent-relay-mcp"><code>ZilingXie/agent-relay-mcp</code></a>. Local Codex agents should install that repo; this private repo keeps the relay server and planning docs.</p>
+      <p>The cloud relay issues <code>username + agent_id + token</code>. The local MCP client stores them in its private <code>.env</code> file and sends <code>Authorization: Bearer</code>, <code>X-AgentRelay-Agent-Id</code>, and <code>X-AgentRelay-Username</code> headers.</p>
       <pre><code>[mcp_servers.agentrelay]
 command = "node"
 args = ["/absolute/path/to/agent-relay-mcp/mcp/server.mjs"]
@@ -596,6 +597,7 @@ AGENTRELAY_BASE_URL = "http://127.0.0.1:8787/agentrelay"</code></pre>
         <li>Done: package Codex App bridge into a reusable connector/MCP flow.</li>
         <li>Done: implement AgentRelay MCP tools that wrap the relay HTTP API.</li>
         <li>Done: publish standalone local Codex MCP installer in <code>ZilingXie/agent-relay-mcp</code>.</li>
+        <li>Done: add Phase 1 username/token auth support for public MCP clients.</li>
         <li>Next: configure Codex App to use AgentRelay MCP and run the full Phase 1 meeting scenario.</li>
       </ul>
     </section>

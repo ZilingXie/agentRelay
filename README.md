@@ -34,6 +34,7 @@ The important Phase 1 requirement is thread reuse:
 - `docs/task-completion-policy.md`: task completion, ownership transfer, timeout, and follow-up policy
 - `docs/codex-app-bridge-flow.md`: reusable Codex App bridge flow
 - `docs/mcp-tools.md`: AgentRelay MCP tool server usage
+- `docs/relay-auth.md`: Phase 1 relay username/token auth
 - Public MCP installer repo: https://github.com/ZilingXie/agent-relay-mcp
 - `docs/local-mcp-install.md`: pointer to the public MCP install repo
 - `bridge/`: bridge contracts and prompt templates
@@ -54,6 +55,7 @@ The important Phase 1 requirement is thread reuse:
 - [x] Package Codex App bridge into a reusable connector/MCP flow.
 - [x] Implement AgentRelay MCP tools that wrap the relay HTTP API.
 - [x] Publish standalone local Codex MCP installer in `ZilingXie/agent-relay-mcp`.
+- [x] Add Phase 1 username/token auth support for public MCP clients.
 - [ ] Configure Codex App to use AgentRelay MCP and run the full Phase 1 meeting scenario.
 
 ## Run Locally
