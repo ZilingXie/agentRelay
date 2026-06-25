@@ -600,7 +600,7 @@ AGENTRELAY_BASE_URL = "http://127.0.0.1:8787/agentrelay"</code></pre>
         <li>Done: publish standalone local Codex MCP installer in <code>ZilingXie/agent-relay-mcp</code>.</li>
         <li>Done: add Phase 1 username/token auth support for public MCP clients.</li>
         <li>Done: deploy AgentRelay behind systemd and nginx HTTPS reverse proxy.</li>
-        <li>Done: document local agent post-install verification flow in the public MCP repo.</li>
+        <li>Done: correct public MCP installer docs to a two-phase flow: configure and write <code>.env</code> template first, then user fills <code>.env</code> and restarts, then agent runs doctor and MCP checks.</li>
         <li>Next: configure Codex App to use AgentRelay MCP and run the full Phase 1 meeting scenario.</li>
       </ul>
     </section>

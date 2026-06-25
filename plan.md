@@ -350,3 +350,5 @@ Phase 1 auth is documented in `docs/relay-auth.md`. The cloud relay issues `user
 Deployment update: `docs/relay-deployment.md` records the systemd service and nginx reverse proxy for `https://server.stellarix.space/agentrelay/api`.
 
 Public MCP installer update: `ZilingXie/agent-relay-mcp` now explicitly requires the local agent to write `.env`, report the `.env` path without printing the token, run `npm run doctor`, then verify MCP with `agentrelay_health` and `agentrelay_list_agents` after Codex restart/new thread. See `docs/local-agent-verification.md` in the public MCP repo.
+
+Public MCP installer correction: install docs now use a two-phase flow. Phase A configures Codex and writes a `.env` template, then stops and asks the user to fill `.env` and restart/open a new Codex session. Phase B starts only after the user says that is done: the agent runs `npm run doctor`, then verifies MCP with `agentrelay_health` and `agentrelay_list_agents`.
