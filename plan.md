@@ -63,6 +63,7 @@ Progress:
 - [x] Implement AgentRelay MCP tools that wrap the relay HTTP API.
 - [x] Publish standalone local Codex MCP installer in `ZilingXie/agent-relay-mcp`.
 - [x] Add Phase 1 username/token auth support for public MCP clients.
+- [x] Deploy AgentRelay behind systemd and nginx HTTPS reverse proxy.
 - [ ] Configure Codex App to use AgentRelay MCP and run the full Phase 1 meeting scenario.
 
 第一阶段不以 CLI 作为用户体验入口，而以 Codex App thread 作为入口。
@@ -345,3 +346,5 @@ Folder PoC -> MCP mailbox server -> remote transport -> A2A-compatible gateway
 ## Auth update
 
 Phase 1 auth is documented in `docs/relay-auth.md`. The cloud relay issues `username + agent_id + token`; the public MCP client stores these in `.env` and sends bearer-token headers.
+
+Deployment update: `docs/relay-deployment.md` records the systemd service and nginx reverse proxy for `https://server.stellarix.space/agentrelay/api`.
