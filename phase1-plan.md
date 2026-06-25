@@ -13,7 +13,8 @@ GitHub repository: https://github.com/ZilingXie/agentRelay
 - [x] Add Codex App thread bridge proof.
 - [x] Encode requester-side completion ownership in task metadata and API payloads.
 - [x] Implement controlled delivery back to Zac's origin thread.
-- [ ] Package Codex App bridge into a reusable connector/MCP flow.
+- [x] Package Codex App bridge into a reusable connector/MCP flow.
+- [ ] Implement AgentRelay MCP tools that wrap the relay HTTP API.
 
 ## 1. 第一阶段目标
 
@@ -219,6 +220,14 @@ set_thread_title(thread_id, title)
 
 The connector can use the Codex App thread tools where available. If the tools are not available to a standalone daemon, Phase 1 needs a small bridge process or MCP server running in the Codex App environment.
 
+Bridge package:
+
+- `bridge/contracts/bridge-job.schema.json`
+- `bridge/prompts/target-thread.md`
+- `bridge/prompts/origin-delivery.md`
+- `bridge/prompts/requester-close.md`
+- `docs/codex-app-bridge-flow.md`
+
 ## 6. Phase 1 task lifecycle
 
 1. Zac opens a Codex App thread `abc`.
@@ -231,10 +240,12 @@ The connector can use the Codex App thread tools where available. If the tools a
 8. If not, it creates a Frank Codex App thread with the task context.
 9. Frank Codex asks Frank for availability in that thread.
 10. Frank replies with candidate times.
-11. Frank Codex calls AgentRelay MCP/skill `submit_artifact` and marks the task completed.
-12. AgentRelay emits `artifact.submitted` and `task.completed`.
+11. Frank Codex calls AgentRelay MCP/skill `submit_artifact`.
+12. AgentRelay emits `artifact.submitted` and transfers ownership back to `zac-agent`.
 13. Zac delivery bridge sends the result to `requester_thread_id=abc`.
-14. Zac Codex continues inside thread `abc`, summarizes Frank's availability, and asks Zac for the next step if needed.
+14. AgentRelay records `reply.delivered` and moves the task to `waiting_human`.
+15. Zac Codex continues inside thread `abc`, summarizes Frank's availability, and asks Zac for confirmation.
+16. If Zac confirms the done criteria, Zac Codex calls `/close` and AgentRelay records `task.completed`.
 
 ## 7. Meeting request payload
 

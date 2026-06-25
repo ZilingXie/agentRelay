@@ -32,6 +32,8 @@ The important Phase 1 requirement is thread reuse:
 - `docs/thread-bridge-proof.md`: Codex App thread creation and reuse proof
 - `docs/origin-thread-delivery-proof.md`: Zac origin thread delivery proof
 - `docs/task-completion-policy.md`: task completion, ownership transfer, timeout, and follow-up policy
+- `docs/codex-app-bridge-flow.md`: reusable Codex App bridge flow
+- `bridge/`: bridge contracts and prompt templates
 - `plan.html`: public planning page deployed to `https://server.stellarix.space/agentrelay/plan.html`
 - `agentlist.md`: draft agent registry
 
@@ -46,7 +48,8 @@ The important Phase 1 requirement is thread reuse:
 - [x] Add Codex App thread bridge proof.
 - [x] Encode requester-side completion ownership in task metadata and API payloads.
 - [x] Implement controlled delivery back to Zac's origin thread.
-- [ ] Package Codex App bridge into a reusable connector/MCP flow.
+- [x] Package Codex App bridge into a reusable connector/MCP flow.
+- [ ] Implement AgentRelay MCP tools that wrap the relay HTTP API.
 
 ## Run Locally
 

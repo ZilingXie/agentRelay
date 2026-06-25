@@ -59,7 +59,8 @@ Progress:
 - [x] Add Codex App thread bridge proof.
 - [x] Encode requester-side completion ownership in task metadata and API payloads.
 - [x] Implement controlled delivery back to Zac's origin thread.
-- [ ] Package Codex App bridge into a reusable connector/MCP flow.
+- [x] Package Codex App bridge into a reusable connector/MCP flow.
+- [ ] Implement AgentRelay MCP tools that wrap the relay HTTP API.
 
 第一阶段不以 CLI 作为用户体验入口，而以 Codex App thread 作为入口。
 

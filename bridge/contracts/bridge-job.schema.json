@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/bridge-job.schema.json",
+  "title": "AgentRelay Bridge Job",
+  "type": "object",
+  "required": ["jobType", "taskId", "agentId", "task"],
+  "additionalProperties": false,
+  "properties": {
+    "jobType": {
+      "type": "string",
+      "enum": ["target_thread", "origin_delivery", "requester_close"]
+    },
+    "taskId": {
+      "type": "string"
+    },
+    "agentId": {
+      "type": "string"
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "artifact": {
+      "type": ["object", "null"],
+      "additionalProperties": true
+    },
+    "thread": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requesterThreadId": { "type": ["string", "null"] },
+        "targetThreadId": { "type": ["string", "null"] },
+        "threadPolicy": {
+          "type": "string",
+          "enum": ["create", "reuse"]
+        }
+      }
+    },
+    "instructions": {
+      "type": "string"
+    }
+  }
+}
+
