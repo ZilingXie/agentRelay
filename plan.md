@@ -73,6 +73,18 @@ Progress:
 
 详细计划见 `phase1-plan.md`。
 
+Task completion policy:
+
+- 区分 `agent action complete` 和 `workflow task complete`。
+- `done_criteria` 由 requester side 在创建 task 时提出。
+- Relay 保存 `done_criteria` 并拥有 canonical task state。
+- Agent 只能提交 action result、artifact、next_action 建议，不能单方面归档整个 workflow。
+- Frank agent 回复 10:00 后，Frank action complete，但 task 应转为 pending on Zac confirmation。
+- Zac 长时间不回复时进入 `waiting_human`，走 reminder/TTL/expired。
+- 已完成 task 不重新打开；Zac 之后变更时间时创建同 `context_id` 的 child task。
+
+详细规则见 `docs/task-completion-policy.md`。
+
 ## 3. 建议的消息格式
 
 先用 Markdown 加 YAML front matter，方便人和 agent 都能读：

@@ -336,6 +336,7 @@
       <a href="#architecture">Architecture</a>
       <a href="#steps">Steps</a>
       <a href="#phase1-thread">Phase 1</a>
+      <a href="#completion">Completion</a>
       <a href="#mvp">MVP</a>
       <a href="#risks">Risks</a>
       <a href="#sources">Sources</a>
@@ -584,8 +585,44 @@ AgentRelay delivery
       </ul>
     </section>
 
+    <section id="completion">
+      <h2>7. Task Completion Policy</h2>
+      <p>AgentRelay must distinguish between an agent finishing its current action and the whole workflow task reaching terminal completion.</p>
+      <div class="grid">
+        <div class="card">
+          <span class="tag blue">Action complete</span>
+          <h3>Local to one agent</h3>
+          <p>Frank agent asks Frank and returns "10:00" to Zac agent. Frank agent's action is complete, but the overall meeting task may still be waiting for Zac confirmation.</p>
+        </div>
+        <div class="card">
+          <span class="tag green">Task complete</span>
+          <h3>Defined by done criteria</h3>
+          <p>The requester side proposes <code>done_criteria</code> when creating the task. The relay stores it and owns canonical task state. Agents submit artifacts and recommendations; the relay decides terminal completion.</p>
+        </div>
+      </div>
+      <pre><code>Meeting task default:
+done_criteria = both Zac and Frank accept the same online meeting time
+
+Frank says 10:00:
+  Frank action complete
+  task status = waiting_remote
+  pending_on_agent_id = zac-agent
+  next_action = Ask Zac whether 10:00 works
+
+Zac does not reply:
+  status = waiting_human
+  pending_on_human_id = zac
+  reminder policy applies
+  eventually expired
+
+Zac accepts then changes his mind after completion:
+  do not reopen completed task
+  create child reschedule task with same context_id</code></pre>
+      <p class="note">Practical rule: agents can say "my action is complete" or "I recommend completing this task"; AgentRelay records the canonical state and only marks the workflow terminal when <code>done_criteria</code> is satisfied or a terminal failure/expiry occurs.</p>
+    </section>
+
     <section id="mvp">
-      <h2>7. MVP Scope</h2>
+      <h2>8. MVP Scope</h2>
       <div class="grid three">
         <div class="card">
           <span class="tag green">Build first</span>
@@ -609,7 +646,7 @@ AgentRelay delivery
     </section>
 
     <section id="risks">
-      <h2>8. Critical Risks</h2>
+      <h2>9. Critical Risks</h2>
       <div class="grid">
         <div class="card">
           <span class="tag red">Security</span>
@@ -635,7 +672,7 @@ AgentRelay delivery
     </section>
 
     <section id="sources">
-      <h2>9. Protocol References</h2>
+      <h2>10. Protocol References</h2>
       <ul class="sources">
         <li><a href="https://a2a-protocol.org/latest/specification/">A2A Protocol specification</a></li>
         <li><a href="https://a2a-protocol.org/latest/topics/what-is-a2a/">What is A2A?</a></li>

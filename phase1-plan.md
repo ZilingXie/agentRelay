@@ -90,6 +90,34 @@ Frank 侧收到新 task 时：
 }
 ```
 
+## 3.1 Task completion policy
+
+AgentRelay must distinguish between `agent action complete` and `workflow task complete`.
+
+For example, when Frank agent asks Frank and returns "10:00" to Zac agent, Frank agent's action is complete. The overall task may still be pending because Zac needs to confirm whether 10:00 works.
+
+Task completion is defined at task creation time by the requester side through `done_criteria`.
+
+For Phase 1:
+
+- The requester agent proposes `done_criteria`.
+- The relay stores `done_criteria` on the task.
+- The relay owns the canonical task state.
+- Agents submit artifacts, action results, and recommendations.
+- Agents do not unilaterally archive the whole workflow unless the stored `done_criteria` is satisfied.
+
+Meeting task default:
+
+```text
+done_criteria = both Zac and Frank accept the same online meeting time
+```
+
+If Zac does not reply to a proposed time, the task stays `waiting_human` with `pending_on_human_id=zac`, then reminder/expiry policy applies.
+
+If Zac accepts and later changes his mind after completion, AgentRelay should create a child task with the same `context_id` and `parent_task_id`, instead of reopening the completed task.
+
+See `docs/task-completion-policy.md`.
+
 ## 4. AgentRelay 需要保存的数据
 
 Phase 1 的 task 记录至少需要：
@@ -102,6 +130,12 @@ requester_agent_id
 target_agent_id
 requester_thread_id
 target_thread_id
+done_criteria
+pending_on_agent_id
+pending_on_human_id
+next_action
+terminal_reason
+parent_task_id
 created_at
 updated_at
 ttl

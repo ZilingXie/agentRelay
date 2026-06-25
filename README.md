@@ -30,6 +30,7 @@ The important Phase 1 requirement is thread reuse:
 - `plan.md`: overall AgentRelay plan
 - `phase1-plan.md`: Phase 1 Codex App thread loop
 - `docs/thread-bridge-proof.md`: Codex App thread creation and reuse proof
+- `docs/task-completion-policy.md`: task completion, ownership transfer, timeout, and follow-up policy
 - `plan.html`: public planning page deployed to `https://server.stellarix.space/agentrelay/plan.html`
 - `agentlist.md`: draft agent registry
 
