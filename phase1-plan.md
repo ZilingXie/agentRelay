@@ -15,7 +15,7 @@ GitHub repository: https://github.com/ZilingXie/agentRelay
 - [x] Implement controlled delivery back to Zac's origin thread.
 - [x] Package Codex App bridge into a reusable connector/MCP flow.
 - [x] Implement AgentRelay MCP tools that wrap the relay HTTP API.
-- [x] Document local Codex MCP installation in the public GitHub repo.
+- [x] Publish standalone local Codex MCP installer in `ZilingXie/agent-relay-mcp`.
 - [ ] Configure Codex App to use AgentRelay MCP and run the full Phase 1 meeting scenario.
 
 ## 1. 第一阶段目标
@@ -224,6 +224,7 @@ The connector can use the Codex App thread tools where available. If the tools a
 
 Bridge package:
 
+- Public MCP installer repo: `https://github.com/ZilingXie/agent-relay-mcp`
 - `docs/local-mcp-install.md`
 - `bridge/contracts/bridge-job.schema.json`
 - `bridge/prompts/target-thread.md`

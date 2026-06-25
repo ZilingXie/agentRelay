@@ -573,11 +573,11 @@ AgentRelay delivery
       <p class="note">The main implementation risk is whether a background connector can create and continue Codex App threads directly. If not, Phase 1 needs a small Codex App bridge or MCP server that exposes thread delivery operations to the relay.</p>
 
       <h3>Local MCP install decision</h3>
-      <p>For Phase 1, the install method should live in the existing public GitHub repo instead of a separate repo. This keeps the relay API, MCP wrapper, docs, and smoke tests versioned together. The install guide is now tracked at <a href="https://github.com/ZilingXie/agentRelay/blob/main/docs/local-mcp-install.md"><code>docs/local-mcp-install.md</code></a>.</p>
+      <p>Because the AgentRelay server repo is private, the installable MCP client and local Codex setup guide now live in the public repo <a href="https://github.com/ZilingXie/agent-relay-mcp"><code>ZilingXie/agent-relay-mcp</code></a>. Local Codex agents should install that repo; this private repo keeps the relay server and planning docs.</p>
       <pre><code>[mcp_servers.agentrelay]
 command = "node"
-args = ["/home/ubuntu/agentRelay/mcp/server.mjs"]
-cwd = "/home/ubuntu/agentRelay"
+args = ["/absolute/path/to/agent-relay-mcp/mcp/server.mjs"]
+cwd = "/absolute/path/to/agent-relay-mcp"
 
 [mcp_servers.agentrelay.env]
 AGENTRELAY_BASE_URL = "http://127.0.0.1:8787/agentrelay"</code></pre>
@@ -595,7 +595,7 @@ AGENTRELAY_BASE_URL = "http://127.0.0.1:8787/agentrelay"</code></pre>
         <li>Done: implement controlled delivery back to Zac's origin thread.</li>
         <li>Done: package Codex App bridge into a reusable connector/MCP flow.</li>
         <li>Done: implement AgentRelay MCP tools that wrap the relay HTTP API.</li>
-        <li>Done: document local Codex MCP installation in the public GitHub repo.</li>
+        <li>Done: publish standalone local Codex MCP installer in <code>ZilingXie/agent-relay-mcp</code>.</li>
         <li>Next: configure Codex App to use AgentRelay MCP and run the full Phase 1 meeting scenario.</li>
       </ul>
     </section>

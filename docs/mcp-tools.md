@@ -26,7 +26,7 @@ or another base URL configured by `AGENTRELAY_BASE_URL`.
 npm install
 ```
 
-For full local Codex setup instructions, see `docs/local-mcp-install.md`.
+For full local Codex setup instructions, use the public installer repo: `https://github.com/ZilingXie/agent-relay-mcp`.
 
 ## Run Relay
 

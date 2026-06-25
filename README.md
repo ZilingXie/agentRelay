@@ -34,7 +34,8 @@ The important Phase 1 requirement is thread reuse:
 - `docs/task-completion-policy.md`: task completion, ownership transfer, timeout, and follow-up policy
 - `docs/codex-app-bridge-flow.md`: reusable Codex App bridge flow
 - `docs/mcp-tools.md`: AgentRelay MCP tool server usage
-- `docs/local-mcp-install.md`: local Codex MCP install guide
+- Public MCP installer repo: https://github.com/ZilingXie/agent-relay-mcp
+- `docs/local-mcp-install.md`: pointer to the public MCP install repo
 - `bridge/`: bridge contracts and prompt templates
 - `plan.html`: public planning page deployed to `https://server.stellarix.space/agentrelay/plan.html`
 - `agentlist.md`: draft agent registry
@@ -52,7 +53,7 @@ The important Phase 1 requirement is thread reuse:
 - [x] Implement controlled delivery back to Zac's origin thread.
 - [x] Package Codex App bridge into a reusable connector/MCP flow.
 - [x] Implement AgentRelay MCP tools that wrap the relay HTTP API.
-- [x] Document local Codex MCP installation in the public GitHub repo.
+- [x] Publish standalone local Codex MCP installer in `ZilingXie/agent-relay-mcp`.
 - [ ] Configure Codex App to use AgentRelay MCP and run the full Phase 1 meeting scenario.
 
 ## Run Locally
@@ -88,7 +89,7 @@ The smoke test verifies:
 AGENTRELAY_BASE_URL=http://127.0.0.1:8787/agentrelay node mcp/server.mjs
 ```
 
-See `docs/mcp-tools.md` and `docs/local-mcp-install.md`.
+See `docs/mcp-tools.md` and the public installer repo `https://github.com/ZilingXie/agent-relay-mcp`.
 
 ## First Implementation Milestone
 
