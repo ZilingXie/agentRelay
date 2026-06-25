@@ -26,6 +26,8 @@ or another base URL configured by `AGENTRELAY_BASE_URL`.
 npm install
 ```
 
+For full local Codex setup instructions, see `docs/local-mcp-install.md`.
+
 ## Run Relay
 
 ```bash
@@ -38,28 +40,28 @@ AGENTRELAY_DB_PATH=./data/agentrelay.sqlite3 python3 -m server.app
 AGENTRELAY_BASE_URL=http://127.0.0.1:8787/agentrelay node mcp/server.mjs
 ```
 
-## Codex App MCP Config Shape
+## Codex App MCP Config
 
-Use this command as the stdio MCP server:
+Codex reads MCP server config from `~/.codex/config.toml`, or from a project-scoped `.codex/config.toml` in a trusted project.
 
-```json
-{
-  "mcpServers": {
-    "agentrelay": {
-      "command": "node",
-      "args": ["/home/ubuntu/agentRelay/mcp/server.mjs"],
-      "env": {
-        "AGENTRELAY_BASE_URL": "http://127.0.0.1:8787/agentrelay"
-      }
-    }
-  }
-}
+Use this stdio MCP server config:
+
+```toml
+[mcp_servers.agentrelay]
+command = "node"
+args = ["/home/ubuntu/agentRelay/mcp/server.mjs"]
+cwd = "/home/ubuntu/agentRelay"
+startup_timeout_sec = 10
+tool_timeout_sec = 60
+
+[mcp_servers.agentrelay.env]
+AGENTRELAY_BASE_URL = "http://127.0.0.1:8787/agentrelay"
 ```
 
 If the relay is deployed behind HTTPS, use:
 
 ```text
-https://server.stellarix.space/agentrelay
+https://server.stellarix.space/agentrelay/api
 ```
 
 only after the live API is exposed by nginx or another reverse proxy. The static plan page alone does not expose the Python API.
@@ -138,4 +140,3 @@ zac-agent claim
 mark delivery to requester thread
 close by completion owner
 ```
-

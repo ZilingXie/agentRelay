@@ -61,6 +61,7 @@ Progress:
 - [x] Implement controlled delivery back to Zac's origin thread.
 - [x] Package Codex App bridge into a reusable connector/MCP flow.
 - [x] Implement AgentRelay MCP tools that wrap the relay HTTP API.
+- [x] Document local Codex MCP installation in the public GitHub repo.
 - [ ] Configure Codex App to use AgentRelay MCP and run the full Phase 1 meeting scenario.
 
 第一阶段不以 CLI 作为用户体验入口，而以 Codex App thread 作为入口。
@@ -69,6 +70,7 @@ Progress:
 
 - Zac 在 Codex App thread `abc` 中发起请求。
 - Zac Codex 通过 AgentRelay skill/MCP 创建 task，并记录 `requester_thread_id=abc`。
+- 本地安装方式记录在 `docs/local-mcp-install.md`；Phase 1 先放在现有 public GitHub repo，不另建 repo。
 - Frank connector 定期 `GET /workers/frank-agent/claim`。
 - 有新 claim 时，Frank connector 在 Frank 的 Codex App 中创建 thread；如果同一 task 已经有 thread，则复用。
 - Frank 在自己的 Codex thread 中给出答复。
