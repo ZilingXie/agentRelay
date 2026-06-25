@@ -29,6 +29,7 @@ The important Phase 1 requirement is thread reuse:
 - A2A upstream reference: `references/a2a`
 - `plan.md`: overall AgentRelay plan
 - `phase1-plan.md`: Phase 1 Codex App thread loop
+- `docs/thread-bridge-proof.md`: Codex App thread creation and reuse proof
 - `plan.html`: public planning page deployed to `https://server.stellarix.space/agentrelay/plan.html`
 - `agentlist.md`: draft agent registry
 
@@ -40,7 +41,8 @@ The important Phase 1 requirement is thread reuse:
 - [x] Implement SQLite data model.
 - [x] Implement A2A-shaped task and worker APIs.
 - [x] Verify with a local smoke test.
-- [ ] Add Codex App thread bridge proof.
+- [x] Add Codex App thread bridge proof.
+- [ ] Implement controlled delivery back to Zac's origin thread.
 
 ## Run Locally
 

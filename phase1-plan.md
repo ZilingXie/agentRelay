@@ -10,7 +10,8 @@ GitHub repository: https://github.com/ZilingXie/agentRelay
 - [x] Implement SQLite data model.
 - [x] Implement A2A-shaped task and worker APIs.
 - [x] Verify with a local smoke test.
-- [ ] Add Codex App thread bridge proof.
+- [x] Add Codex App thread bridge proof.
+- [ ] Implement controlled delivery back to Zac's origin thread.
 
 ## 1. 第一阶段目标
 
