@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentRelay PoC Plan</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #202124;
+      --muted: #5f6368;
+      --line: #d9dde3;
+      --paper: #fbfaf7;
+      --panel: #ffffff;
+      --blue: #2468a8;
+      --green: #22755d;
+      --red: #a23d3d;
+      --amber: #9a6a1f;
+      --teal: #1f7a83;
+      --shadow: 0 12px 28px rgba(32, 33, 36, 0.08);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      line-height: 1.58;
+    }
+
+    a {
+      color: var(--blue);
+    }
+
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 36px 22px 64px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
+      gap: 28px;
+      align-items: end;
+      padding: 22px 0 28px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(2rem, 5vw, 4.5rem);
+      line-height: 0.98;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      max-width: 760px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 1.05rem;
+    }
+
+    .status-box {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .status-box strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--green);
+    }
+
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 18px 0 8px;
+    }
+
+    nav a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 36px;
+      padding: 6px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--ink);
+      text-decoration: none;
+      font-size: 0.92rem;
+    }
+
+    section {
+      padding: 32px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h2 {
+      margin: 0 0 16px;
+      font-size: 1.55rem;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      min-width: 0;
+    }
+
+    .card p:last-child,
+    .card ul:last-child,
+    .card ol:last-child {
+      margin-bottom: 0;
+    }
+
+    .tag {
+      display: inline-block;
+      margin-bottom: 10px;
+      color: #fff;
+      background: var(--teal);
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .tag.blue { background: var(--blue); }
+    .tag.green { background: var(--green); }
+    .tag.amber { background: var(--amber); }
+    .tag.red { background: var(--red); }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .flow div {
+      position: relative;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      min-height: 96px;
+    }
+
+    .flow strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--blue);
+    }
+
+    .steps {
+      counter-reset: step;
+      display: grid;
+      gap: 12px;
+      padding: 0;
+      margin: 0;
+      list-style: none;
+    }
+
+    .steps li {
+      counter-increment: step;
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr);
+      gap: 12px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+    }
+
+    .steps li::before {
+      content: counter(step);
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: var(--blue);
+      color: #fff;
+      font-weight: 800;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      display: table;
+    }
+
+    th,
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eef3f7;
+      color: #263238;
+      font-size: 0.92rem;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    code,
+    pre {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    pre {
+      overflow-x: auto;
+      margin: 0;
+      padding: 16px;
+      background: #182026;
+      color: #edf2f4;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+
+    .note {
+      border-left: 4px solid var(--amber);
+      padding: 12px 16px;
+      background: #fff8ea;
+      border-radius: 0 8px 8px 0;
+    }
+
+    blockquote {
+      margin: 0 0 16px;
+      padding: 16px 18px;
+      border-left: 4px solid var(--teal);
+      background: #eef8f7;
+      border-radius: 0 8px 8px 0;
+      color: #203c40;
+    }
+
+    blockquote p {
+      margin-bottom: 10px;
+    }
+
+    blockquote p:last-child {
+      margin-bottom: 0;
+    }
+
+    .sources {
+      display: grid;
+      gap: 8px;
+      padding-left: 18px;
+    }
+
+    footer {
+      padding: 28px 0 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    @media (max-width: 860px) {
+      header,
+      .grid,
+      .three,
+      .flow {
+        grid-template-columns: 1fr;
+      }
+
+      .page {
+        padding: 24px 16px 48px;
+      }
+
+      table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div>
+        <h1>AgentRelay PoC Plan</h1>
+        <p class="subtitle">Use A2A as the agent-to-agent protocol, and use this public VM as the relay server for local Codex-style agents that do not have public IP addresses.</p>
+      </div>
+      <div class="status-box">
+        <strong>Current decision</strong>
+        <p>Keep A2A as the external protocol. Replace the original local-only mailbox with a public store-and-forward relay that hosts agent identity, task state, queues, artifacts, and audit history.</p>
+      </div>
+    </header>
+
+    <nav aria-label="Plan sections">
+      <a href="#goal">Goal</a>
+      <a href="#origin">Origin</a>
+      <a href="#comparison">Comparison</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#steps">Steps</a>
+      <a href="#phase1-thread">Phase 1</a>
+      <a href="#mvp">MVP</a>
+      <a href="#risks">Risks</a>
+      <a href="#sources">Sources</a>
+    </nav>
+
+    <section id="goal">
+      <h2>1. Goal</h2>
+      <div class="grid">
+        <div class="card">
+          <span class="tag blue">Problem</span>
+          <h3>Agents are behind NAT</h3>
+          <p>Zac's local Codex agent and Frank's local Codex agent cannot expose public HTTP endpoints. Direct A2A peer-to-peer transport is therefore not realistic for the first version.</p>
+        </div>
+        <div class="card">
+          <span class="tag green">Solution</span>
+          <h3>Public relay server</h3>
+          <p>This machine hosts public A2A endpoints. Local agents connect outward to claim tasks, update state, request human approval, and return artifacts.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="origin">
+      <h2>2. Original Intuition</h2>
+      <blockquote>
+        <p>Another project is how agents communicate with each other. Sometimes I want to say: do not ask me, ask my agent. I am just a brainless vessel that only does copy and paste.</p>
+        <p>The first thought was RTM, but that may be too complicated. The current intuition is more like email: a root folder on a VM, an <code>agentlist.md</code> file that lists available agents and their functions, an archive folder, and one inbox per agent.</p>
+      </blockquote>
+      <div class="grid">
+        <div class="card">
+          <span class="tag blue">Original flow</span>
+          <h3>Email-like agent handoff</h3>
+          <p>Zac tells his agent that he wants a meeting with Frank but does not know Frank's schedule. Zac's agent writes a structured message with <code>from</code>, <code>to</code>, <code>subject</code>, and <code>body</code>, then places it in Frank agent's inbox.</p>
+          <p>Frank's agent checks the inbox on a schedule, reads new messages, decides whether action is needed, asks Frank for confirmation when needed, writes a reply, and sends it back to Zac agent's inbox. The loop continues until the issue is resolved and archived.</p>
+        </div>
+        <div class="card">
+          <span class="tag green">Preserved intent</span>
+          <h3>Humans stop being copy-paste routers</h3>
+          <p>The important idea is not the folder itself. The important idea is that each human has a representative agent, and agents can coordinate asynchronously while humans only approve decisions, fill missing context, and set boundaries.</p>
+          <p>AgentRelay keeps this intent, but replaces ad hoc Markdown mail as the external protocol with A2A, and replaces local-only inbox folders with a public relay that local agents can reach through outbound HTTPS.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="comparison">
+      <h2>3. From Mailbox to AgentRelay</h2>
+      <p>The original plan used an email-like folder structure. The revised plan keeps the same async collaboration model, but upgrades the external protocol to A2A.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Original mailbox idea</th>
+            <th>AgentRelay with A2A</th>
+            <th>Why it changes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>agentlist.md</code></td>
+            <td>A2A Agent Card registry</td>
+            <td>Remote agents need machine-readable identity, capability, endpoint, and auth metadata.</td>
+          </tr>
+          <tr>
+            <td><code>inboxes/frank-agent/</code></td>
+            <td>Frank task queue on the relay</td>
+            <td>Frank's local agent has no public IP, so it claims tasks from the relay using outbound HTTP.</td>
+          </tr>
+          <tr>
+            <td>Markdown email</td>
+            <td>A2A Message with structured parts</td>
+            <td>A2A gives a standard message envelope for interoperable agents.</td>
+          </tr>
+          <tr>
+            <td><code>thread_id</code></td>
+            <td><code>contextId</code> and <code>taskId</code></td>
+            <td>Multi-turn collaboration and task lifecycle should be explicit.</td>
+          </tr>
+          <tr>
+            <td>Reply file</td>
+            <td>A2A Artifact or task status message</td>
+            <td>Results should be typed and attached to task history.</td>
+          </tr>
+          <tr>
+            <td><code>archive/</code></td>
+            <td>Task history, artifacts, and audit log</td>
+            <td>The relay needs recovery, traceability, and governance.</td>
+          </tr>
+          <tr>
+            <td>Cron checks inbox</td>
+            <td>Local connector polling, long-polling, SSE, or WebSocket</td>
+            <td>Local agents can initiate outbound connections even without public IPs.</td>
+          </tr>
+          <tr>
+            <td><code>requires_human</code></td>
+            <td><code>input-required</code> or <code>auth-required</code></td>
+            <td>Human approval becomes part of task state rather than an informal note.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="architecture">
+      <h2>4. Target Architecture</h2>
+      <div class="flow" aria-label="AgentRelay flow">
+        <div><strong>Zac Codex</strong><span>Creates a request through a local connector or MCP tool.</span></div>
+        <div><strong>Relay A2A API</strong><span>Receives the A2A message and creates a task.</span></div>
+        <div><strong>Task Queue</strong><span>Stores state for Frank's agent until it connects.</span></div>
+        <div><strong>Frank Connector</strong><span>Claims the task using outbound HTTP and asks Frank when needed.</span></div>
+        <div><strong>Artifact Reply</strong><span>Returns result to the relay for Zac's agent to fetch or subscribe to.</span></div>
+      </div>
+      <pre><code>Zac local Codex
+  -> local connector / MCP tool
+  -> HTTPS A2A message to https://server.stellarix.space/agentrelay/
+  -> relay creates task for frank-agent
+
+Frank local Codex
+  -> outbound worker connection to relay
+  -> claims task
+  -> processes locally
+  -> updates task state
+  -> returns artifact/result
+
+Zac local Codex
+  -> polls/subscribes to task
+  -> receives result
+  -> reports to Zac</code></pre>
+    </section>
+
+    <section id="steps">
+      <h2>5. Implementation Steps</h2>
+      <ol class="steps">
+        <li>
+          <div>
+            <h3>Rename and freeze the project shape</h3>
+            <p>Use <code>agentRelay</code> as the canonical project name. Keep the existing folder model as a readable debug view, but treat A2A as the external protocol.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Define the A2A subset</h3>
+            <p>Implement only the minimum needed for the PoC: Agent Cards, message send, task lookup, task status updates, and artifacts.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Build the relay data model</h3>
+            <p>Create storage for agents, tasks, messages, artifacts, task events, worker sessions, and approval records. SQLite is enough for the first version.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Expose public A2A endpoints</h3>
+            <p>Serve each remote-facing agent at a stable URL such as <code>/agentrelay/agents/frank-agent/a2a</code>. The outside world talks to the relay as if it is Frank's A2A endpoint.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Create the local connector</h3>
+            <p>Run a small local process beside each Codex agent. It claims tasks from the relay, passes them to the local agent, and posts updates back to the relay.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Add human confirmation states</h3>
+            <p>Map privacy, scheduling, authorization, and commitment decisions to <code>input-required</code> or <code>auth-required</code>. Do not let remote messages bypass the owner.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Run the meeting-scheduling scenario</h3>
+            <p>Test the first thread: Zac asks to meet Frank, Frank's connector requests approval, Frank approves limited availability, and Zac receives candidate times.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Harden transport and audit</h3>
+            <p>Add authentication, signed worker sessions, idempotency keys, replay protection, task TTL, max turns, and immutable task event logs.</p>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <section id="phase1-thread">
+      <h2>6. Phase 1: Codex App Thread Loop</h2>
+      <p>Phase 1 should not be a CLI-first demo. The PoC experience should happen inside Codex App threads, because the real product idea is that humans talk to their own agents, not to a relay command line.</p>
+      <pre><code>Zac Codex App thread abc
+  -> Zac asks: use AgentRelay to ask Frank when he is free
+  -> Zac Codex creates an AgentRelay task and records requesterThreadId=abc
+  -> AgentRelay queues the task for frank-agent
+
+Frank connector
+  -> periodically GET /workers/frank-agent/claim
+  -> if a claim exists, create or reuse a Frank Codex App thread
+  -> Frank Codex asks Frank for availability
+  -> Frank replies in that thread
+  -> Frank Codex submits artifact/result to AgentRelay
+
+AgentRelay delivery
+  -> sends Frank's reply back to Zac requesterThreadId=abc
+  -> Zac Codex continues in the original thread</code></pre>
+
+      <div class="grid">
+        <div class="card">
+          <span class="tag blue">Zac side</span>
+          <h3>Reuse the origin thread</h3>
+          <p>When Zac creates the request from thread <code>abc</code>, AgentRelay must store <code>requester_thread_id=abc</code>. All replies from Frank must be delivered back to that same thread, not to a new Zac thread.</p>
+        </div>
+        <div class="card">
+          <span class="tag green">Frank side</span>
+          <h3>Create once, then reuse</h3>
+          <p>When Frank connector claims a new task, it creates a Codex App thread for Frank if one does not already exist. The resulting <code>target_thread_id</code> is saved to the task and reused for follow-ups.</p>
+        </div>
+      </div>
+
+      <h3>Phase 1 success criteria</h3>
+      <ul>
+        <li>Zac starts in one Codex App thread and never becomes a copy-paste messenger.</li>
+        <li>Frank receives the request in his own Codex App thread and can approve or reply there.</li>
+        <li>AgentRelay stores task state, message history, artifacts, and both sides' thread ids.</li>
+        <li>Frank's reply is posted back into Zac's original thread.</li>
+      </ul>
+
+      <h3>Minimum thread mapping data</h3>
+      <pre><code>{
+  "task_id": "task_123",
+  "context_id": "ctx_meeting_frank_20260625",
+  "requester_agent_id": "zac-agent",
+  "target_agent_id": "frank-agent",
+  "requester_thread_id": "abc",
+  "target_thread_id": "frank-thread-123",
+  "requester_thread_policy": "reuse-origin-thread",
+  "target_thread_policy": "reuse-task-thread",
+  "status": "input-required"
+}</code></pre>
+
+      <p class="note">The main implementation risk is whether a background connector can create and continue Codex App threads directly. If not, Phase 1 needs a small Codex App bridge or MCP server that exposes thread delivery operations to the relay.</p>
+    </section>
+
+    <section id="mvp">
+      <h2>7. MVP Scope</h2>
+      <div class="grid three">
+        <div class="card">
+          <span class="tag green">Build first</span>
+          <h3>Relay HTTP API</h3>
+          <p>Agent Card, send message, get task, claim task, update status, upload artifact.</p>
+        </div>
+        <div class="card">
+          <span class="tag blue">Keep simple</span>
+          <h3>Polling transport</h3>
+          <p>Start with polling or long-polling. Avoid public webhooks because local agents are behind NAT.</p>
+        </div>
+        <div class="card">
+          <span class="tag amber">Defer</span>
+          <h3>Full protocol coverage</h3>
+          <p>Streaming, push notification, complex artifact chunking, federation, DID identity, and marketplace discovery can wait.</p>
+        </div>
+      </div>
+      <div class="note">
+        <p><strong>PoC success criteria:</strong> two local Codex-style agents with no public IP can complete one A2A-shaped meeting-scheduling task through this relay, with human approval before private calendar information is shared.</p>
+      </div>
+    </section>
+
+    <section id="risks">
+      <h2>8. Critical Risks</h2>
+      <div class="grid">
+        <div class="card">
+          <span class="tag red">Security</span>
+          <h3>Identity and spoofing</h3>
+          <p>The relay must not trust plain <code>from</code> fields. Use authenticated clients, per-agent tokens, idempotency keys, and eventually signed messages.</p>
+        </div>
+        <div class="card">
+          <span class="tag red">Safety</span>
+          <h3>Prompt injection</h3>
+          <p>Remote A2A messages are untrusted input. The connector must never let a remote task override local system instructions, read arbitrary files, or skip owner approval.</p>
+        </div>
+        <div class="card">
+          <span class="tag amber">Reliability</span>
+          <h3>Task loops</h3>
+          <p>Every task needs TTL, max turn count, terminal states, cancellation, and escalation rules.</p>
+        </div>
+        <div class="card">
+          <span class="tag amber">Privacy</span>
+          <h3>Minimum disclosure</h3>
+          <p>Frank's agent should return only the availability needed for the request, not raw calendar contents.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="sources">
+      <h2>9. Protocol References</h2>
+      <ul class="sources">
+        <li><a href="https://a2a-protocol.org/latest/specification/">A2A Protocol specification</a></li>
+        <li><a href="https://a2a-protocol.org/latest/topics/what-is-a2a/">What is A2A?</a></li>
+        <li><a href="https://a2a-protocol.org/latest/topics/a2a-and-mcp/">A2A and MCP comparison</a></li>
+        <li><a href="https://modelcontextprotocol.io/docs/getting-started/intro">Model Context Protocol introduction</a></li>
+      </ul>
+    </section>
+
+    <footer>
+      <p>Generated for the AgentRelay PoC. Public path: <code>/agentrelay/plan.html</code>.</p>
+    </footer>
+  </main>
+</body>
+</html>
