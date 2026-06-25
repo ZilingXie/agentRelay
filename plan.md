@@ -348,3 +348,5 @@ Folder PoC -> MCP mailbox server -> remote transport -> A2A-compatible gateway
 Phase 1 auth is documented in `docs/relay-auth.md`. The cloud relay issues `username + agent_id + token`; the public MCP client stores these in `.env` and sends bearer-token headers.
 
 Deployment update: `docs/relay-deployment.md` records the systemd service and nginx reverse proxy for `https://server.stellarix.space/agentrelay/api`.
+
+Public MCP installer update: `ZilingXie/agent-relay-mcp` now explicitly requires the local agent to write `.env`, report the `.env` path without printing the token, run `npm run doctor`, then verify MCP with `agentrelay_health` and `agentrelay_list_agents` after Codex restart/new thread. See `docs/local-agent-verification.md` in the public MCP repo.
