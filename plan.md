@@ -51,10 +51,11 @@ agentRelay/
 Progress:
 
 - [x] Create GitHub repository and push planning docs.
-- [ ] Scaffold relay server project.
-- [ ] Implement SQLite data model.
-- [ ] Implement A2A-shaped task and worker APIs.
-- [ ] Verify with a local smoke test.
+- [x] Add official A2A repository as upstream reference.
+- [x] Scaffold relay server project.
+- [x] Implement SQLite data model.
+- [x] Implement A2A-shaped task and worker APIs.
+- [x] Verify with a local smoke test.
 - [ ] Add Codex App thread bridge proof.
 
 第一阶段不以 CLI 作为用户体验入口，而以 Codex App thread 作为入口。

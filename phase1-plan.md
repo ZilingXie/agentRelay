@@ -5,10 +5,11 @@ GitHub repository: https://github.com/ZilingXie/agentRelay
 ## 0. Progress
 
 - [x] Create GitHub repository and push planning docs.
-- [ ] Scaffold relay server project.
-- [ ] Implement SQLite data model.
-- [ ] Implement A2A-shaped task and worker APIs.
-- [ ] Verify with a local smoke test.
+- [x] Add official A2A repository as upstream reference.
+- [x] Scaffold relay server project.
+- [x] Implement SQLite data model.
+- [x] Implement A2A-shaped task and worker APIs.
+- [x] Verify with a local smoke test.
 - [ ] Add Codex App thread bridge proof.
 
 ## 1. 第一阶段目标

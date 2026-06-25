@@ -11,6 +11,9 @@ coverage/
 *.sqlite
 *.sqlite3
 *.db
+data/
 
 .DS_Store
 
+__pycache__/
+*.py[cod]

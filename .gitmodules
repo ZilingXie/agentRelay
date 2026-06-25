@@ -1,0 +1,3 @@
+[submodule "references/a2a"]
+	path = references/a2a
+	url = https://github.com/a2aproject/A2A.git

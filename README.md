@@ -26,6 +26,7 @@ The important Phase 1 requirement is thread reuse:
 ## Current Docs
 
 - GitHub: https://github.com/ZilingXie/agentRelay
+- A2A upstream reference: `references/a2a`
 - `plan.md`: overall AgentRelay plan
 - `phase1-plan.md`: Phase 1 Codex App thread loop
 - `plan.html`: public planning page deployed to `https://server.stellarix.space/agentrelay/plan.html`
@@ -34,11 +35,24 @@ The important Phase 1 requirement is thread reuse:
 ## Phase 1 Progress
 
 - [x] Create GitHub repository and push planning docs.
-- [ ] Scaffold relay server project.
-- [ ] Implement SQLite data model.
-- [ ] Implement A2A-shaped task and worker APIs.
-- [ ] Verify with a local smoke test.
+- [x] Add official A2A repository as upstream reference.
+- [x] Scaffold relay server project.
+- [x] Implement SQLite data model.
+- [x] Implement A2A-shaped task and worker APIs.
+- [x] Verify with a local smoke test.
 - [ ] Add Codex App thread bridge proof.
+
+## Run Locally
+
+```bash
+AGENTRELAY_DB_PATH=./data/agentrelay.sqlite3 python3 -m server.app
+```
+
+Smoke test:
+
+```bash
+python3 scripts/smoke_test.py http://127.0.0.1:8787
+```
 
 ## First Implementation Milestone
 
