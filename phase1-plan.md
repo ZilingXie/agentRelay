@@ -101,10 +101,11 @@ Task completion is defined at task creation time by the requester side through `
 For Phase 1:
 
 - The requester agent proposes `done_criteria`.
-- The relay stores `done_criteria` on the task.
-- The relay owns the canonical task state.
+- The requester agent is the semantic owner of completion.
+- The relay stores `done_criteria` on the task as metadata.
+- The relay maintains transport state, ownership transfer, TTL, and audit.
 - Agents submit artifacts, action results, and recommendations.
-- Agents do not unilaterally archive the whole workflow unless the stored `done_criteria` is satisfied.
+- Agents do not unilaterally archive the whole workflow unless the requester-side completion logic explicitly closes it.
 
 Meeting task default:
 
@@ -131,6 +132,7 @@ target_agent_id
 requester_thread_id
 target_thread_id
 done_criteria
+completion_owner_agent_id
 pending_on_agent_id
 pending_on_human_id
 next_action

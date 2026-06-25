@@ -77,8 +77,9 @@ Task completion policy:
 
 - 区分 `agent action complete` 和 `workflow task complete`。
 - `done_criteria` 由 requester side 在创建 task 时提出。
-- Relay 保存 `done_criteria` 并拥有 canonical task state。
-- Agent 只能提交 action result、artifact、next_action 建议，不能单方面归档整个 workflow。
+- requester agent 是 semantic completion owner。
+- Relay 保存 `done_criteria` 作为 metadata，维护 transport state、ownership transfer、TTL 和审计。
+- Agent 只能提交 action result、artifact、next_action 建议，不能单方面替代 requester 关闭整个 workflow。
 - Frank agent 回复 10:00 后，Frank action complete，但 task 应转为 pending on Zac confirmation。
 - Zac 长时间不回复时进入 `waiting_human`，走 reminder/TTL/expired。
 - 已完成 task 不重新打开；Zac 之后变更时间时创建同 `context_id` 的 child task。

@@ -44,6 +44,7 @@ The important Phase 1 requirement is thread reuse:
 - [x] Verify with a local smoke test.
 - [x] Add Codex App thread bridge proof.
 - [ ] Implement controlled delivery back to Zac's origin thread.
+- [ ] Encode requester-side completion ownership in task metadata and API payloads.
 
 ## Run Locally
 

@@ -24,15 +24,16 @@ At this point, Frank agent's current action is complete, but the workflow task i
 
 ## 2. Who defines task completion?
 
-Task completion is defined at task creation time by the requester side.
+Task completion is defined by the requester side.
 
 For Phase 1:
 
-- The requester agent proposes `done_criteria`.
-- The relay stores `done_criteria` as part of the task.
-- The relay owns the canonical task state.
+- The requester agent proposes `done_criteria` when creating the task.
+- The requester agent remains the semantic owner of the task.
+- The relay stores `done_criteria` as metadata and preserves transport state.
 - Agents may report action results, artifacts, and recommendations.
-- Agents may not unilaterally archive the whole workflow task unless their reported result satisfies the stored `done_criteria` and relay validation passes.
+- The relay does not infer whether the business goal is met on its own.
+- The relay only accepts terminal completion when the requester side explicitly closes the task or when a non-semantic terminal condition occurs.
 
 In the meeting example, the critical difference is:
 
@@ -52,6 +53,7 @@ The task record should include:
 
 ```text
 done_criteria
+completion_owner_agent_id
 pending_on_agent_id
 pending_on_human_id
 next_action
@@ -64,6 +66,8 @@ context_id
 ```
 
 `context_id` groups related tasks. `task_id` represents one lifecycle and should not be reused after terminal completion.
+
+`completion_owner_agent_id` should usually equal the requester agent for Phase 1.
 
 ## 4. Recommended status model
 
@@ -121,9 +125,10 @@ Meeting scheduling flow:
    pending_on_human_id = zac
 
 5. Zac says OK.
+   Zac agent, as requester-side semantic owner, explicitly closes the task.
    If Frank's 10:00 was already an approved slot:
      status = completed
-     terminal_reason = Both sides accepted 10:00.
+     terminal_reason = Requester confirmed the same time.
    If Frank's response was only tentative:
      pending_on_agent_id = frank-agent
      next_action = Confirm Zac accepted 10:00 with Frank.
@@ -205,5 +210,4 @@ I recommend waiting for Zac.
 I recommend creating a child task.
 ```
 
-But the relay records the canonical task state and decides whether the task has reached terminal completion according to `done_criteria`.
-
+But the relay does not decide business completion by itself. The requester agent decides when its own `done_criteria` has been met and sends an explicit close signal; the relay only records that close and guards the state machine.

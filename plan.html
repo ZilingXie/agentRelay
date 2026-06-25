@@ -596,12 +596,13 @@ AgentRelay delivery
         </div>
         <div class="card">
           <span class="tag green">Task complete</span>
-          <h3>Defined by done criteria</h3>
-          <p>The requester side proposes <code>done_criteria</code> when creating the task. The relay stores it and owns canonical task state. Agents submit artifacts and recommendations; the relay decides terminal completion.</p>
+          <h3>Owned by requester side</h3>
+          <p>The requester side proposes <code>done_criteria</code> when creating the task and remains the semantic owner of completion. The relay stores that metadata, preserves transport state, and accepts explicit close signals or non-semantic terminal conditions.</p>
         </div>
       </div>
       <pre><code>Meeting task default:
 done_criteria = both Zac and Frank accept the same online meeting time
+completion_owner_agent_id = zac-agent
 
 Frank says 10:00:
   Frank action complete
@@ -618,7 +619,7 @@ Zac does not reply:
 Zac accepts then changes his mind after completion:
   do not reopen completed task
   create child reschedule task with same context_id</code></pre>
-      <p class="note">Practical rule: agents can say "my action is complete" or "I recommend completing this task"; AgentRelay records the canonical state and only marks the workflow terminal when <code>done_criteria</code> is satisfied or a terminal failure/expiry occurs.</p>
+      <p class="note">Practical rule: agents can say "my action is complete" or "I recommend completing this task"; the requester-side semantic owner decides when <code>done_criteria</code> is met and sends the explicit close signal. AgentRelay only preserves the state machine and refuses invalid transitions.</p>
     </section>
 
     <section id="mvp">
