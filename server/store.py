@@ -45,6 +45,13 @@ class Store:
                     target_thread_id TEXT,
                     requester_thread_policy TEXT NOT NULL DEFAULT 'reuse-origin-thread',
                     target_thread_policy TEXT NOT NULL DEFAULT 'reuse-task-thread',
+                    done_criteria TEXT NOT NULL DEFAULT '',
+                    completion_owner_agent_id TEXT NOT NULL DEFAULT '',
+                    pending_on_agent_id TEXT,
+                    pending_on_human_id TEXT,
+                    next_action TEXT,
+                    terminal_reason TEXT,
+                    parent_task_id TEXT,
                     subject TEXT NOT NULL,
                     ttl INTEGER,
                     max_turns INTEGER NOT NULL DEFAULT 12,
@@ -91,7 +98,26 @@ class Store:
                 );
                 """
             )
+            self.ensure_task_columns(conn)
             self.ensure_seed_agents(conn)
+
+    def ensure_task_columns(self, conn: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(tasks)").fetchall()
+        }
+        migrations = {
+            "done_criteria": "ALTER TABLE tasks ADD COLUMN done_criteria TEXT NOT NULL DEFAULT ''",
+            "completion_owner_agent_id": "ALTER TABLE tasks ADD COLUMN completion_owner_agent_id TEXT NOT NULL DEFAULT ''",
+            "pending_on_agent_id": "ALTER TABLE tasks ADD COLUMN pending_on_agent_id TEXT",
+            "pending_on_human_id": "ALTER TABLE tasks ADD COLUMN pending_on_human_id TEXT",
+            "next_action": "ALTER TABLE tasks ADD COLUMN next_action TEXT",
+            "terminal_reason": "ALTER TABLE tasks ADD COLUMN terminal_reason TEXT",
+            "parent_task_id": "ALTER TABLE tasks ADD COLUMN parent_task_id TEXT",
+        }
+        for column, sql in migrations.items():
+            if column not in columns:
+                conn.execute(sql)
 
     def ensure_seed_agents(self, conn: sqlite3.Connection) -> None:
         now = int(time.time())
@@ -134,6 +160,12 @@ class Store:
         requester_thread_id = payload.get("requesterThreadId")
         ttl = payload.get("ttl")
         max_turns = int(payload.get("maxTurns") or 12)
+        done_criteria = payload.get("doneCriteria") or ""
+        completion_owner_agent_id = payload.get("completionOwnerAgentId") or from_agent
+        pending_on_agent_id = payload.get("pendingOnAgentId") or to_agent
+        pending_on_human_id = payload.get("pendingOnHumanId")
+        next_action = payload.get("nextAction")
+        parent_task_id = payload.get("parentTaskId")
 
         with self.connect() as conn:
             assert_agent_exists(conn, from_agent)
@@ -143,10 +175,12 @@ class Store:
                 INSERT INTO tasks (
                     task_id, context_id, status, requester_agent_id, target_agent_id,
                     requester_thread_id, requester_thread_policy, target_thread_policy,
+                    done_criteria, completion_owner_agent_id,
+                    pending_on_agent_id, pending_on_human_id, next_action, parent_task_id,
                     subject, ttl, max_turns, created_at, updated_at
                 )
                 VALUES (?, ?, 'submitted', ?, ?, ?, 'reuse-origin-thread',
-                    'reuse-task-thread', ?, ?, ?, ?, ?)
+                    'reuse-task-thread', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     task_id,
@@ -154,6 +188,12 @@ class Store:
                     from_agent,
                     to_agent,
                     requester_thread_id,
+                    done_criteria,
+                    completion_owner_agent_id,
+                    pending_on_agent_id,
+                    pending_on_human_id,
+                    next_action,
+                    parent_task_id,
                     subject,
                     ttl,
                     max_turns,
@@ -190,6 +230,9 @@ class Store:
                     "from": from_agent,
                     "to": to_agent,
                     "requesterThreadId": requester_thread_id,
+                    "doneCriteria": done_criteria,
+                    "completionOwnerAgentId": completion_owner_agent_id,
+                    "pendingOnAgentId": pending_on_agent_id,
                 },
                 now,
             )
@@ -233,8 +276,11 @@ class Store:
             row = conn.execute(
                 """
                 SELECT task_id FROM tasks
-                WHERE target_agent_id = ?
-                  AND status IN ('submitted', 'input_required', 'auth_required')
+                WHERE pending_on_agent_id = ?
+                  AND status IN (
+                    'submitted', 'input_required', 'auth_required',
+                    'waiting_remote', 'delivery_pending'
+                  )
                   AND (claimed_by IS NULL OR claimed_by = ?)
                 ORDER BY created_at
                 LIMIT 1
@@ -292,11 +338,40 @@ class Store:
         with self.connect() as conn:
             if not self.get_task_conn(conn, task_id):
                 return None
+            terminal_reason = payload.get("terminalReason")
+            next_action = payload.get("nextAction")
+            pending_on_agent_id = payload.get("pendingOnAgentId")
+            pending_on_human_id = payload.get("pendingOnHumanId")
             conn.execute(
                 "UPDATE tasks SET status = ?, updated_at = ? WHERE task_id = ?",
                 (status, now, task_id),
             )
-            self.add_event_conn(conn, task_id, "task.status_updated", {"status": status, **payload}, now)
+            update_fields = {"status": status, **payload}
+            if terminal_reason is not None:
+                update_fields["terminalReason"] = terminal_reason
+                conn.execute(
+                    "UPDATE tasks SET terminal_reason = ? WHERE task_id = ?",
+                    (terminal_reason, task_id),
+                )
+            if next_action is not None:
+                update_fields["nextAction"] = next_action
+                conn.execute(
+                    "UPDATE tasks SET next_action = ? WHERE task_id = ?",
+                    (next_action, task_id),
+                )
+            if pending_on_agent_id is not None:
+                update_fields["pendingOnAgentId"] = pending_on_agent_id
+                conn.execute(
+                    "UPDATE tasks SET pending_on_agent_id = ? WHERE task_id = ?",
+                    (pending_on_agent_id, task_id),
+                )
+            if pending_on_human_id is not None:
+                update_fields["pendingOnHumanId"] = pending_on_human_id
+                conn.execute(
+                    "UPDATE tasks SET pending_on_human_id = ? WHERE task_id = ?",
+                    (pending_on_human_id, task_id),
+                )
+            self.add_event_conn(conn, task_id, "task.status_updated", update_fields, now)
             return self.get_task_conn(conn, task_id)
 
     def submit_artifact(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -306,10 +381,20 @@ class Store:
         artifact = required(payload, "artifact")
         parts = artifact.get("parts") or []
         artifact_id = artifact.get("artifactId") or f"art_{uuid.uuid4().hex}"
+        next_status = payload.get("nextStatus")
+        pending_on_agent_id = payload.get("pendingOnAgentId")
+        pending_on_human_id = payload.get("pendingOnHumanId")
+        next_action = payload.get("nextAction")
         with self.connect() as conn:
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
+            if not pending_on_agent_id and from_agent != task["completion_owner_agent_id"]:
+                pending_on_agent_id = task["completion_owner_agent_id"]
+            if not next_status:
+                next_status = "delivery_pending" if pending_on_agent_id else "working"
+            if not next_action and pending_on_agent_id:
+                next_action = "Requester agent should evaluate the artifact against done_criteria."
             conn.execute(
                 """
                 INSERT INTO artifacts (
@@ -329,17 +414,77 @@ class Store:
                 ),
             )
             conn.execute(
-                "UPDATE tasks SET status = 'completed', updated_at = ? WHERE task_id = ?",
-                (now, task_id),
+                """
+                UPDATE tasks
+                SET status = ?,
+                    pending_on_agent_id = ?,
+                    pending_on_human_id = ?,
+                    next_action = ?,
+                    claimed_by = NULL,
+                    claimed_at = NULL,
+                    updated_at = ?
+                WHERE task_id = ?
+                """,
+                (next_status, pending_on_agent_id, pending_on_human_id, next_action, now, task_id),
             )
             self.add_event_conn(
                 conn,
                 task_id,
                 "artifact.submitted",
-                {"artifactId": artifact_id, "from": from_agent, "to": to_agent},
+                {
+                    "artifactId": artifact_id,
+                    "from": from_agent,
+                    "to": to_agent,
+                    "nextStatus": next_status,
+                    "pendingOnAgentId": pending_on_agent_id,
+                    "pendingOnHumanId": pending_on_human_id,
+                    "nextAction": next_action,
+                },
                 now,
             )
-            self.add_event_conn(conn, task_id, "task.completed", {"artifactId": artifact_id}, now)
+            self.add_event_conn(
+                conn,
+                task_id,
+                "ownership.transferred",
+                {
+                    "from": from_agent,
+                    "pendingOnAgentId": pending_on_agent_id,
+                    "pendingOnHumanId": pending_on_human_id,
+                },
+                now,
+            )
+            return self.get_task_conn(conn, task_id)
+
+    def close_task(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        now = int(time.time())
+        closed_by_agent_id = required(payload, "closedByAgentId")
+        terminal_reason = payload.get("terminalReason") or "requester closed task"
+        with self.connect() as conn:
+            task = self.get_task_conn(conn, task_id)
+            if not task:
+                return None
+            if closed_by_agent_id != task["completion_owner_agent_id"]:
+                raise ValueError("only completion_owner_agent_id can close the task")
+            conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'completed',
+                    pending_on_agent_id = NULL,
+                    pending_on_human_id = NULL,
+                    next_action = NULL,
+                    terminal_reason = ?,
+                    updated_at = ?
+                WHERE task_id = ?
+                """,
+                (terminal_reason, now, task_id),
+            )
+            self.add_event_conn(
+                conn,
+                task_id,
+                "task.completed",
+                {"closedByAgentId": closed_by_agent_id, "terminalReason": terminal_reason},
+                now,
+            )
             return self.get_task_conn(conn, task_id)
 
     def add_event_conn(
@@ -388,4 +533,3 @@ def decode_payload(row: sqlite3.Row) -> dict[str, Any]:
     data = dict(row)
     data["payload"] = json.loads(data.pop("payload_json"))
     return data
-

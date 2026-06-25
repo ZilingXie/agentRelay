@@ -43,8 +43,8 @@ The important Phase 1 requirement is thread reuse:
 - [x] Implement A2A-shaped task and worker APIs.
 - [x] Verify with a local smoke test.
 - [x] Add Codex App thread bridge proof.
+- [x] Encode requester-side completion ownership in task metadata and API payloads.
 - [ ] Implement controlled delivery back to Zac's origin thread.
-- [ ] Encode requester-side completion ownership in task metadata and API payloads.
 
 ## Run Locally
 
@@ -57,6 +57,14 @@ Smoke test:
 ```bash
 python3 scripts/smoke_test.py http://127.0.0.1:8787
 ```
+
+The smoke test verifies:
+
+- `done_criteria` and `completion_owner_agent_id` are stored.
+- Frank artifact submission does not complete the task.
+- Artifact submission transfers ownership back to `zac-agent`.
+- Non-owner close is rejected.
+- Requester-side owner close completes the task.
 
 ## First Implementation Milestone
 

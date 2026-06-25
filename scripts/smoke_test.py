@@ -20,6 +20,8 @@ def main() -> None:
             "to": "frank-agent",
             "requesterThreadId": "zac-thread-abc",
             "subject": "Meeting availability",
+            "doneCriteria": "Both Zac and Frank accept the same online meeting time.",
+            "completionOwnerAgentId": "zac-agent",
             "message": {
                 "role": "user",
                 "parts": [
@@ -36,6 +38,12 @@ def main() -> None:
         },
     )["task"]
     task_id = task["task_id"]
+    if task["done_criteria"] != "Both Zac and Frank accept the same online meeting time.":
+        raise AssertionError("done criteria was not stored")
+    if task["completion_owner_agent_id"] != "zac-agent":
+        raise AssertionError("completion owner was not stored")
+    if task["pending_on_agent_id"] != "frank-agent":
+        raise AssertionError("initial pending owner should be frank-agent")
     print(f"created {task_id}")
 
     claimed = get_json(f"{base_url}/agentrelay/workers/frank-agent/claim")["task"]
@@ -51,7 +59,7 @@ def main() -> None:
         raise AssertionError("target thread was not recorded")
     print("recorded frank thread")
 
-    completed = post_json(
+    after_artifact = post_json(
         f"{base_url}/agentrelay/tasks/{task_id}/artifacts",
         {
             "from": "frank-agent",
@@ -67,15 +75,54 @@ def main() -> None:
             },
         },
     )["task"]
+    if after_artifact["status"] != "delivery_pending":
+        raise AssertionError("artifact should not complete the task")
+    if after_artifact["pending_on_agent_id"] != "zac-agent":
+        raise AssertionError("artifact should transfer ownership back to zac-agent")
+    if after_artifact["requester_thread_id"] != "zac-thread-abc":
+        raise AssertionError("requester thread was not preserved")
+    print("submitted artifact and transferred ownership to zac-agent")
+
+    zac_claimed = get_json(f"{base_url}/agentrelay/workers/zac-agent/claim")["task"]
+    if not zac_claimed or zac_claimed["task_id"] != task_id:
+        raise AssertionError("zac-agent did not claim the returned task")
+    print("zac-agent claimed returned task")
+
+    expect_http_error(
+        "non-owner close rejected",
+        400,
+        "POST",
+        f"{base_url}/agentrelay/tasks/{task_id}/close",
+        {
+            "closedByAgentId": "frank-agent",
+            "terminalReason": "Frank should not be able to close Zac-owned completion.",
+        },
+    )
+    print("non-owner close rejected")
+
+    completed = post_json(
+        f"{base_url}/agentrelay/tasks/{task_id}/close",
+        {
+            "closedByAgentId": "zac-agent",
+            "terminalReason": "Requester confirmed the proposed meeting time.",
+        },
+    )["task"]
     if completed["status"] != "completed":
         raise AssertionError("task was not completed")
-    if completed["requester_thread_id"] != "zac-thread-abc":
-        raise AssertionError("requester thread was not preserved")
-    print("submitted artifact and completed task")
+    if completed["terminal_reason"] != "Requester confirmed the proposed meeting time.":
+        raise AssertionError("terminal reason was not recorded")
+    print("requester closed task")
 
     events = get_json(f"{base_url}/agentrelay/tasks/{task_id}/events")["events"]
     event_types = [event["event_type"] for event in events]
-    for expected in ["task.created", "task.claimed", "thread.created", "artifact.submitted", "task.completed"]:
+    for expected in [
+        "task.created",
+        "task.claimed",
+        "thread.created",
+        "artifact.submitted",
+        "ownership.transferred",
+        "task.completed",
+    ]:
         if expected not in event_types:
             raise AssertionError(f"missing event: {expected}")
     print("events ok")
@@ -106,6 +153,22 @@ def request_json(method: str, url: str, payload: dict | None = None) -> dict:
         raise RuntimeError(f"{method} {url} failed: {exc.code} {body}") from exc
 
 
+def expect_http_error(
+    label: str,
+    expected_status: int,
+    method: str,
+    url: str,
+    payload: dict | None = None,
+) -> None:
+    try:
+        request_json(method, url, payload)
+    except RuntimeError as exc:
+        if f"failed: {expected_status}" not in str(exc):
+            raise AssertionError(f"{label} returned unexpected error: {exc}") from exc
+        return
+    raise AssertionError(f"{label} unexpectedly succeeded")
+
+
 def assert_ok(label: str, payload: dict) -> None:
     if not payload.get("ok"):
         raise AssertionError(f"{label} failed: {payload}")
@@ -113,4 +176,3 @@ def assert_ok(label: str, payload: dict) -> None:
 
 if __name__ == "__main__":
     main()
-

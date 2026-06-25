@@ -98,6 +98,13 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 return
             self.respond_json({"task": task}, status=201)
             return
+        if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/close", path):
+            task = self.store.close_task(match.group(1), payload)
+            if not task:
+                self.respond_error(404, "task not found")
+                return
+            self.respond_json({"task": task})
+            return
         if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/tasks/([^/]+)/thread", path):
             agent_id, task_id = match.groups()
             thread_id = payload.get("threadId")
@@ -185,4 +192,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

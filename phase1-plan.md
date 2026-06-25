@@ -11,6 +11,7 @@ GitHub repository: https://github.com/ZilingXie/agentRelay
 - [x] Implement A2A-shaped task and worker APIs.
 - [x] Verify with a local smoke test.
 - [x] Add Codex App thread bridge proof.
+- [x] Encode requester-side completion ownership in task metadata and API payloads.
 - [ ] Implement controlled delivery back to Zac's origin thread.
 
 ## 1. 第一阶段目标
@@ -193,6 +194,7 @@ GET  /agentrelay/tasks/:taskId/events
 POST /agentrelay/tasks/:taskId/messages
 POST /agentrelay/tasks/:taskId/artifacts
 POST /agentrelay/tasks/:taskId/status
+POST /agentrelay/tasks/:taskId/close
 ```
 
 Worker API:
