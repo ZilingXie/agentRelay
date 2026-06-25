@@ -58,7 +58,8 @@ Progress:
 - [x] Verify with a local smoke test.
 - [x] Add Codex App thread bridge proof.
 - [x] Encode requester-side completion ownership in task metadata and API payloads.
-- [ ] Implement controlled delivery back to Zac's origin thread.
+- [x] Implement controlled delivery back to Zac's origin thread.
+- [ ] Package Codex App bridge into a reusable connector/MCP flow.
 
 第一阶段不以 CLI 作为用户体验入口，而以 Codex App thread 作为入口。
 

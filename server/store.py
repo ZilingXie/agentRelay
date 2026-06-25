@@ -52,6 +52,10 @@ class Store:
                     next_action TEXT,
                     terminal_reason TEXT,
                     parent_task_id TEXT,
+                    delivery_status TEXT NOT NULL DEFAULT '',
+                    delivered_to_thread_id TEXT,
+                    delivered_at INTEGER,
+                    delivery_error TEXT,
                     subject TEXT NOT NULL,
                     ttl INTEGER,
                     max_turns INTEGER NOT NULL DEFAULT 12,
@@ -114,6 +118,10 @@ class Store:
             "next_action": "ALTER TABLE tasks ADD COLUMN next_action TEXT",
             "terminal_reason": "ALTER TABLE tasks ADD COLUMN terminal_reason TEXT",
             "parent_task_id": "ALTER TABLE tasks ADD COLUMN parent_task_id TEXT",
+            "delivery_status": "ALTER TABLE tasks ADD COLUMN delivery_status TEXT NOT NULL DEFAULT ''",
+            "delivered_to_thread_id": "ALTER TABLE tasks ADD COLUMN delivered_to_thread_id TEXT",
+            "delivered_at": "ALTER TABLE tasks ADD COLUMN delivered_at INTEGER",
+            "delivery_error": "ALTER TABLE tasks ADD COLUMN delivery_error TEXT",
         }
         for column, sql in migrations.items():
             if column not in columns:
@@ -420,12 +428,21 @@ class Store:
                     pending_on_agent_id = ?,
                     pending_on_human_id = ?,
                     next_action = ?,
+                    delivery_status = CASE WHEN ? = 'delivery_pending' THEN 'pending' ELSE delivery_status END,
                     claimed_by = NULL,
                     claimed_at = NULL,
                     updated_at = ?
                 WHERE task_id = ?
                 """,
-                (next_status, pending_on_agent_id, pending_on_human_id, next_action, now, task_id),
+                (
+                    next_status,
+                    pending_on_agent_id,
+                    pending_on_human_id,
+                    next_action,
+                    next_status,
+                    now,
+                    task_id,
+                ),
             )
             self.add_event_conn(
                 conn,
@@ -453,6 +470,88 @@ class Store:
                 },
                 now,
             )
+            return self.get_task_conn(conn, task_id)
+
+    def mark_delivery(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        now = int(time.time())
+        delivered_by_agent_id = required(payload, "deliveredByAgentId")
+        thread_id = required(payload, "threadId")
+        delivery_status = payload.get("deliveryStatus") or "delivered"
+        if delivery_status not in {"delivered", "failed"}:
+            raise ValueError("deliveryStatus must be delivered or failed")
+        with self.connect() as conn:
+            task = self.get_task_conn(conn, task_id)
+            if not task:
+                return None
+            if delivered_by_agent_id != task["completion_owner_agent_id"]:
+                raise ValueError("only completion_owner_agent_id can mark requester delivery")
+            if thread_id != task["requester_thread_id"]:
+                raise ValueError("delivery threadId must match requester_thread_id")
+            if delivery_status == "delivered":
+                next_status = payload.get("nextStatus") or "waiting_human"
+                pending_on_human_id = payload.get("pendingOnHumanId") or "zac"
+                next_action = payload.get("nextAction") or "Waiting for requester human confirmation."
+                conn.execute(
+                    """
+                    UPDATE tasks
+                    SET status = ?,
+                        delivery_status = 'delivered',
+                        delivered_to_thread_id = ?,
+                        delivered_at = ?,
+                        delivery_error = NULL,
+                        pending_on_agent_id = NULL,
+                        pending_on_human_id = ?,
+                        next_action = ?,
+                        claimed_by = NULL,
+                        claimed_at = NULL,
+                        updated_at = ?
+                    WHERE task_id = ?
+                    """,
+                    (next_status, thread_id, now, pending_on_human_id, next_action, now, task_id),
+                )
+                self.add_event_conn(
+                    conn,
+                    task_id,
+                    "reply.delivered",
+                    {
+                        "deliveredByAgentId": delivered_by_agent_id,
+                        "threadId": thread_id,
+                        "nextStatus": next_status,
+                        "pendingOnHumanId": pending_on_human_id,
+                        "nextAction": next_action,
+                    },
+                    now,
+                )
+            else:
+                error = payload.get("error") or "delivery failed"
+                conn.execute(
+                    """
+                    UPDATE tasks
+                    SET status = 'delivery_pending',
+                        delivery_status = 'failed',
+                        delivered_to_thread_id = ?,
+                        delivery_error = ?,
+                        pending_on_agent_id = ?,
+                        pending_on_human_id = NULL,
+                        next_action = 'Retry delivery to requester thread.',
+                        claimed_by = NULL,
+                        claimed_at = NULL,
+                        updated_at = ?
+                    WHERE task_id = ?
+                    """,
+                    (thread_id, error, delivered_by_agent_id, now, task_id),
+                )
+                self.add_event_conn(
+                    conn,
+                    task_id,
+                    "reply.delivery_failed",
+                    {
+                        "deliveredByAgentId": delivered_by_agent_id,
+                        "threadId": thread_id,
+                        "error": error,
+                    },
+                    now,
+                )
             return self.get_task_conn(conn, task_id)
 
     def close_task(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:

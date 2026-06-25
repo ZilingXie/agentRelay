@@ -88,6 +88,26 @@ def main() -> None:
         raise AssertionError("zac-agent did not claim the returned task")
     print("zac-agent claimed returned task")
 
+    delivered = post_json(
+        f"{base_url}/agentrelay/tasks/{task_id}/deliveries",
+        {
+            "deliveredByAgentId": "zac-agent",
+            "threadId": "zac-thread-abc",
+            "deliveryStatus": "delivered",
+            "pendingOnHumanId": "zac",
+            "nextAction": "Ask Zac whether Frank's proposed time works.",
+        },
+    )["task"]
+    if delivered["delivery_status"] != "delivered":
+        raise AssertionError("delivery status was not recorded")
+    if delivered["delivered_to_thread_id"] != "zac-thread-abc":
+        raise AssertionError("delivery thread was not recorded")
+    if delivered["status"] != "waiting_human":
+        raise AssertionError("successful delivery should wait for human confirmation")
+    if delivered["pending_on_human_id"] != "zac":
+        raise AssertionError("successful delivery should wait on Zac")
+    print("delivered reply to requester thread")
+
     expect_http_error(
         "non-owner close rejected",
         400,
@@ -121,6 +141,7 @@ def main() -> None:
         "thread.created",
         "artifact.submitted",
         "ownership.transferred",
+        "reply.delivered",
         "task.completed",
     ]:
         if expected not in event_types:

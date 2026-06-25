@@ -12,7 +12,8 @@ GitHub repository: https://github.com/ZilingXie/agentRelay
 - [x] Verify with a local smoke test.
 - [x] Add Codex App thread bridge proof.
 - [x] Encode requester-side completion ownership in task metadata and API payloads.
-- [ ] Implement controlled delivery back to Zac's origin thread.
+- [x] Implement controlled delivery back to Zac's origin thread.
+- [ ] Package Codex App bridge into a reusable connector/MCP flow.
 
 ## 1. 第一阶段目标
 
@@ -195,6 +196,7 @@ POST /agentrelay/tasks/:taskId/messages
 POST /agentrelay/tasks/:taskId/artifacts
 POST /agentrelay/tasks/:taskId/status
 POST /agentrelay/tasks/:taskId/close
+POST /agentrelay/tasks/:taskId/deliveries
 ```
 
 Worker API:

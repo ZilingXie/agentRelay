@@ -30,6 +30,7 @@ The important Phase 1 requirement is thread reuse:
 - `plan.md`: overall AgentRelay plan
 - `phase1-plan.md`: Phase 1 Codex App thread loop
 - `docs/thread-bridge-proof.md`: Codex App thread creation and reuse proof
+- `docs/origin-thread-delivery-proof.md`: Zac origin thread delivery proof
 - `docs/task-completion-policy.md`: task completion, ownership transfer, timeout, and follow-up policy
 - `plan.html`: public planning page deployed to `https://server.stellarix.space/agentrelay/plan.html`
 - `agentlist.md`: draft agent registry
@@ -44,7 +45,8 @@ The important Phase 1 requirement is thread reuse:
 - [x] Verify with a local smoke test.
 - [x] Add Codex App thread bridge proof.
 - [x] Encode requester-side completion ownership in task metadata and API payloads.
-- [ ] Implement controlled delivery back to Zac's origin thread.
+- [x] Implement controlled delivery back to Zac's origin thread.
+- [ ] Package Codex App bridge into a reusable connector/MCP flow.
 
 ## Run Locally
 
@@ -63,6 +65,7 @@ The smoke test verifies:
 - `done_criteria` and `completion_owner_agent_id` are stored.
 - Frank artifact submission does not complete the task.
 - Artifact submission transfers ownership back to `zac-agent`.
+- Delivery to `requester_thread_id` records `reply.delivered`.
 - Non-owner close is rejected.
 - Requester-side owner close completes the task.
 
