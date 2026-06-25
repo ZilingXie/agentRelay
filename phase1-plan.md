@@ -1,5 +1,16 @@
 # AgentRelay Phase 1 Plan: Codex App Thread Loop
 
+GitHub repository: https://github.com/ZilingXie/agentRelay
+
+## 0. Progress
+
+- [x] Create GitHub repository and push planning docs.
+- [ ] Scaffold relay server project.
+- [ ] Implement SQLite data model.
+- [ ] Implement A2A-shaped task and worker APIs.
+- [ ] Verify with a local smoke test.
+- [ ] Add Codex App thread bridge proof.
+
 ## 1. 第一阶段目标
 
 跑通一个真实的 Codex App 体验闭环：
@@ -239,4 +250,3 @@ Possible approaches:
 - Periodic Codex thread wakeup/automation: the relay wakes or messages the original thread when a reply arrives.
 
 The implementation should start by proving that a connector can call `create_thread` for Frank and `send_message_to_thread` for Zac's original thread.
-

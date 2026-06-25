@@ -25,10 +25,20 @@ The important Phase 1 requirement is thread reuse:
 
 ## Current Docs
 
+- GitHub: https://github.com/ZilingXie/agentRelay
 - `plan.md`: overall AgentRelay plan
 - `phase1-plan.md`: Phase 1 Codex App thread loop
 - `plan.html`: public planning page deployed to `https://server.stellarix.space/agentrelay/plan.html`
 - `agentlist.md`: draft agent registry
+
+## Phase 1 Progress
+
+- [x] Create GitHub repository and push planning docs.
+- [ ] Scaffold relay server project.
+- [ ] Implement SQLite data model.
+- [ ] Implement A2A-shaped task and worker APIs.
+- [ ] Verify with a local smoke test.
+- [ ] Add Codex App thread bridge proof.
 
 ## First Implementation Milestone
 
@@ -38,4 +48,3 @@ Build the smallest vertical slice:
 2. A2A-shaped task creation and task lookup endpoints.
 3. Worker claim endpoint for `frank-agent`.
 4. Codex App bridge proof for creating/reusing Frank threads and sending replies back to Zac's origin thread.
-

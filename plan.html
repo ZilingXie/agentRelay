@@ -321,6 +321,7 @@
       <div>
         <h1>AgentRelay PoC Plan</h1>
         <p class="subtitle">Use A2A as the agent-to-agent protocol, and use this public VM as the relay server for local Codex-style agents that do not have public IP addresses.</p>
+        <p class="subtitle">GitHub: <a href="https://github.com/ZilingXie/agentRelay">github.com/ZilingXie/agentRelay</a></p>
       </div>
       <div class="status-box">
         <strong>Current decision</strong>
@@ -569,6 +570,16 @@ AgentRelay delivery
 }</code></pre>
 
       <p class="note">The main implementation risk is whether a background connector can create and continue Codex App threads directly. If not, Phase 1 needs a small Codex App bridge or MCP server that exposes thread delivery operations to the relay.</p>
+
+      <h3>Progress</h3>
+      <ul>
+        <li>Done: create GitHub repository and push planning docs.</li>
+        <li>Next: scaffold relay server project.</li>
+        <li>Pending: implement SQLite data model.</li>
+        <li>Pending: implement A2A-shaped task and worker APIs.</li>
+        <li>Pending: verify with a local smoke test.</li>
+        <li>Pending: add Codex App thread bridge proof.</li>
+      </ul>
     </section>
 
     <section id="mvp">

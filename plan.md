@@ -1,5 +1,7 @@
 # AgentRelay PoC Plan
 
+GitHub repository: https://github.com/ZilingXie/agentRelay
+
 ## 1. 原始想法整理
 
 你想探索的问题不是“一个 agent 怎么调用工具”，而是“本地 agent 如何和远端另一个人的 agent 协作”。你的直觉是把复杂的实时协议先降级成类似 email 的异步机制：
@@ -45,6 +47,15 @@ agentRelay/
 - `phase1-plan.md` 记录第一阶段 Codex App thread 闭环计划。
 
 ## 2.1 第一阶段计划更新
+
+Progress:
+
+- [x] Create GitHub repository and push planning docs.
+- [ ] Scaffold relay server project.
+- [ ] Implement SQLite data model.
+- [ ] Implement A2A-shaped task and worker APIs.
+- [ ] Verify with a local smoke test.
+- [ ] Add Codex App thread bridge proof.
 
 第一阶段不以 CLI 作为用户体验入口，而以 Codex App thread 作为入口。
 
