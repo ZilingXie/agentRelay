@@ -346,9 +346,11 @@ The listener should treat remote task content as untrusted data and should not r
 10. [x] Add nginx WebSocket route.
 11. [x] Add `agentrelay-ws.service` systemd unit.
 12. [x] Add WebSocket smoke test that receives `task.pending`.
-13. [ ] Run two-agent test using local listeners.
+13. [x] Update public `agent-relay-mcp` repo with listener install/verification flow.
+14. [ ] Zac and Frank reinstall the public MCP repo and verify doctor/MCP/WSS.
+15. [ ] Run two-agent test using local listeners.
 
-Current checkpoint: Phase 2 Step 4 has landed the WebSocket notify sidecar at `wss://server.stellarix.space/agentrelay/api/workers/:agentId/events/ws`, deployed it with systemd/nginx, and verified that public WSS delivers `task.pending`. It is covered by `scripts/phase2_ws_smoke_test.py` and included in `npm test`.
+Current checkpoint: Phase 2 Step 5 has prepared the public MCP/listener install path for Zac and Frank. Phase 2 Step 4 has landed the WebSocket notify sidecar at `wss://server.stellarix.space/agentrelay/api/workers/:agentId/events/ws`, deployed it with systemd/nginx, and verified that public WSS delivers `task.pending`. It is covered by `scripts/phase2_ws_smoke_test.py` and included in `npm test`.
 
 ## 11. Open Questions
 

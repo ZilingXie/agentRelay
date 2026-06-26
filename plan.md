@@ -135,6 +135,8 @@ Progress:
 - [x] Add automatic pending event smoke coverage.
 - [x] Add WebSocket sidecar and WSS deployment.
 - [x] Add WebSocket smoke test to `npm test`.
+- [x] Update public `agent-relay-mcp` repo with listener install/verification flow.
+- [ ] Zac and Frank reinstall public MCP repo and verify doctor/MCP/WSS.
 - [ ] Run two-agent test using local listeners.
 
 部署方式：

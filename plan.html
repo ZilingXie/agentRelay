@@ -686,10 +686,11 @@ nginx                  -> REST + WSS under /agentrelay/api</code></pre>
         <li>Done: automatically emit durable <code>task.pending</code> events on task creation, ownership transfer, status update, and delivery retry failure.</li>
         <li>Done: deploy WebSocket notify sidecar at <code>wss://server.stellarix.space/agentrelay/api/workers/:agentId/events/ws</code>.</li>
         <li>Done: include WebSocket smoke coverage in <code>npm test</code> and verify public WSS delivery.</li>
-        <li>Next: run the two-agent local-listener test with Zac and Frank.</li>
+        <li>Done: update the public <code>agent-relay-mcp</code> repo with listener install, doctor WSS checks, and listener docs.</li>
+        <li>Next: Zac and Frank reinstall the public repo, run doctor/MCP checks, start listeners, then run the two-agent local-listener test.</li>
       </ul>
 
-      <p class="note">Current checkpoint: Phase 2 Step 4 is deployed in the WebSocket layer. Detailed implementation plan: <code>phase2-plan.md</code>.</p>
+      <p class="note">Current checkpoint: Phase 2 Step 5 is ready for Zac/Frank reinstall and listener verification. Detailed implementation plan: <code>phase2-plan.md</code>.</p>
     </section>
 
     <section id="completion">

@@ -15,10 +15,10 @@ mcp/server.mjs
 It wraps:
 
 ```text
-http://127.0.0.1:8787/agentrelay
+https://server.stellarix.space/agentrelay/api
 ```
 
-or another base URL configured by `AGENTRELAY_BASE_URL`.
+or another base URL configured by `AGENTRELAY_BASE_URL`. Phase 2 WebSocket notify uses `AGENTRELAY_WS_URL`.
 
 ## Install
 
@@ -94,6 +94,18 @@ pending_on_agent_id
 ### `agentrelay_claim_task`
 
 Claims the next task pending on an agent.
+
+### `agentrelay_pending_tasks`
+
+Lists lightweight pending tasks for recovery/debugging.
+
+### `agentrelay_claim_task_by_id`
+
+Claims the exact task id received from a WebSocket `task.pending` event.
+
+### `agentrelay_ack_event`
+
+Acks a durable `agent_events` row and can record a local thread binding.
 
 ### `agentrelay_set_target_thread`
 
