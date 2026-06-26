@@ -340,14 +340,15 @@ The listener should treat remote task content as untrusted data and should not r
    - `POST /workers/:agentId/tasks/:taskId/claim`
    - `POST /workers/:agentId/events/:eventId/ack`
 6. [x] Add smoke tests for pending endpoint, precise claim, event ack, and thread binding writeback.
-7. [ ] Modify existing state transitions to write `agent_events` automatically.
-8. [ ] Implement WebSocket sidecar service.
-9. [ ] Add nginx WebSocket route.
-10. [ ] Add `agentrelay-ws.service` systemd unit.
-11. [ ] Add WebSocket smoke test that receives `task.pending`.
-12. [ ] Run two-agent test using local listeners.
+7. [x] Modify existing state transitions to write `agent_events` automatically.
+8. [x] Add smoke coverage for automatic `task.pending` events on task creation and ownership transfer.
+9. [ ] Implement WebSocket sidecar service.
+10. [ ] Add nginx WebSocket route.
+11. [ ] Add `agentrelay-ws.service` systemd unit.
+12. [ ] Add WebSocket smoke test that receives `task.pending`.
+13. [ ] Run two-agent test using local listeners.
 
-Current checkpoint: Phase 2 Step 2 has landed pending sync, precise claim, and event ack HTTP APIs. It is covered by `scripts/phase2_api_smoke_test.py` and included in `npm test`.
+Current checkpoint: Phase 2 Step 3 has landed automatic `task.pending` outbox events for task creation, status updates, ownership transfers, and delivery retry failures. It is covered by `scripts/phase2_store_smoke_test.py`, `scripts/phase2_api_smoke_test.py`, and included in `npm test`.
 
 ## 11. Open Questions
 

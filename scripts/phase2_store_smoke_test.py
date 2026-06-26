@@ -29,27 +29,38 @@ def main() -> None:
         )
         task_id = task["task_id"]
 
-        event = store.create_agent_event(
-            "frank-agent",
-            "task.pending",
-            task_id,
-            {
-                "taskId": task_id,
-                "subject": task["subject"],
-                "status": task["status"],
-                "reason": "task.created",
-            },
-        )
+        pending_events = store.list_agent_events("frank-agent")
+        if len(pending_events) != 1:
+            raise AssertionError("task creation should emit one pending event for frank-agent")
+        event = pending_events[0]
         if event["agent_id"] != "frank-agent":
             raise AssertionError("agent event was not scoped to frank-agent")
         if event["event_type"] != "task.pending":
             raise AssertionError("agent event type was not stored")
         if event["payload"]["taskId"] != task_id:
             raise AssertionError("agent event payload was not decoded")
+        if event["payload"]["reason"] != "task.created":
+            raise AssertionError("task creation pending event reason was not stored")
 
-        pending_events = store.list_agent_events("frank-agent")
-        if [row["event_id"] for row in pending_events] != [event["event_id"]]:
-            raise AssertionError("unacked event list did not include the new event")
+        after_artifact = store.submit_artifact(
+            task_id,
+            {
+                "from": "frank-agent",
+                "to": "zac-agent",
+                "nextStatus": "artifact_submitted",
+                "pendingOnAgentId": "zac-agent",
+                "nextAction": "Zac should evaluate Frank's candidate time.",
+                "artifact": {
+                    "kind": "meeting_availability",
+                    "parts": [{"kind": "text", "text": "Frank is available at 10:00."}],
+                },
+            },
+        )
+        if not after_artifact or after_artifact["pending_on_agent_id"] != "zac-agent":
+            raise AssertionError("artifact should transfer pending ownership to zac-agent")
+        zac_events = store.list_agent_events("zac-agent")
+        if len(zac_events) != 1 or zac_events[0]["payload"]["reason"] != "ownership.transferred":
+            raise AssertionError("artifact transfer should emit one pending event for zac-agent")
 
         acked = store.ack_agent_event("frank-agent", event["event_id"])
         if not acked or not acked["acked_at"]:
@@ -86,7 +97,17 @@ def main() -> None:
         if len(bindings) != 1 or bindings[0]["thread_id"] != "frank-codex-thread-2":
             raise AssertionError("get_task did not include threadBindings")
 
-        print(json.dumps({"ok": True, "taskId": task_id, "eventId": event["event_id"]}, indent=2))
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "taskId": task_id,
+                    "eventId": event["event_id"],
+                    "zacEventId": zac_events[0]["event_id"],
+                },
+                indent=2,
+            )
+        )
 
 
 if __name__ == "__main__":

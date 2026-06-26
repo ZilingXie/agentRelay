@@ -320,6 +320,7 @@ class Store:
                 },
                 now,
             )
+            self.create_pending_agent_event_conn(conn, task_id, "task.created", now)
             return self.get_task_conn(conn, task_id)
 
     def get_task(self, task_id: str) -> dict[str, Any] | None:
@@ -533,6 +534,7 @@ class Store:
                     (pending_on_human_id, task_id),
                 )
             self.add_event_conn(conn, task_id, "task.status_updated", update_fields, now)
+            self.create_pending_agent_event_conn(conn, task_id, "task.status_updated", now)
             return self.get_task_conn(conn, task_id)
 
     def submit_artifact(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -623,6 +625,7 @@ class Store:
                 },
                 now,
             )
+            self.create_pending_agent_event_conn(conn, task_id, "ownership.transferred", now)
             return self.get_task_conn(conn, task_id)
 
     def mark_delivery(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -705,6 +708,7 @@ class Store:
                     },
                     now,
                 )
+                self.create_pending_agent_event_conn(conn, task_id, "reply.delivery_failed", now)
             return self.get_task_conn(conn, task_id)
 
     def close_task(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -748,6 +752,28 @@ class Store:
     ) -> dict[str, Any]:
         with self.connect() as conn:
             return self.create_agent_event_conn(conn, agent_id, event_type, task_id, payload)
+
+    def create_pending_agent_event_conn(
+        self,
+        conn: sqlite3.Connection,
+        task_id: str,
+        reason: str,
+        created_at: int | None = None,
+    ) -> dict[str, Any] | None:
+        task = self.get_task_conn(conn, task_id)
+        if not task:
+            return None
+        agent_id = task.get("pending_on_agent_id")
+        if not agent_id or task["status"] in TERMINAL_STATES:
+            return None
+        return self.create_agent_event_conn(
+            conn,
+            agent_id,
+            "task.pending",
+            task_id,
+            pending_event_payload(task, reason),
+            created_at,
+        )
 
     def create_agent_event_conn(
         self,
@@ -954,6 +980,22 @@ def summarize_task(row: sqlite3.Row) -> dict[str, Any]:
         "requesterThreadId": data["requester_thread_id"],
         "updatedAt": data["updated_at"],
         "createdAt": data["created_at"],
+    }
+
+
+def pending_event_payload(task: dict[str, Any], reason: str) -> dict[str, Any]:
+    return {
+        "type": "task.pending",
+        "taskId": task["task_id"],
+        "contextId": task["context_id"],
+        "subject": task["subject"],
+        "status": task["status"],
+        "agentId": task["pending_on_agent_id"],
+        "pendingOnAgentId": task["pending_on_agent_id"],
+        "pendingOnHumanId": task["pending_on_human_id"],
+        "nextAction": task["next_action"],
+        "updatedAt": task["updated_at"],
+        "reason": reason,
     }
 
 

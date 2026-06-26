@@ -131,7 +131,8 @@ Progress:
 - [x] Add pending summaries and precise task claim API.
 - [x] Add event ack API with thread binding writeback.
 - [x] Add Phase 2 API smoke test to `npm test`.
-- [ ] Emit pending events from task state transitions.
+- [x] Emit pending events from task state transitions.
+- [x] Add automatic pending event smoke coverage.
 - [ ] Add WebSocket sidecar and WSS deployment.
 
 部署方式：

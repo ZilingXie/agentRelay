@@ -683,10 +683,11 @@ nginx                  -> REST + WSS under /agentrelay/api</code></pre>
         <li>Done: include Phase 2 store smoke coverage in <code>npm test</code>.</li>
         <li>Done: add pending sync, precise claim, and event ack HTTP APIs.</li>
         <li>Done: include Phase 2 API smoke coverage in <code>npm test</code>.</li>
-        <li>Next: emit pending events from state transitions, then implement the WebSocket sidecar.</li>
+        <li>Done: automatically emit durable <code>task.pending</code> events on task creation, ownership transfer, status update, and delivery retry failure.</li>
+        <li>Next: implement the WebSocket sidecar that streams these pending events to local listeners.</li>
       </ul>
 
-      <p class="note">Current checkpoint: Phase 2 Step 2 is implemented in the REST layer. Detailed implementation plan: <code>phase2-plan.md</code>.</p>
+      <p class="note">Current checkpoint: Phase 2 Step 3 is implemented in the state-transition layer. Detailed implementation plan: <code>phase2-plan.md</code>.</p>
     </section>
 
     <section id="completion">

@@ -101,17 +101,12 @@ def main() -> None:
             if [item["taskId"] for item in pending_after_claim] != [task_id]:
                 raise AssertionError("pending sync should include same-agent claimed work for recovery")
 
-            event = Store(db_path).create_agent_event(
-                "frank-agent",
-                "task.pending",
-                task_id,
-                {
-                    "taskId": task_id,
-                    "subject": "Phase 2 API smoke",
-                    "status": "claimed",
-                    "reason": "api_smoke_test",
-                },
-            )
+            events = Store(db_path).list_agent_events("frank-agent")
+            if len(events) != 1:
+                raise AssertionError("task creation should emit one pending event for frank-agent")
+            event = events[0]
+            if event["payload"].get("reason") != "task.created":
+                raise AssertionError("auto pending event should record task.created reason")
             expect_http_error(
                 "wrong event taskId rejected",
                 400,
