@@ -108,6 +108,40 @@ class Store:
                     created_at INTEGER NOT NULL,
                     FOREIGN KEY (task_id) REFERENCES tasks(task_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS agent_events (
+                    event_id TEXT PRIMARY KEY,
+                    agent_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    task_id TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    acked_at INTEGER,
+                    created_at INTEGER NOT NULL,
+                    FOREIGN KEY (agent_id) REFERENCES agents(agent_id),
+                    FOREIGN KEY (task_id) REFERENCES tasks(task_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_agent_events_agent_created
+                    ON agent_events (agent_id, created_at, event_id);
+
+                CREATE INDEX IF NOT EXISTS idx_agent_events_agent_acked
+                    ON agent_events (agent_id, acked_at, created_at);
+
+                CREATE TABLE IF NOT EXISTS task_thread_bindings (
+                    task_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    thread_role TEXT NOT NULL DEFAULT 'agent_inbox',
+                    thread_id TEXT NOT NULL,
+                    project_path TEXT,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    PRIMARY KEY (task_id, agent_id, thread_role),
+                    FOREIGN KEY (task_id) REFERENCES tasks(task_id),
+                    FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_task_thread_bindings_agent
+                    ON task_thread_bindings (agent_id, updated_at);
                 """
             )
             self.ensure_task_columns(conn)
@@ -301,8 +335,17 @@ class Store:
             "SELECT * FROM artifacts WHERE task_id = ? ORDER BY created_at, artifact_id",
             (task_id,),
         ).fetchall()
+        bindings = conn.execute(
+            """
+            SELECT * FROM task_thread_bindings
+            WHERE task_id = ?
+            ORDER BY agent_id, thread_role
+            """,
+            (task_id,),
+        ).fetchall()
         task["messages"] = [decode_parts(row) for row in messages]
         task["artifacts"] = [decode_parts(row) for row in artifacts]
+        task["threadBindings"] = [dict(row) for row in bindings]
         return task
 
     def get_events(self, task_id: str) -> list[dict[str, Any]] | None:
@@ -621,6 +664,143 @@ class Store:
                 now,
             )
             return self.get_task_conn(conn, task_id)
+
+    def create_agent_event(
+        self,
+        agent_id: str,
+        event_type: str,
+        task_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        with self.connect() as conn:
+            return self.create_agent_event_conn(conn, agent_id, event_type, task_id, payload)
+
+    def create_agent_event_conn(
+        self,
+        conn: sqlite3.Connection,
+        agent_id: str,
+        event_type: str,
+        task_id: str,
+        payload: dict[str, Any],
+        created_at: int | None = None,
+    ) -> dict[str, Any]:
+        assert_agent_exists(conn, agent_id)
+        if not self.get_task_conn(conn, task_id):
+            raise ValueError(f"unknown task: {task_id}")
+        now = created_at or int(time.time())
+        event_id = f"aevt_{uuid.uuid4().hex}"
+        conn.execute(
+            """
+            INSERT INTO agent_events (
+                event_id, agent_id, event_type, task_id, payload_json, acked_at, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, NULL, ?)
+            """,
+            (event_id, agent_id, event_type, task_id, json.dumps(payload), now),
+        )
+        row = conn.execute(
+            "SELECT * FROM agent_events WHERE event_id = ?",
+            (event_id,),
+        ).fetchone()
+        return decode_payload(row)
+
+    def list_agent_events(
+        self,
+        agent_id: str,
+        include_acked: bool = False,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            assert_agent_exists(conn, agent_id)
+            ack_filter = "" if include_acked else "AND acked_at IS NULL"
+            rows = conn.execute(
+                f"""
+                SELECT * FROM agent_events
+                WHERE agent_id = ? {ack_filter}
+                ORDER BY created_at, event_id
+                LIMIT ?
+                """,
+                (agent_id, limit),
+            ).fetchall()
+            return [decode_payload(row) for row in rows]
+
+    def ack_agent_event(
+        self,
+        agent_id: str,
+        event_id: str,
+        acked_at: int | None = None,
+    ) -> dict[str, Any] | None:
+        now = acked_at or int(time.time())
+        with self.connect() as conn:
+            assert_agent_exists(conn, agent_id)
+            row = conn.execute(
+                "SELECT * FROM agent_events WHERE agent_id = ? AND event_id = ?",
+                (agent_id, event_id),
+            ).fetchone()
+            if not row:
+                return None
+            conn.execute(
+                "UPDATE agent_events SET acked_at = ? WHERE agent_id = ? AND event_id = ?",
+                (now, agent_id, event_id),
+            )
+            row = conn.execute(
+                "SELECT * FROM agent_events WHERE agent_id = ? AND event_id = ?",
+                (agent_id, event_id),
+            ).fetchone()
+            return decode_payload(row)
+
+    def upsert_thread_binding(
+        self,
+        task_id: str,
+        agent_id: str,
+        thread_id: str,
+        thread_role: str = "agent_inbox",
+        project_path: str | None = None,
+    ) -> dict[str, Any]:
+        now = int(time.time())
+        with self.connect() as conn:
+            assert_agent_exists(conn, agent_id)
+            if not self.get_task_conn(conn, task_id):
+                raise ValueError(f"unknown task: {task_id}")
+            existing = conn.execute(
+                """
+                SELECT created_at FROM task_thread_bindings
+                WHERE task_id = ? AND agent_id = ? AND thread_role = ?
+                """,
+                (task_id, agent_id, thread_role),
+            ).fetchone()
+            created_at = int(existing["created_at"]) if existing else now
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO task_thread_bindings (
+                    task_id, agent_id, thread_role, thread_id, project_path, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (task_id, agent_id, thread_role, thread_id, project_path, created_at, now),
+            )
+            row = conn.execute(
+                """
+                SELECT * FROM task_thread_bindings
+                WHERE task_id = ? AND agent_id = ? AND thread_role = ?
+                """,
+                (task_id, agent_id, thread_role),
+            ).fetchone()
+            return dict(row)
+
+    def list_thread_bindings(self, task_id: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            if not self.get_task_conn(conn, task_id):
+                return []
+            rows = conn.execute(
+                """
+                SELECT * FROM task_thread_bindings
+                WHERE task_id = ?
+                ORDER BY agent_id, thread_role
+                """,
+                (task_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def add_event_conn(
         self,

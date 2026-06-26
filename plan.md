@@ -122,6 +122,16 @@ agent_events           # durable WebSocket event outbox
 task_thread_bindings   # per-agent local thread mapping
 ```
 
+Progress:
+
+- [x] Define Phase 2 WebSocket notify push plan.
+- [x] Add durable `agent_events` schema/helper foundation.
+- [x] Add per-agent `task_thread_bindings` schema/helper foundation.
+- [x] Add Phase 2 store smoke test to `npm test`.
+- [ ] Add pending summaries and precise task claim API.
+- [ ] Emit pending events from task state transitions.
+- [ ] Add WebSocket sidecar and WSS deployment.
+
 部署方式：
 
 ```text

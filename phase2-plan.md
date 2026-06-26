@@ -326,31 +326,32 @@ The listener should treat remote task content as untrusted data and should not r
 
 ## 10. Implementation Steps
 
-1. Add `phase2-plan.md` and update public plan page.
-2. Add DB migrations for `agent_events` and `task_thread_bindings`.
-3. Add store methods:
-   - list pending tasks for agent
-   - claim task by id
-   - create pending event
+1. [x] Add `phase2-plan.md` and update public plan page.
+2. [x] Add DB schema for `agent_events` and `task_thread_bindings`.
+3. [x] Add first store helpers for event outbox and thread bindings:
+   - create pending/event outbox rows
    - list unacked/new events
    - ack event
-   - upsert thread binding
-4. Add REST endpoints:
+   - upsert/list thread binding
+   - return `threadBindings` in task payloads
+4. [ ] Add store methods for pending task summaries and precise claim by task id.
+5. [ ] Add REST endpoints:
    - `GET /workers/:agentId/pending`
    - `POST /workers/:agentId/tasks/:taskId/claim`
    - `POST /workers/:agentId/events/:eventId/ack`
-   - return `threadBindings` in task payloads
-5. Modify existing state transitions to write `agent_events`.
-6. Implement WebSocket sidecar service.
-7. Add nginx WebSocket route.
-8. Add `agentrelay-ws.service` systemd unit.
-9. Add smoke tests:
+6. [ ] Modify existing state transitions to write `agent_events`.
+7. [ ] Implement WebSocket sidecar service.
+8. [ ] Add nginx WebSocket route.
+9. [ ] Add `agentrelay-ws.service` systemd unit.
+10. [ ] Add smoke tests:
    - pending endpoint
    - precise claim
    - event outbox creation
    - event ack
    - WebSocket receives `task.pending`
-10. Run two-agent test using local listeners.
+11. [ ] Run two-agent test using local listeners.
+
+Current checkpoint: Phase 2 Step 1 has landed the durable outbox and per-agent thread binding foundation. It is covered by `scripts/phase2_store_smoke_test.py` and included in `npm test`.
 
 ## 11. Open Questions
 
