@@ -20,11 +20,28 @@ X-AgentRelay-Agent-Id: <agent_id>
 X-AgentRelay-Username: <username>
 ```
 
-## Generate a token
+## Create or replace an identity
+
+Use `upsert_agent_identity.py` when you want to create a cloud token and write it into the active relay auth file.
 
 ```bash
-python3 scripts/generate_agent_token.py --username zac --agent-id zac-agent
-python3 scripts/generate_agent_token.py --username frank --agent-id frank-agent
+python3 scripts/upsert_agent_identity.py zac
+sudo systemctl restart agentrelay
+```
+
+You only need the username. The default `agent_id` is derived from the username:
+
+```text
+zac -> zac-agent
+Zac Xie -> zac-xie-agent
+```
+
+The script updates `data/agentrelay-auth.json` and writes a local-copy env file under `data/local-env/<username>.env` so you can copy the values into the user's local `agent-relay-mcp/.env`.
+
+Use `generate_agent_token.py` only when you want to print a token without writing it to the active relay auth file:
+
+```bash
+python3 scripts/generate_agent_token.py zac
 ```
 
 ## Configure the relay

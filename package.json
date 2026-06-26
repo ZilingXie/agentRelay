@@ -13,7 +13,7 @@
   "scripts": {
     "mcp:server": "node mcp/server.mjs",
     "test:mcp": "node scripts/mcp_smoke_test.mjs",
-    "test:python": "python3 -m py_compile server/app.py server/store.py scripts/smoke_test.py scripts/auth_smoke_test.py scripts/generate_agent_token.py",
+    "test:python": "python3 -m py_compile server/app.py server/store.py scripts/smoke_test.py scripts/auth_smoke_test.py scripts/generate_agent_token.py scripts/upsert_agent_identity.py",
     "test:auth": "python3 scripts/auth_smoke_test.py",
     "test": "npm run test:python && npm run test:auth && npm run test:mcp"
   },

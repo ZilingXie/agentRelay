@@ -17,6 +17,7 @@ DEFAULT_DB_PATH = "./data/agentrelay.sqlite3"
 class AgentRelayHandler(BaseHTTPRequestHandler):
     store: Store
     auth_identities: dict[str, dict[str, str]] = {}
+    auth_required: bool = False
 
     def do_GET(self) -> None:
         try:
@@ -147,7 +148,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         self.respond_error(404, "not found")
 
     def require_auth(self) -> dict[str, str] | None:
-        if not self.auth_identities:
+        if not self.auth_required:
             return {"username": "", "agent_id": ""}
         authorization = self.headers.get("Authorization", "")
         prefix = "Bearer "
@@ -171,7 +172,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         return identity
 
     def require_agent(self, auth: dict[str, str], requested_agent_id: Any) -> bool:
-        if not self.auth_identities:
+        if not self.auth_required:
             return True
         if not isinstance(requested_agent_id, str) or not requested_agent_id:
             self.respond_error(400, "missing agent id for authenticated action")
@@ -248,22 +249,24 @@ def create_server() -> ThreadingHTTPServer:
     db_path = os.environ.get("AGENTRELAY_DB_PATH", DEFAULT_DB_PATH)
     store = Store(db_path)
     AgentRelayHandler.store = store
-    AgentRelayHandler.auth_identities = load_auth_identities()
+    auth_required, identities = load_auth_identities()
+    AgentRelayHandler.auth_required = auth_required
+    AgentRelayHandler.auth_identities = identities
     return ThreadingHTTPServer((host, port), AgentRelayHandler)
 
 
-def load_auth_identities() -> dict[str, dict[str, str]]:
+def load_auth_identities() -> tuple[bool, dict[str, dict[str, str]]]:
     auth_file = os.environ.get("AGENTRELAY_AUTH_FILE", "")
     if auth_file:
         with open(auth_file, "r", encoding="utf-8") as handle:
             raw_identities = json.load(handle)
         if not isinstance(raw_identities, list):
             raise ValueError("AGENTRELAY_AUTH_FILE must contain a JSON array")
-        return parse_auth_identities(raw_identities)
+        return True, parse_auth_identities(raw_identities)
 
     raw_tokens = os.environ.get("AGENTRELAY_TOKENS", "")
     if not raw_tokens:
-        return {}
+        return False, {}
     identities = []
     for entry in raw_tokens.split(","):
         if not entry.strip():
@@ -273,7 +276,7 @@ def load_auth_identities() -> dict[str, dict[str, str]]:
             raise ValueError("AGENTRELAY_TOKENS entries must be username:agent_id:token")
         username, agent_id, token = parts
         identities.append({"username": username, "agent_id": agent_id, "token": token})
-    return parse_auth_identities(identities)
+    return True, parse_auth_identities(identities)
 
 
 def parse_auth_identities(raw_identities: list[dict[str, Any]]) -> dict[str, dict[str, str]]:

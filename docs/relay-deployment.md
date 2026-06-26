@@ -64,7 +64,16 @@ Current token file:
 
 The file is intentionally not committed. Keep mode `0600`.
 
-Generate a new identity from username only:
+Create or replace an identity from username only:
+
+```bash
+python3 scripts/upsert_agent_identity.py zac
+sudo systemctl restart agentrelay
+```
+
+This updates `data/agentrelay-auth.json` and writes `data/local-env/zac.env` for local `.env` copy/paste.
+
+Generate a token without writing it to the active auth file:
 
 ```bash
 python3 scripts/generate_agent_token.py zac
