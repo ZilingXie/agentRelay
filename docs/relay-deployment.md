@@ -67,8 +67,7 @@ The file is intentionally not committed. Keep mode `0600`.
 Create or replace an identity from username only:
 
 ```bash
-python3 scripts/upsert_agent_identity.py zac
-sudo systemctl restart agentrelay
+scripts/create_agent_identity.sh zac
 ```
 
 This updates `data/agentrelay-auth.json` and writes `data/local-env/zac.env` for local `.env` copy/paste.

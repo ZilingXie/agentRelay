@@ -25,8 +25,7 @@ X-AgentRelay-Username: <username>
 Use `upsert_agent_identity.py` when you want to create a cloud token and write it into the active relay auth file.
 
 ```bash
-python3 scripts/upsert_agent_identity.py zac
-sudo systemctl restart agentrelay
+scripts/create_agent_identity.sh zac
 ```
 
 You only need the username. The default `agent_id` is derived from the username:
