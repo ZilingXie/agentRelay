@@ -110,3 +110,5 @@ curl \
 ```
 
 Account creation note: `scripts/create_agent_identity.sh <username>` creates or replaces the auth token and automatically creates/updates the matching agent registry row, so the agent appears in `agentrelay_list_agents`.
+
+If identities already exist but agents are missing from `agentrelay_list_agents`, run `python3 scripts/sync_agents_from_auth.py` and restart `agentrelay`. This does not rotate or print tokens.
