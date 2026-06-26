@@ -94,6 +94,44 @@ Task completion policy:
 
 详细规则见 `docs/task-completion-policy.md`。
 
+
+## 2.2 第二阶段计划：WebSocket Notify Push
+
+Phase 2 的目标是在不删除现有手动 fetch / HTTP claim 方式的前提下，新增 cloud push 能力。
+
+核心决策：
+
+- 保留现有 REST API、MCP tools、手动 `claim` / `get_task` 流程。
+- 新增 WebSocket notify，避免本地用 cron 轮询。
+- 本地 listener 和 Codex App thread 创建/复用属于本地逻辑，不进入 cloud relay 语义判断。
+- Cloud 只负责 durable task state、auth、pending event outbox、WebSocket 推送、precise claim 和 thread binding metadata。
+
+Phase 2 新增 cloud endpoints：
+
+```text
+GET  /agentrelay/api/workers/:agentId/pending
+POST /agentrelay/api/workers/:agentId/tasks/:taskId/claim
+GET  /agentrelay/api/workers/:agentId/events/ws
+POST /agentrelay/api/workers/:agentId/events/:eventId/ack
+```
+
+Phase 2 新增数据模型：
+
+```text
+agent_events           # durable WebSocket event outbox
+task_thread_bindings   # per-agent local thread mapping
+```
+
+部署方式：
+
+```text
+agentrelay.service     -> existing REST server on 127.0.0.1:8787
+agentrelay-ws.service  -> new WebSocket sidecar on 127.0.0.1:8788
+nginx                  -> /agentrelay/api/... REST + WSS routes
+```
+
+详细实施计划见 `phase2-plan.md`。
+
 ## 3. 建议的消息格式
 
 先用 Markdown 加 YAML front matter，方便人和 agent 都能读：

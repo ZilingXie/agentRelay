@@ -336,6 +336,7 @@
       <a href="#architecture">Architecture</a>
       <a href="#steps">Steps</a>
       <a href="#phase1-thread">Phase 1</a>
+      <a href="#phase2-push">Phase 2</a>
       <a href="#completion">Completion</a>
       <a href="#mvp">MVP</a>
       <a href="#risks">Risks</a>
@@ -601,8 +602,87 @@ AGENTRELAY_BASE_URL = "http://127.0.0.1:8787/agentrelay"</code></pre>
         <li>Done: add Phase 1 username/token auth support for public MCP clients.</li>
         <li>Done: deploy AgentRelay behind systemd and nginx HTTPS reverse proxy.</li>
         <li>Done: correct public MCP installer docs to a two-phase flow: configure and write <code>.env</code> template first, then user fills <code>.env</code> and restarts, then agent runs doctor and MCP checks.</li>
-        <li>Next: configure Codex App to use AgentRelay MCP and run the full Phase 1 meeting scenario.</li>
+        <li>Next: implement Phase 2 WebSocket notify push while keeping manual fetch available.</li>
       </ul>
+    </section>
+
+
+    <section id="phase2-push">
+      <h2>6.5 Phase 2: WebSocket Notify Push</h2>
+      <p>Phase 2 keeps the current manual fetch and HTTP claim flow, then adds WebSocket notify as an incremental realtime path. The cloud relay does not create Codex App threads; local listeners handle local Codex routing.</p>
+
+      <div class="grid">
+        <div class="card">
+          <span class="tag blue">Keep</span>
+          <h3>Manual fetch stays</h3>
+          <p>Existing REST APIs, MCP tools, and manual <code>claim</code> / <code>get_task</code> flows remain supported. WebSocket notify is additive, not a replacement.</p>
+        </div>
+        <div class="card">
+          <span class="tag green">Add</span>
+          <h3>Cloud push</h3>
+          <p>Local listeners make outbound WSS connections to AgentRelay. When a task becomes pending on an agent, the cloud pushes a lightweight <code>task.pending</code> event.</p>
+        </div>
+      </div>
+
+      <h3>Boundary</h3>
+      <ul>
+        <li>Cloud AgentRelay owns durable task state, auth, pending events, precise claim, and thread binding metadata.</li>
+        <li>Local listener owns WebSocket client behavior, launchd, logs, local state, and Codex App thread creation/reuse.</li>
+        <li>Codex App thread semantics and human confirmation remain local agent logic.</li>
+      </ul>
+
+      <h3>Cloud endpoints</h3>
+      <pre><code>GET  /agentrelay/api/workers/:agentId/pending
+POST /agentrelay/api/workers/:agentId/tasks/:taskId/claim
+GET  /agentrelay/api/workers/:agentId/events/ws
+POST /agentrelay/api/workers/:agentId/events/:eventId/ack</code></pre>
+
+      <h3>WebSocket contract</h3>
+      <pre><code>wss://server.stellarix.space/agentrelay/api/workers/zac-agent/events/ws
+
+Authorization: Bearer &lt;token&gt;
+X-AgentRelay-Agent-Id: zac-agent
+X-AgentRelay-Username: zac
+
+{
+  "type": "task.pending",
+  "eventId": "evt_abc",
+  "agentId": "zac-agent",
+  "taskId": "task_abc",
+  "subject": "Meeting availability",
+  "status": "delivery_pending",
+  "pendingOnAgentId": "zac-agent",
+  "updatedAt": 1782500000,
+  "reason": "ownership.transferred"
+}</code></pre>
+
+      <h3>Data model additions</h3>
+      <div class="grid">
+        <div class="card">
+          <span class="tag blue">Outbox</span>
+          <h3><code>agent_events</code></h3>
+          <p>Durable event outbox for WebSocket push. It prevents lost notifications when local listeners disconnect and reconnect.</p>
+        </div>
+        <div class="card">
+          <span class="tag green">Thread map</span>
+          <h3><code>task_thread_bindings</code></h3>
+          <p>Per-agent thread binding metadata so local listeners can create/reuse their own Codex App threads without overwriting another agent's thread id.</p>
+        </div>
+      </div>
+
+      <h3>Deployment shape</h3>
+      <pre><code>agentrelay.service     -> existing REST server on 127.0.0.1:8787
+agentrelay-ws.service  -> WebSocket sidecar on 127.0.0.1:8788
+nginx                  -> REST + WSS under /agentrelay/api</code></pre>
+
+      <h3>Progress</h3>
+      <ul>
+        <li>Done: define Phase 2 as WebSocket notify push without removing manual fetch.</li>
+        <li>Done: keep local listener and Codex App thread adapter outside cloud scope.</li>
+        <li>Next: implement event outbox, precise claim, pending endpoint, ack endpoint, and WebSocket sidecar.</li>
+      </ul>
+
+      <p class="note">Detailed implementation plan: <code>phase2-plan.md</code>.</p>
     </section>
 
     <section id="completion">
