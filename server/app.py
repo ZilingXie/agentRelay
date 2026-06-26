@@ -271,7 +271,7 @@ def agent_card(agent: dict[str, Any]) -> dict[str, Any]:
         "provider": {"organization": agent["owner"]},
         "capabilities": {
             "streaming": False,
-            "pushNotifications": False,
+            "pushNotifications": True,
             "stateTransitionHistory": True,
         },
         "skills": [

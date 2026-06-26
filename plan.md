@@ -133,7 +133,9 @@ Progress:
 - [x] Add Phase 2 API smoke test to `npm test`.
 - [x] Emit pending events from task state transitions.
 - [x] Add automatic pending event smoke coverage.
-- [ ] Add WebSocket sidecar and WSS deployment.
+- [x] Add WebSocket sidecar and WSS deployment.
+- [x] Add WebSocket smoke test to `npm test`.
+- [ ] Run two-agent test using local listeners.
 
 部署方式：
 

@@ -54,6 +54,56 @@ The reverse proxy maps:
 /agentrelay/api/* -> http://127.0.0.1:8787/agentrelay/*
 ```
 
+## WebSocket notify sidecar
+
+Phase 2 adds a separate WebSocket notify sidecar. REST remains on `agentrelay.service`; the sidecar only streams durable `agent_events` rows to authenticated local listeners.
+
+Runtime:
+
+```bash
+sudo systemctl status agentrelay-ws
+sudo journalctl -u agentrelay-ws -f
+sudo systemctl restart agentrelay-ws
+```
+
+Service file:
+
+```text
+/etc/systemd/system/agentrelay-ws.service
+```
+
+Important settings:
+
+```text
+WorkingDirectory=/home/ubuntu/agentRelay
+AGENTRELAY_WS_HOST=127.0.0.1
+AGENTRELAY_WS_PORT=8788
+AGENTRELAY_DB_PATH=/home/ubuntu/agentRelay/data/agentrelay.sqlite3
+AGENTRELAY_AUTH_FILE=/home/ubuntu/agentRelay/data/agentrelay-auth.json
+```
+
+Public WSS endpoint:
+
+```text
+wss://server.stellarix.space/agentrelay/api/workers/<agent_id>/events/ws
+```
+
+The nginx snippet routes only this WebSocket path to `127.0.0.1:8788`; all other `/agentrelay/api/*` traffic still goes to REST on `127.0.0.1:8787`.
+
+WebSocket clients must send the same auth headers as REST clients:
+
+```text
+Authorization: Bearer <AGENTRELAY_TOKEN>
+X-AgentRelay-Agent-Id: <agent_id>
+X-AgentRelay-Username: <username>
+```
+
+The sidecar sends `hello`, `task.pending`, and `heartbeat` JSON text frames. It does not mark events acked; clients still ack through REST:
+
+```text
+POST /agentrelay/api/workers/<agent_id>/events/<event_id>/ack
+```
+
 ## Auth file
 
 Current token file:

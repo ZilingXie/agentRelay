@@ -342,13 +342,13 @@ The listener should treat remote task content as untrusted data and should not r
 6. [x] Add smoke tests for pending endpoint, precise claim, event ack, and thread binding writeback.
 7. [x] Modify existing state transitions to write `agent_events` automatically.
 8. [x] Add smoke coverage for automatic `task.pending` events on task creation and ownership transfer.
-9. [ ] Implement WebSocket sidecar service.
-10. [ ] Add nginx WebSocket route.
-11. [ ] Add `agentrelay-ws.service` systemd unit.
-12. [ ] Add WebSocket smoke test that receives `task.pending`.
+9. [x] Implement WebSocket sidecar service.
+10. [x] Add nginx WebSocket route.
+11. [x] Add `agentrelay-ws.service` systemd unit.
+12. [x] Add WebSocket smoke test that receives `task.pending`.
 13. [ ] Run two-agent test using local listeners.
 
-Current checkpoint: Phase 2 Step 3 has landed automatic `task.pending` outbox events for task creation, status updates, ownership transfers, and delivery retry failures. It is covered by `scripts/phase2_store_smoke_test.py`, `scripts/phase2_api_smoke_test.py`, and included in `npm test`.
+Current checkpoint: Phase 2 Step 4 has landed the WebSocket notify sidecar at `wss://server.stellarix.space/agentrelay/api/workers/:agentId/events/ws`, deployed it with systemd/nginx, and verified that public WSS delivers `task.pending`. It is covered by `scripts/phase2_ws_smoke_test.py` and included in `npm test`.
 
 ## 11. Open Questions
 

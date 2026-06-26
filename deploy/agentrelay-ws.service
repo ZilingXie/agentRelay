@@ -1,0 +1,23 @@
+[Unit]
+Description=AgentRelay WebSocket notify sidecar
+After=network.target agentrelay.service
+Requires=agentrelay.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/agentRelay
+Environment=PYTHONUNBUFFERED=1
+Environment=AGENTRELAY_WS_HOST=127.0.0.1
+Environment=AGENTRELAY_WS_PORT=8788
+Environment=AGENTRELAY_DB_PATH=/home/ubuntu/agentRelay/data/agentrelay.sqlite3
+Environment=AGENTRELAY_AUTH_FILE=/home/ubuntu/agentRelay/data/agentrelay-auth.json
+Environment=AGENTRELAY_WS_POLL_SECONDS=2
+Environment=AGENTRELAY_WS_HEARTBEAT_SECONDS=30
+ExecStart=/usr/bin/python3 -m server.ws_app
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

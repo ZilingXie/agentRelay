@@ -8,7 +8,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
-const relayPort = 8788;
+const relayPort = 8794;
 const relayBaseUrl = `http://127.0.0.1:${relayPort}/agentrelay`;
 const dbPath = "/tmp/agentrelay-mcp-smoke.sqlite3";
 
