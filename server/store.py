@@ -156,6 +156,36 @@ class Store:
             rows = conn.execute("SELECT * FROM agents ORDER BY agent_id").fetchall()
             return [dict(row) for row in rows]
 
+    def upsert_agent(
+        self,
+        agent_id: str,
+        owner: str,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        now = int(time.time())
+        agent_name = name or f"{owner} Agent"
+        agent_description = description or f"Personal coordinator agent for {owner}."
+        with self.connect() as conn:
+            existing = conn.execute(
+                "SELECT created_at FROM agents WHERE agent_id = ?",
+                (agent_id,),
+            ).fetchone()
+            created_at = int(existing["created_at"]) if existing else now
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO agents
+                    (agent_id, name, owner, description, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (agent_id, agent_name, owner, agent_description, created_at),
+            )
+            row = conn.execute(
+                "SELECT * FROM agents WHERE agent_id = ?",
+                (agent_id,),
+            ).fetchone()
+            return dict(row)
+
     def create_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = int(time.time())
         task_id = payload.get("taskId") or f"task_{uuid.uuid4().hex}"

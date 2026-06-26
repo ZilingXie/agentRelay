@@ -94,3 +94,5 @@ This allows nginx to expose the authenticated relay as:
 ```text
 https://server.stellarix.space/agentrelay/api
 ```
+
+Account creation note: `scripts/create_agent_identity.sh <username>` creates or replaces the auth token and automatically creates/updates the matching agent registry row, so the agent appears in `agentrelay_list_agents`.
