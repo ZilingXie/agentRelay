@@ -133,6 +133,9 @@ def main() -> None:
         raise AssertionError("terminal reason was not recorded")
     print("requester closed task")
 
+    returned = create_claimable_return_task(base_url)
+    print(f"artifact_submitted returned task claimed by zac-agent: {returned['task_id']}")
+
     events = get_json(f"{base_url}/agentrelay/tasks/{task_id}/events")["events"]
     event_types = [event["event_type"] for event in events]
     for expected in [
@@ -148,6 +151,50 @@ def main() -> None:
             raise AssertionError(f"missing event: {expected}")
     print("events ok")
     print(json.dumps({"taskId": task_id, "status": completed["status"]}, indent=2))
+
+
+def create_claimable_return_task(base_url: str) -> dict:
+    task = post_json(
+        f"{base_url}/agentrelay/tasks",
+        {
+            "contextId": "ctx_artifact_submitted_regression",
+            "from": "zac-agent",
+            "to": "frank-agent",
+            "requesterThreadId": "zac-thread-artifact-submitted",
+            "subject": "artifact_submitted claim regression",
+            "doneCriteria": "Zac evaluates Frank's returned artifact.",
+            "message": {
+                "role": "user",
+                "parts": [{"kind": "text", "text": "Return a candidate time."}],
+            },
+        },
+    )["task"]
+    task_id = task["task_id"]
+    claimed = get_json(f"{base_url}/agentrelay/workers/frank-agent/claim")["task"]
+    if not claimed or claimed["task_id"] != task_id:
+        raise AssertionError("frank-agent did not claim artifact_submitted regression task")
+    after_artifact = post_json(
+        f"{base_url}/agentrelay/tasks/{task_id}/artifacts",
+        {
+            "from": "frank-agent",
+            "to": "zac-agent",
+            "nextStatus": "artifact_submitted",
+            "pendingOnAgentId": "zac-agent",
+            "nextAction": "Zac should evaluate Frank's artifact.",
+            "artifact": {
+                "kind": "meeting_availability",
+                "parts": [{"kind": "text", "text": "Frank is available at 15:00."}],
+            },
+        },
+    )["task"]
+    if after_artifact["status"] != "artifact_submitted":
+        raise AssertionError("regression task should use artifact_submitted status")
+    if after_artifact["pending_on_agent_id"] != "zac-agent":
+        raise AssertionError("regression task should be pending on zac-agent")
+    zac_claimed = get_json(f"{base_url}/agentrelay/workers/zac-agent/claim")["task"]
+    if not zac_claimed or zac_claimed["task_id"] != task_id:
+        raise AssertionError("zac-agent did not claim artifact_submitted returned task")
+    return zac_claimed
 
 
 def get_json(url: str) -> dict:

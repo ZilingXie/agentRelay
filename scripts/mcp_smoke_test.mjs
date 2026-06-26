@@ -81,6 +81,9 @@ try {
   });
   assert(closed.task.status === "completed", "task did not close");
 
+  const returned = await createClaimableReturnTask();
+  console.error(`[mcp] artifact_submitted returned task claimed by zac-agent: ${returned.task_id}`);
+
   const events = await callJson("agentrelay_get_events", { taskId });
   const eventTypes = events.events.map((event) => event.event_type);
   for (const expected of ["task.created", "artifact.submitted", "reply.delivered", "task.completed"]) {
@@ -160,4 +163,33 @@ function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+async function createClaimableReturnTask() {
+  const created = await callJson("agentrelay_create_task", {
+    from: "zac-agent",
+    to: "frank-agent",
+    requesterThreadId: "zac-thread-artifact-submitted-mcp",
+    subject: "MCP artifact_submitted claim regression",
+    requestText: "Return a candidate time.",
+    doneCriteria: "Zac evaluates Frank's returned artifact."
+  });
+  const taskId = created.task.task_id;
+  const frankClaim = await callJson("agentrelay_claim_task", { agentId: "frank-agent" });
+  assert(frankClaim.task?.task_id === taskId, "frank-agent did not claim artifact_submitted regression task");
+  const afterArtifact = await callJson("agentrelay_submit_artifact", {
+    taskId,
+    from: "frank-agent",
+    to: "zac-agent",
+    kind: "meeting_availability",
+    text: "Frank is available at 15:00.",
+    nextStatus: "artifact_submitted",
+    pendingOnAgentId: "zac-agent",
+    nextAction: "Zac should evaluate Frank's artifact."
+  });
+  assert(afterArtifact.task.status === "artifact_submitted", "regression task should use artifact_submitted");
+  assert(afterArtifact.task.pending_on_agent_id === "zac-agent", "regression task should be pending on zac-agent");
+  const zacClaim = await callJson("agentrelay_claim_task", { agentId: "zac-agent" });
+  assert(zacClaim.task?.task_id === taskId, "zac-agent did not claim artifact_submitted returned task");
+  return zacClaim.task;
 }

@@ -9,6 +9,14 @@ from typing import Any
 
 
 TERMINAL_STATES = {"completed", "failed", "cancelled", "expired", "rejected"}
+CLAIMABLE_STATES = {
+    "submitted",
+    "input_required",
+    "auth_required",
+    "waiting_remote",
+    "delivery_pending",
+    "artifact_submitted",
+}
 
 
 class Store:
@@ -309,21 +317,19 @@ class Store:
 
     def claim_task(self, agent_id: str) -> dict[str, Any] | None:
         now = int(time.time())
+        claimable_placeholders = ", ".join("?" for _ in CLAIMABLE_STATES)
         with self.connect() as conn:
             assert_agent_exists(conn, agent_id)
             row = conn.execute(
-                """
+                f"""
                 SELECT task_id FROM tasks
                 WHERE pending_on_agent_id = ?
-                  AND status IN (
-                    'submitted', 'input_required', 'auth_required',
-                    'waiting_remote', 'delivery_pending'
-                  )
+                  AND status IN ({claimable_placeholders})
                   AND (claimed_by IS NULL OR claimed_by = ?)
                 ORDER BY created_at
                 LIMIT 1
                 """,
-                (agent_id, agent_id),
+                (agent_id, *sorted(CLAIMABLE_STATES), agent_id),
             ).fetchone()
             if not row:
                 return None
