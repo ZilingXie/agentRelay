@@ -19,6 +19,10 @@ CLAIMABLE_STATES = {
 }
 
 
+class ConflictError(Exception):
+    """Raised when a task exists but cannot perform the requested state transition."""
+
+
 class Store:
     def __init__(self, db_path: str):
         self.db_path = Path(db_path)
@@ -358,6 +362,26 @@ class Store:
             ).fetchall()
             return [decode_payload(row) for row in rows]
 
+    def list_pending_tasks(self, agent_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        claimable_placeholders = ", ".join("?" for _ in CLAIMABLE_STATES)
+        with self.connect() as conn:
+            assert_agent_exists(conn, agent_id)
+            rows = conn.execute(
+                f"""
+                SELECT * FROM tasks
+                WHERE pending_on_agent_id = ?
+                  AND (
+                    status IN ({claimable_placeholders})
+                    OR (status = 'claimed' AND claimed_by = ?)
+                  )
+                  AND (claimed_by IS NULL OR claimed_by = ?)
+                ORDER BY updated_at, created_at, task_id
+                LIMIT ?
+                """,
+                (agent_id, *sorted(CLAIMABLE_STATES), agent_id, agent_id, limit),
+            ).fetchall()
+            return [summarize_task(row) for row in rows]
+
     def claim_task(self, agent_id: str) -> dict[str, Any] | None:
         now = int(time.time())
         claimable_placeholders = ", ".join("?" for _ in CLAIMABLE_STATES)
@@ -391,26 +415,76 @@ class Store:
             self.add_event_conn(conn, task_id, "task.claimed", {"agentId": agent_id}, now)
             return self.get_task_conn(conn, task_id)
 
+    def claim_task_by_id(self, agent_id: str, task_id: str) -> dict[str, Any] | None:
+        now = int(time.time())
+        with self.connect() as conn:
+            assert_agent_exists(conn, agent_id)
+            task = self.get_task_conn(conn, task_id)
+            if not task:
+                return None
+            if task["status"] in TERMINAL_STATES:
+                raise ConflictError(f"task is terminal: {task['status']}")
+            if task.get("pending_on_agent_id") != agent_id:
+                pending_on = task.get("pending_on_agent_id") or "none"
+                raise ConflictError(f"task is pending on {pending_on}, not {agent_id}")
+            claimed_by = task.get("claimed_by")
+            if claimed_by and claimed_by != agent_id:
+                raise ConflictError(f"task is already claimed by {claimed_by}")
+            if task["status"] == "claimed":
+                return task
+            if task["status"] not in CLAIMABLE_STATES:
+                raise ConflictError(f"task status is not claimable: {task['status']}")
+            conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'claimed',
+                    claimed_by = ?,
+                    claimed_at = ?,
+                    updated_at = ?
+                WHERE task_id = ?
+                """,
+                (agent_id, now, now, task_id),
+            )
+            self.add_event_conn(
+                conn,
+                task_id,
+                "task.claimed",
+                {"agentId": agent_id, "claimMode": "by_task_id"},
+                now,
+            )
+            return self.get_task_conn(conn, task_id)
+
     def set_thread(self, agent_id: str, task_id: str, thread_id: str) -> dict[str, Any] | None:
         now = int(time.time())
         with self.connect() as conn:
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
-            if task["target_agent_id"] != agent_id:
-                raise ValueError("agent is not the task target")
+            allowed_agents = {
+                task.get("requester_agent_id"),
+                task.get("target_agent_id"),
+                task.get("completion_owner_agent_id"),
+                task.get("pending_on_agent_id"),
+                task.get("claimed_by"),
+            }
+            if agent_id not in allowed_agents:
+                raise ValueError("agent is not associated with the task")
             existing_thread_id = task.get("target_thread_id")
             event_type = "thread.reused" if existing_thread_id else "thread.created"
-            conn.execute(
-                """
-                UPDATE tasks
-                SET target_thread_id = ?,
-                    status = CASE WHEN status = 'claimed' THEN 'input_required' ELSE status END,
-                    updated_at = ?
-                WHERE task_id = ?
-                """,
-                (thread_id, now, task_id),
-            )
+            if task["target_agent_id"] == agent_id:
+                conn.execute(
+                    """
+                    UPDATE tasks
+                    SET target_thread_id = ?,
+                        status = CASE WHEN status = 'claimed' THEN 'input_required' ELSE status END,
+                        updated_at = ?
+                    WHERE task_id = ?
+                    """,
+                    (thread_id, now, task_id),
+                )
+            else:
+                conn.execute("UPDATE tasks SET updated_at = ? WHERE task_id = ?", (now, task_id))
+            self.upsert_thread_binding_conn(conn, task_id, agent_id, thread_id, created_or_updated_at=now)
             self.add_event_conn(
                 conn,
                 task_id,
@@ -728,6 +802,7 @@ class Store:
         self,
         agent_id: str,
         event_id: str,
+        expected_task_id: str | None = None,
         acked_at: int | None = None,
     ) -> dict[str, Any] | None:
         now = acked_at or int(time.time())
@@ -739,10 +814,13 @@ class Store:
             ).fetchone()
             if not row:
                 return None
-            conn.execute(
-                "UPDATE agent_events SET acked_at = ? WHERE agent_id = ? AND event_id = ?",
-                (now, agent_id, event_id),
-            )
+            if expected_task_id and expected_task_id != row["task_id"]:
+                raise ValueError("taskId does not match event")
+            if row["acked_at"] is None:
+                conn.execute(
+                    "UPDATE agent_events SET acked_at = ? WHERE agent_id = ? AND event_id = ?",
+                    (now, agent_id, event_id),
+                )
             row = conn.execute(
                 "SELECT * FROM agent_events WHERE agent_id = ? AND event_id = ?",
                 (agent_id, event_id),
@@ -759,34 +837,55 @@ class Store:
     ) -> dict[str, Any]:
         now = int(time.time())
         with self.connect() as conn:
-            assert_agent_exists(conn, agent_id)
-            if not self.get_task_conn(conn, task_id):
-                raise ValueError(f"unknown task: {task_id}")
-            existing = conn.execute(
-                """
-                SELECT created_at FROM task_thread_bindings
-                WHERE task_id = ? AND agent_id = ? AND thread_role = ?
-                """,
-                (task_id, agent_id, thread_role),
-            ).fetchone()
-            created_at = int(existing["created_at"]) if existing else now
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO task_thread_bindings (
-                    task_id, agent_id, thread_role, thread_id, project_path, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (task_id, agent_id, thread_role, thread_id, project_path, created_at, now),
+            return self.upsert_thread_binding_conn(
+                conn,
+                task_id,
+                agent_id,
+                thread_id,
+                thread_role,
+                project_path,
+                now,
             )
-            row = conn.execute(
-                """
-                SELECT * FROM task_thread_bindings
-                WHERE task_id = ? AND agent_id = ? AND thread_role = ?
-                """,
-                (task_id, agent_id, thread_role),
-            ).fetchone()
-            return dict(row)
+
+    def upsert_thread_binding_conn(
+        self,
+        conn: sqlite3.Connection,
+        task_id: str,
+        agent_id: str,
+        thread_id: str,
+        thread_role: str = "agent_inbox",
+        project_path: str | None = None,
+        created_or_updated_at: int | None = None,
+    ) -> dict[str, Any]:
+        now = created_or_updated_at or int(time.time())
+        assert_agent_exists(conn, agent_id)
+        if not self.get_task_conn(conn, task_id):
+            raise ValueError(f"unknown task: {task_id}")
+        existing = conn.execute(
+            """
+            SELECT created_at FROM task_thread_bindings
+            WHERE task_id = ? AND agent_id = ? AND thread_role = ?
+            """,
+            (task_id, agent_id, thread_role),
+        ).fetchone()
+        created_at = int(existing["created_at"]) if existing else now
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO task_thread_bindings (
+                task_id, agent_id, thread_role, thread_id, project_path, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (task_id, agent_id, thread_role, thread_id, project_path, created_at, now),
+        )
+        row = conn.execute(
+            """
+            SELECT * FROM task_thread_bindings
+            WHERE task_id = ? AND agent_id = ? AND thread_role = ?
+            """,
+            (task_id, agent_id, thread_role),
+        ).fetchone()
+        return dict(row)
 
     def list_thread_bindings(self, task_id: str) -> list[dict[str, Any]]:
         with self.connect() as conn:
@@ -836,6 +935,26 @@ def assert_agent_exists(conn: sqlite3.Connection, agent_id: str) -> None:
     row = conn.execute("SELECT agent_id FROM agents WHERE agent_id = ?", (agent_id,)).fetchone()
     if not row:
         raise ValueError(f"unknown agent: {agent_id}")
+
+
+def summarize_task(row: sqlite3.Row) -> dict[str, Any]:
+    data = dict(row)
+    return {
+        "taskId": data["task_id"],
+        "contextId": data["context_id"],
+        "subject": data["subject"],
+        "status": data["status"],
+        "requesterAgentId": data["requester_agent_id"],
+        "targetAgentId": data["target_agent_id"],
+        "pendingOnAgentId": data["pending_on_agent_id"],
+        "pendingOnHumanId": data["pending_on_human_id"],
+        "nextAction": data["next_action"],
+        "claimedBy": data["claimed_by"],
+        "claimedAt": data["claimed_at"],
+        "requesterThreadId": data["requester_thread_id"],
+        "updatedAt": data["updated_at"],
+        "createdAt": data["created_at"],
+    }
 
 
 def decode_parts(row: sqlite3.Row) -> dict[str, Any]:

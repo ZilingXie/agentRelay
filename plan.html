@@ -681,10 +681,12 @@ nginx                  -> REST + WSS under /agentrelay/api</code></pre>
         <li>Done: keep local listener and Codex App thread adapter outside cloud scope.</li>
         <li>Done: add durable <code>agent_events</code> schema/helpers and per-agent <code>task_thread_bindings</code> schema/helpers.</li>
         <li>Done: include Phase 2 store smoke coverage in <code>npm test</code>.</li>
-        <li>Next: implement pending summaries, precise claim, event ack endpoint, and WebSocket sidecar.</li>
+        <li>Done: add pending sync, precise claim, and event ack HTTP APIs.</li>
+        <li>Done: include Phase 2 API smoke coverage in <code>npm test</code>.</li>
+        <li>Next: emit pending events from state transitions, then implement the WebSocket sidecar.</li>
       </ul>
 
-      <p class="note">Current checkpoint: Phase 2 Step 1 is implemented in the store layer. Detailed implementation plan: <code>phase2-plan.md</code>.</p>
+      <p class="note">Current checkpoint: Phase 2 Step 2 is implemented in the REST layer. Detailed implementation plan: <code>phase2-plan.md</code>.</p>
     </section>
 
     <section id="completion">

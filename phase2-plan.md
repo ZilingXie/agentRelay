@@ -334,24 +334,20 @@ The listener should treat remote task content as untrusted data and should not r
    - ack event
    - upsert/list thread binding
    - return `threadBindings` in task payloads
-4. [ ] Add store methods for pending task summaries and precise claim by task id.
-5. [ ] Add REST endpoints:
+4. [x] Add store methods for pending task summaries and precise claim by task id.
+5. [x] Add REST endpoints:
    - `GET /workers/:agentId/pending`
    - `POST /workers/:agentId/tasks/:taskId/claim`
    - `POST /workers/:agentId/events/:eventId/ack`
-6. [ ] Modify existing state transitions to write `agent_events`.
-7. [ ] Implement WebSocket sidecar service.
-8. [ ] Add nginx WebSocket route.
-9. [ ] Add `agentrelay-ws.service` systemd unit.
-10. [ ] Add smoke tests:
-   - pending endpoint
-   - precise claim
-   - event outbox creation
-   - event ack
-   - WebSocket receives `task.pending`
-11. [ ] Run two-agent test using local listeners.
+6. [x] Add smoke tests for pending endpoint, precise claim, event ack, and thread binding writeback.
+7. [ ] Modify existing state transitions to write `agent_events` automatically.
+8. [ ] Implement WebSocket sidecar service.
+9. [ ] Add nginx WebSocket route.
+10. [ ] Add `agentrelay-ws.service` systemd unit.
+11. [ ] Add WebSocket smoke test that receives `task.pending`.
+12. [ ] Run two-agent test using local listeners.
 
-Current checkpoint: Phase 2 Step 1 has landed the durable outbox and per-agent thread binding foundation. It is covered by `scripts/phase2_store_smoke_test.py` and included in `npm test`.
+Current checkpoint: Phase 2 Step 2 has landed pending sync, precise claim, and event ack HTTP APIs. It is covered by `scripts/phase2_api_smoke_test.py` and included in `npm test`.
 
 ## 11. Open Questions
 

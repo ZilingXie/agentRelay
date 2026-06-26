@@ -128,7 +128,9 @@ Progress:
 - [x] Add durable `agent_events` schema/helper foundation.
 - [x] Add per-agent `task_thread_bindings` schema/helper foundation.
 - [x] Add Phase 2 store smoke test to `npm test`.
-- [ ] Add pending summaries and precise task claim API.
+- [x] Add pending summaries and precise task claim API.
+- [x] Add event ack API with thread binding writeback.
+- [x] Add Phase 2 API smoke test to `npm test`.
 - [ ] Emit pending events from task state transitions.
 - [ ] Add WebSocket sidecar and WSS deployment.
 

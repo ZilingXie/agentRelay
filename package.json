@@ -13,11 +13,12 @@
   "scripts": {
     "mcp:server": "node mcp/server.mjs",
     "test:mcp": "node scripts/mcp_smoke_test.mjs",
-    "test:python": "python3 -m py_compile server/app.py server/store.py scripts/smoke_test.py scripts/auth_smoke_test.py scripts/generate_agent_token.py scripts/upsert_agent_identity.py scripts/identity_smoke_test.py scripts/sync_agents_from_auth.py scripts/phase2_store_smoke_test.py",
+    "test:python": "python3 -m py_compile server/app.py server/store.py scripts/smoke_test.py scripts/auth_smoke_test.py scripts/generate_agent_token.py scripts/upsert_agent_identity.py scripts/identity_smoke_test.py scripts/sync_agents_from_auth.py scripts/phase2_store_smoke_test.py scripts/phase2_api_smoke_test.py",
     "test:auth": "python3 scripts/auth_smoke_test.py",
     "test:identity": "python3 scripts/identity_smoke_test.py",
-    "test": "npm run test:python && npm run test:auth && npm run test:identity && npm run test:phase2 && npm run test:mcp",
-    "test:phase2": "python3 scripts/phase2_store_smoke_test.py"
+    "test": "npm run test:python && npm run test:auth && npm run test:identity && npm run test:phase2 && npm run test:phase2:api && npm run test:mcp",
+    "test:phase2": "python3 scripts/phase2_store_smoke_test.py",
+    "test:phase2:api": "python3 scripts/phase2_api_smoke_test.py"
   },
   "keywords": [],
   "author": "",

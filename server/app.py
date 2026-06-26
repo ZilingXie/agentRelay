@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
 
-from server.store import Store
+from server.store import ConflictError, Store
 
 
 DEFAULT_DB_PATH = "./data/agentrelay.sqlite3"
@@ -22,6 +22,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         try:
             self.route_get()
+        except ConflictError as exc:
+            self.respond_error(409, str(exc))
         except ValueError as exc:
             self.respond_error(400, str(exc))
         except Exception as exc:
@@ -30,6 +32,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         try:
             self.route_post()
+        except ConflictError as exc:
+            self.respond_error(409, str(exc))
         except ValueError as exc:
             self.respond_error(400, str(exc))
         except Exception as exc:
@@ -70,6 +74,12 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 self.respond_error(404, "task not found")
                 return
             self.respond_json({"events": events})
+            return
+        if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/pending", path):
+            agent_id = match.group(1)
+            if not self.require_agent(auth, agent_id):
+                return
+            self.respond_json({"tasks": self.store.list_pending_tasks(agent_id)})
             return
         if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/claim", path):
             agent_id = match.group(1)
@@ -131,6 +141,37 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 self.respond_error(404, "task not found")
                 return
             self.respond_json({"task": task})
+            return
+        if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/tasks/([^/]+)/claim", path):
+            agent_id, task_id = match.groups()
+            if not self.require_agent(auth, agent_id):
+                return
+            task = self.store.claim_task_by_id(agent_id, task_id)
+            if not task:
+                self.respond_error(404, "task not found")
+                return
+            self.respond_json({"task": task})
+            return
+        if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/events/([^/]+)/ack", path):
+            agent_id, event_id = match.groups()
+            if not self.require_agent(auth, agent_id):
+                return
+            task_id = payload.get("taskId")
+            event = self.store.ack_agent_event(agent_id, event_id, task_id)
+            if not event:
+                self.respond_error(404, "event not found")
+                return
+            binding = None
+            thread_id = payload.get("threadId")
+            if thread_id:
+                binding = self.store.upsert_thread_binding(
+                    event["task_id"],
+                    agent_id,
+                    thread_id,
+                    payload.get("threadRole") or "agent_inbox",
+                    payload.get("projectPath"),
+                )
+            self.respond_json({"event": event, "threadBinding": binding})
             return
         if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/tasks/([^/]+)/thread", path):
             agent_id, task_id = match.groups()
