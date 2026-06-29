@@ -63,8 +63,8 @@ Progress:
 - [x] Implement AgentRelay MCP tools that wrap the relay HTTP API.
 - [x] Publish standalone local Codex MCP installer in `ZilingXie/agent-relay-mcp`.
 - [x] Add Phase 1 username/token auth support for public MCP clients.
-- [x] Deploy AgentRelay behind systemd and nginx HTTPS reverse proxy.
-- [ ] Configure Codex App to use AgentRelay MCP and run the full Phase 1 meeting scenario.
+- [x] Deploy AgentRelay behind Docker Compose and nginx HTTPS reverse proxy.
+- [x] Configure Codex App to use AgentRelay MCP and run the full Phase 1 meeting scenario.
 
 第一阶段不以 CLI 作为用户体验入口，而以 Codex App thread 作为入口。
 
@@ -136,15 +136,16 @@ Progress:
 - [x] Add WebSocket sidecar and WSS deployment.
 - [x] Add WebSocket smoke test to `npm test`.
 - [x] Update public `agent-relay-mcp` repo with listener install/verification flow.
-- [ ] Zac and Frank reinstall public MCP repo and verify doctor/MCP/WSS.
-- [ ] Run two-agent test using local listeners.
+- [x] Define user-owned local inbox hook/adapter contract in public `agent-relay-mcp` README.
+- [x] Zac and Frank reinstall public MCP repo and verify doctor/MCP/WSS.
+- [x] Run two-agent test using local listeners.
 
 部署方式：
 
 ```text
-agentrelay.service     -> existing REST server on 127.0.0.1:8787
-agentrelay-ws.service  -> new WebSocket sidecar on 127.0.0.1:8788
-nginx                  -> /agentrelay/api/... REST + WSS routes
+docker compose agentrelay-api -> REST server on 127.0.0.1:8787
+docker compose agentrelay-ws  -> WebSocket sidecar on 127.0.0.1:8788
+host nginx                    -> /agentrelay/api/... REST + WSS routes
 ```
 
 详细实施计划见 `phase2-plan.md`。
@@ -429,8 +430,10 @@ Folder PoC -> MCP mailbox server -> remote transport -> A2A-compatible gateway
 
 Phase 1 auth is documented in `docs/relay-auth.md`. The cloud relay issues `username + agent_id + token`; the public MCP client stores these in `.env` and sends bearer-token headers.
 
-Deployment update: `docs/relay-deployment.md` records the systemd service and nginx reverse proxy for `https://server.stellarix.space/agentrelay/api`.
+Deployment update: `docs/relay-deployment.md` and `docs/docker-deployment.md` record the Docker Compose runtime and nginx reverse proxy for `https://server.stellarix.space/agentrelay/api`.
 
 Public MCP installer update: `ZilingXie/agent-relay-mcp` now explicitly requires the local agent to write `.env`, report the `.env` path without printing the token, run `npm run doctor`, then verify MCP with `agentrelay_health` and `agentrelay_list_agents` after Codex restart/new thread. See `docs/local-agent-verification.md` in the public MCP repo.
 
 Public MCP installer correction: install docs now use a two-phase flow. Phase A configures Codex and writes a `.env` template, then stops and asks the user to fill `.env` and restart/open a new Codex session. Phase B starts only after the user says that is done: the agent runs `npm run doctor`, then verifies MCP with `agentrelay_health` and `agentrelay_list_agents`.
+
+Local adapter boundary update: the public `ZilingXie/agent-relay-mcp` README defines receive modes and the local hook contract. Manual mode uses HTTP/MCP pending checks. Automatic mode uses the WebSocket listener, writes incoming work to `.agentrelay/inbox/`, and lets the user choose a local `AGENTRELAY_LISTENER_HOOK` adapter for Codex App, Codex CLI, WeChat, Slack, or another workflow. This keeps cloud AgentRelay as a relay instead of hard-binding it to one human interface.

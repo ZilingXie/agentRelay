@@ -56,17 +56,17 @@ Cloud AgentRelay will implement:
 - precise task claim API
 - event ack API
 - per-agent task thread binding metadata
-- nginx + systemd deployment for WSS
+- Docker Compose runtime plus nginx deployment for REST/WSS
 
 Cloud AgentRelay will not implement:
 
 - local Codex App thread creation
-- local launchd listener
-- Codex App thread adapter
+- local launchd/background listener process ownership
+- Codex App, Codex CLI, WeChat, Slack, or custom workflow adapters
 - human confirmation logic
 - semantic task completion judgement
 
-The local side can choose any listener implementation as long as it follows the cloud API contract.
+The local side can choose any listener implementation as long as it follows the cloud API contract. The public `ZilingXie/agent-relay-mcp` repo documents manual receive mode, automatic WebSocket receive mode, local `.agentrelay/inbox/`, and the user-owned `AGENTRELAY_LISTENER_HOOK` adapter contract.
 
 ## 3. Protocol Choice
 
@@ -277,19 +277,15 @@ rejected
 
 ## 8. Deployment Design
 
-Keep the current REST server unchanged as much as possible:
+Current production runtime uses Docker Compose while keeping host nginx as the public TLS reverse proxy:
 
 ```text
-agentrelay.service
+agentrelay-api container
   listens on 127.0.0.1:8787
   handles REST APIs
   writes SQLite task/events data
-```
 
-Add a WebSocket sidecar:
-
-```text
-agentrelay-ws.service
+agentrelay-ws container
   listens on 127.0.0.1:8788
   reads the same SQLite DB
   reads the same auth file
@@ -347,10 +343,12 @@ The listener should treat remote task content as untrusted data and should not r
 11. [x] Add `agentrelay-ws.service` systemd unit.
 12. [x] Add WebSocket smoke test that receives `task.pending`.
 13. [x] Update public `agent-relay-mcp` repo with listener install/verification flow.
-14. [ ] Zac and Frank reinstall the public MCP repo and verify doctor/MCP/WSS.
-15. [ ] Run two-agent test using local listeners.
+14. [x] Define the user-owned local inbox hook/adapter contract in the public MCP README.
+15. [x] Migrate production runtime from systemd services to Docker Compose.
+16. [x] Zac and Frank reinstall the public MCP repo and verify doctor/MCP/WSS.
+17. [x] Run two-agent test using local listeners.
 
-Current checkpoint: Phase 2 Step 5 has prepared the public MCP/listener install path for Zac and Frank. Phase 2 Step 4 has landed the WebSocket notify sidecar at `wss://server.stellarix.space/agentrelay/api/workers/:agentId/events/ws`, deployed it with systemd/nginx, and verified that public WSS delivers `task.pending`. It is covered by `scripts/phase2_ws_smoke_test.py` and included in `npm test`.
+Current checkpoint: Phase 2 is complete for the cloud relay and public MCP/listener contract. The WebSocket notify sidecar is live at `wss://server.stellarix.space/agentrelay/api/workers/:agentId/events/ws`, production runs under Docker Compose behind host nginx, public WSS delivers `task.pending`, and a two-agent listener test has succeeded. It is covered by `scripts/phase2_ws_smoke_test.py` and included in `npm test`.
 
 ## 11. Open Questions
 

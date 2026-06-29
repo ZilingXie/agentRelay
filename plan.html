@@ -576,7 +576,7 @@ AgentRelay delivery
       <h3>Local MCP install decision</h3>
       <p>Because the AgentRelay server repo is private, the installable MCP client and local Codex setup guide now live in the public repo <a href="https://github.com/ZilingXie/agent-relay-mcp"><code>ZilingXie/agent-relay-mcp</code></a>. Local Codex agents should install that repo; this private repo keeps the relay server and planning docs.</p>
       <p>The cloud relay issues <code>username + agent_id + token</code>. The local MCP client stores them in its private <code>.env</code> file and sends <code>Authorization: Bearer</code>, <code>X-AgentRelay-Agent-Id</code>, and <code>X-AgentRelay-Username</code> headers.</p>
-      <p>Public API: <code>https://server.stellarix.space/agentrelay/api</code>, reverse-proxied by nginx to the local systemd service on <code>127.0.0.1:8787</code>.</p>
+      <p>Public API: <code>https://server.stellarix.space/agentrelay/api</code>, reverse-proxied by host nginx to the Docker Compose API service on <code>127.0.0.1:8787</code>.</p>
       <pre><code>[mcp_servers.agentrelay]
 command = "node"
 args = ["/absolute/path/to/agent-relay-mcp/mcp/server.mjs"]
@@ -600,9 +600,10 @@ AGENTRELAY_BASE_URL = "http://127.0.0.1:8787/agentrelay"</code></pre>
         <li>Done: implement AgentRelay MCP tools that wrap the relay HTTP API.</li>
         <li>Done: publish standalone local Codex MCP installer in <code>ZilingXie/agent-relay-mcp</code>.</li>
         <li>Done: add Phase 1 username/token auth support for public MCP clients.</li>
-        <li>Done: deploy AgentRelay behind systemd and nginx HTTPS reverse proxy.</li>
+        <li>Done: deploy AgentRelay behind Docker Compose and nginx HTTPS reverse proxy.</li>
         <li>Done: correct public MCP installer docs to a two-phase flow: configure and write <code>.env</code> template first, then user fills <code>.env</code> and restarts, then agent runs doctor and MCP checks.</li>
-        <li>Next: implement Phase 2 WebSocket notify push while keeping manual fetch available.</li>
+        <li>Done: configure Codex App to use AgentRelay MCP and run the full Phase 1 meeting scenario.</li>
+        <li>Done: implement Phase 2 WebSocket notify push while keeping manual fetch available.</li>
       </ul>
     </section>
 
@@ -627,7 +628,8 @@ AGENTRELAY_BASE_URL = "http://127.0.0.1:8787/agentrelay"</code></pre>
       <h3>Boundary</h3>
       <ul>
         <li>Cloud AgentRelay owns durable task state, auth, pending events, precise claim, and thread binding metadata.</li>
-        <li>Local listener owns WebSocket client behavior, launchd, logs, local state, and Codex App thread creation/reuse.</li>
+        <li>Local listener owns WebSocket client behavior, background process management, logs, local state, and local inbox writes.</li>
+        <li>Codex App, Codex CLI, WeChat, Slack, or custom workflow adapters remain user-owned hook logic.</li>
         <li>Codex App thread semantics and human confirmation remain local agent logic.</li>
       </ul>
 
@@ -671,9 +673,9 @@ X-AgentRelay-Username: zac
       </div>
 
       <h3>Deployment shape</h3>
-      <pre><code>agentrelay.service     -> existing REST server on 127.0.0.1:8787
-agentrelay-ws.service  -> WebSocket sidecar on 127.0.0.1:8788
-nginx                  -> REST + WSS under /agentrelay/api</code></pre>
+      <pre><code>docker compose agentrelay-api -> REST server on 127.0.0.1:8787
+docker compose agentrelay-ws  -> WebSocket sidecar on 127.0.0.1:8788
+host nginx                    -> REST + WSS under /agentrelay/api</code></pre>
 
       <h3>Progress</h3>
       <ul>
@@ -687,10 +689,12 @@ nginx                  -> REST + WSS under /agentrelay/api</code></pre>
         <li>Done: deploy WebSocket notify sidecar at <code>wss://server.stellarix.space/agentrelay/api/workers/:agentId/events/ws</code>.</li>
         <li>Done: include WebSocket smoke coverage in <code>npm test</code> and verify public WSS delivery.</li>
         <li>Done: update the public <code>agent-relay-mcp</code> repo with listener install, doctor WSS checks, and listener docs.</li>
-        <li>Next: Zac and Frank reinstall the public repo, run doctor/MCP checks, start listeners, then run the two-agent local-listener test.</li>
+        <li>Done: document the user-owned local inbox hook/adapter contract for Codex App, Codex CLI, WeChat, Slack, or custom workflows.</li>
+        <li>Done: migrate production runtime to Docker Compose.</li>
+        <li>Done: Zac and Frank reinstall the public repo, run doctor/MCP/WSS checks, start listeners, and complete the two-agent local-listener message/reply test.</li>
       </ul>
 
-      <p class="note">Current checkpoint: Phase 2 Step 5 is ready for Zac/Frank reinstall and listener verification. Detailed implementation plan: <code>phase2-plan.md</code>.</p>
+      <p class="note">Current checkpoint: Phase 2 cloud relay and public MCP/listener contract are complete. The local hook boundary is intentionally user-owned so the relay is not tied to one human interface. Detailed implementation plan: <code>phase2-plan.md</code>.</p>
     </section>
 
     <section id="completion">
