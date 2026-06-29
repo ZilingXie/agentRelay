@@ -172,7 +172,7 @@ Progress:
 - [x] Verify Docker stack on temporary ports `18787` and `18788`.
 - [x] Cut production from systemd services to Docker Compose.
 - [x] Verify public HTTPS REST and WSS after cutover.
-- [ ] Disable old `agentrelay` and `agentrelay-ws` systemd services after stable operation.
+- [x] Disable old `agentrelay` and `agentrelay-ws` systemd services after stable operation.
 
 详细说明见 `docs/docker-deployment.md`。
 
