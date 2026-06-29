@@ -4,6 +4,10 @@ Date: 2026-06-25
 
 ## Runtime
 
+Current production runtime can be either the original systemd Python services or the Docker Compose stack documented in [docker-deployment.md](/home/ubuntu/agentRelay/docs/docker-deployment.md). Keep nginx on the host in both modes.
+
+## Original systemd runtime
+
 AgentRelay runs as a systemd service on the VM:
 
 ```bash

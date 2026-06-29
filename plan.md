@@ -149,6 +149,33 @@ nginx                  -> /agentrelay/api/... REST + WSS routes
 
 详细实施计划见 `phase2-plan.md`。
 
+## 2.3 Docker runtime migration
+
+目标：把当前云端 AgentRelay runtime 从 systemd 直接运行 Python 进程，迁移为 Docker Compose 管理，同时保持 host nginx、HTTPS 域名、REST API、WebSocket endpoint 和 auth/data 文件路径语义不变。
+
+迁移原则：
+
+- 不把 `data/`、sqlite、auth token、`.env` 或日志打进镜像。
+- host nginx 继续负责 TLS 和 `/agentrelay/api` reverse proxy。
+- Docker 只承载两个 Python 进程：REST API 和 WebSocket sidecar。
+- 两个容器共享同一个 host bind mount：`./data:/app/data`。
+- 默认只绑定 `127.0.0.1:8787` 和 `127.0.0.1:8788`，不直接暴露公网端口。
+- systemd 旧服务先保留，作为快速 rollback 路径。
+
+Progress:
+
+- [x] Add Dockerfile for the Python server runtime.
+- [x] Add docker-compose.yml with `agentrelay-api` and `agentrelay-ws` services.
+- [x] Keep runtime data outside the image through bind-mounted `data/`.
+- [x] Add `.dockerignore` to exclude state, credentials, dependencies, and large references.
+- [x] Add Docker deployment/cutover/rollback docs.
+- [x] Verify Docker stack on temporary ports `18787` and `18788`.
+- [ ] Cut production from systemd services to Docker Compose.
+- [ ] Verify public HTTPS REST and WSS after cutover.
+- [ ] Disable old `agentrelay` and `agentrelay-ws` systemd services after stable operation.
+
+详细说明见 `docs/docker-deployment.md`。
+
 ## 3. 建议的消息格式
 
 先用 Markdown 加 YAML front matter，方便人和 agent 都能读：
