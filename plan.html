@@ -362,8 +362,8 @@
     <nav aria-label="Plan sections">
       <a href="#intro">Project</a>
       <a href="#architecture">Architecture</a>
-      <a href="#phase3">Phase 3</a>
       <a href="#completed">Completed</a>
+      <a href="#phase3">Phase 3</a>
       <a href="#references">References</a>
     </nav>
 
@@ -390,12 +390,12 @@
 
     <section id="architecture">
       <h2>How Agents Communicate</h2>
-      <p>Zac's agent and Frank's agent both live on private machines. They cannot accept inbound public HTTP calls, so both connect outward to the relay. The MCP client gives each local agent tools for creating tasks, claiming work, submitting artifacts, and listening for pending events.</p>
+      <p>Agent A and Agent B both live on private machines. They cannot accept inbound public HTTP calls, so both connect outward to the relay. The MCP client gives each local agent tools for creating tasks, claiming work, submitting artifacts, and listening for pending events.</p>
 
       <div class="architecture" aria-label="AgentRelay architecture diagram">
         <div class="node">
-          <span class="tag blue">Zac side</span>
-          <h3>Zac local agent</h3>
+          <span class="tag blue">Agent A side</span>
+          <h3>Agent A local agent</h3>
           <ul>
             <li>Codex App / CLI thread</li>
             <li>AgentRelay MCP tools</li>
@@ -420,24 +420,100 @@
         <div class="arrow" aria-hidden="true"><span></span></div>
 
         <div class="node">
-          <span class="tag amber">Frank side</span>
-          <h3>Frank local agent</h3>
+          <span class="tag amber">Agent B side</span>
+          <h3>Agent B local agent</h3>
           <ul>
             <li>Codex App / CLI / other surface</li>
             <li>AgentRelay MCP tools</li>
             <li>WebSocket listener</li>
-            <li>Human confirmation with Frank</li>
+            <li>Human confirmation with Agent B owner</li>
           </ul>
         </div>
       </div>
 
-      <pre class="flow-note"><code>1. Zac tells Zac agent: ask Frank when he can meet.
-2. Zac agent uses agent-relay-mcp to create a task on AgentRelay.
-3. AgentRelay stores the task and emits task.pending for frank-agent.
-4. Frank listener receives the WebSocket event, claims the task, and writes local inbox work.
-5. Frank agent asks Frank if needed, then submits an artifact/result.
-6. AgentRelay transfers pending ownership back to zac-agent.
-7. Zac listener receives the result and Zac agent continues in Zac's chosen workflow.</code></pre>
+      <pre class="flow-note"><code>1. Agent A owner tells Agent A: ask Agent B when they can meet.
+2. Agent A uses agent-relay-mcp to create a task on AgentRelay.
+3. AgentRelay stores the task and emits task.pending for agent-b.
+4. Agent B listener receives the WebSocket event, claims the task, and writes local inbox work.
+5. Agent B asks its owner if needed, then submits an artifact/result.
+6. AgentRelay transfers pending ownership back to agent-a.
+7. Agent A listener receives the result and Agent A continues in its owner's chosen workflow.</code></pre>
+    </section>
+
+    <section id="completed">
+      <h2>Completed</h2>
+      <p>Completed sections are collapsed by default. They remain here for context and audit without taking over the active roadmap.</p>
+
+      <details>
+        <summary>Phase 1: Codex App meeting loop</summary>
+        <div class="details-body">
+          <p>Phase 1 proved the first end-to-end human-facing loop.</p>
+          <ul>
+            <li>Created the private server repo and planning docs.</li>
+            <li>Added A2A reference material.</li>
+            <li>Implemented SQLite data model for agents, tasks, messages, artifacts, events, and thread bindings.</li>
+            <li>Implemented A2A-shaped task and worker APIs.</li>
+            <li>Recorded requester-side <code>done_criteria</code> and <code>completion_owner_agent_id</code>.</li>
+            <li>Proved controlled delivery back to Agent A origin thread.</li>
+            <li>Published the public MCP client installer repo.</li>
+            <li>Added username/token auth for public MCP clients.</li>
+            <li>Ran the full Agent A/Agent B meeting scenario through local agents.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details>
+        <summary>Phase 2: WebSocket notify push</summary>
+        <div class="details-body">
+          <p>Phase 2 replaced cron-style polling as the primary notification path while keeping HTTP pull recovery.</p>
+          <ul>
+            <li>Added durable <code>agent_events</code> outbox.</li>
+            <li>Added per-agent <code>task_thread_bindings</code>.</li>
+            <li>Added pending sync, precise claim, and event ack APIs.</li>
+            <li>Emits durable <code>task.pending</code> events on ownership transfer and delivery retry failure.</li>
+            <li>Added WebSocket sidecar at <code>wss://server.stellarix.space/agentrelay/api/workers/:agentId/events/ws</code>.</li>
+            <li>Updated public <code>agent-relay-mcp</code> with listener install, doctor checks, and local inbox behavior.</li>
+            <li>Documented the user-owned <code>AGENTRELAY_LISTENER_HOOK</code> adapter boundary.</li>
+            <li>Verified Agent A/Agent B two-agent local-listener message and reply loop.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details>
+        <summary>Docker production runtime</summary>
+        <div class="details-body">
+          <p>The server repo now runs production through Docker Compose.</p>
+          <pre><code>docker compose agentrelay-api -> REST server on 127.0.0.1:8787
+docker compose agentrelay-ws  -> WebSocket sidecar on 127.0.0.1:8788
+host nginx                    -> HTTPS/WSS under /agentrelay/api</code></pre>
+          <ul>
+            <li>Added <code>Dockerfile</code>, <code>docker-compose.yml</code>, and Docker deployment docs.</li>
+            <li>Kept runtime state outside the image through bind-mounted <code>data/</code>.</li>
+            <li>Cut production from systemd Python services to Docker Compose.</li>
+            <li>Disabled old systemd services after successful two-agent testing.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details>
+        <summary>Task completion policy</summary>
+        <div class="details-body">
+          <p>The relay distinguishes agent action completion from workflow task completion.</p>
+          <pre><code>Agent B owner says 10:00:
+  Agent B action complete
+  task pending_on_agent_id = agent-a
+  next_action = Ask Agent A owner whether 10:00 works
+
+Agent A owner confirms:
+  completion_owner_agent_id = agent-a
+  status = completed
+  terminal_reason = both parties accepted the same time
+
+Agent A owner changes their mind later:
+  do not reopen completed task
+  create child task with the same context_id</code></pre>
+        </div>
+      </details>
     </section>
 
     <section id="phase3">
@@ -529,82 +605,6 @@ Thread Binding
       <div class="note">
         <p><strong>Next best implementation step:</strong> start with schemas and a transition validator. This prevents ambiguous agent loops before adding dashboards or broader A2A compatibility.</p>
       </div>
-    </section>
-
-    <section id="completed">
-      <h2>Completed Work</h2>
-      <p>Completed sections are collapsed by default. They remain here for context and audit without taking over the active roadmap.</p>
-
-      <details>
-        <summary>Phase 1: Codex App meeting loop</summary>
-        <div class="details-body">
-          <p>Phase 1 proved the first end-to-end human-facing loop.</p>
-          <ul>
-            <li>Created the private server repo and planning docs.</li>
-            <li>Added A2A reference material.</li>
-            <li>Implemented SQLite data model for agents, tasks, messages, artifacts, events, and thread bindings.</li>
-            <li>Implemented A2A-shaped task and worker APIs.</li>
-            <li>Recorded requester-side <code>done_criteria</code> and <code>completion_owner_agent_id</code>.</li>
-            <li>Proved controlled delivery back to Zac's origin thread.</li>
-            <li>Published the public MCP client installer repo.</li>
-            <li>Added username/token auth for public MCP clients.</li>
-            <li>Ran the full Zac/Frank meeting scenario through local agents.</li>
-          </ul>
-        </div>
-      </details>
-
-      <details>
-        <summary>Phase 2: WebSocket notify push</summary>
-        <div class="details-body">
-          <p>Phase 2 replaced cron-style polling as the primary notification path while keeping HTTP pull recovery.</p>
-          <ul>
-            <li>Added durable <code>agent_events</code> outbox.</li>
-            <li>Added per-agent <code>task_thread_bindings</code>.</li>
-            <li>Added pending sync, precise claim, and event ack APIs.</li>
-            <li>Emits durable <code>task.pending</code> events on ownership transfer and delivery retry failure.</li>
-            <li>Added WebSocket sidecar at <code>wss://server.stellarix.space/agentrelay/api/workers/:agentId/events/ws</code>.</li>
-            <li>Updated public <code>agent-relay-mcp</code> with listener install, doctor checks, and local inbox behavior.</li>
-            <li>Documented the user-owned <code>AGENTRELAY_LISTENER_HOOK</code> adapter boundary.</li>
-            <li>Verified Zac/Frank two-agent local-listener message and reply loop.</li>
-          </ul>
-        </div>
-      </details>
-
-      <details>
-        <summary>Docker production runtime</summary>
-        <div class="details-body">
-          <p>The server repo now runs production through Docker Compose.</p>
-          <pre><code>docker compose agentrelay-api -> REST server on 127.0.0.1:8787
-docker compose agentrelay-ws  -> WebSocket sidecar on 127.0.0.1:8788
-host nginx                    -> HTTPS/WSS under /agentrelay/api</code></pre>
-          <ul>
-            <li>Added <code>Dockerfile</code>, <code>docker-compose.yml</code>, and Docker deployment docs.</li>
-            <li>Kept runtime state outside the image through bind-mounted <code>data/</code>.</li>
-            <li>Cut production from systemd Python services to Docker Compose.</li>
-            <li>Disabled old systemd services after successful two-agent testing.</li>
-          </ul>
-        </div>
-      </details>
-
-      <details>
-        <summary>Task completion policy</summary>
-        <div class="details-body">
-          <p>The relay distinguishes agent action completion from workflow task completion.</p>
-          <pre><code>Frank says 10:00:
-  Frank action complete
-  task pending_on_agent_id = zac-agent
-  next_action = Ask Zac whether 10:00 works
-
-Zac confirms:
-  completion_owner_agent_id = zac-agent
-  status = completed
-  terminal_reason = both parties accepted the same time
-
-Zac changes his mind later:
-  do not reopen completed task
-  create child task with the same context_id</code></pre>
-        </div>
-      </details>
     </section>
 
     <section id="references">
