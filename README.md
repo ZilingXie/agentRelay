@@ -29,6 +29,8 @@ The important Phase 1 requirement is thread reuse:
 - A2A upstream reference: `references/a2a`
 - `plan.md`: overall AgentRelay plan
 - `phase1-plan.md`: Phase 1 Codex App thread loop
+- `phase3-plan.md`: Phase 3 agent collaboration protocol roadmap
+- `docs/agent-collaboration-protocol-v0.md`: current Phase 1/2 collaboration protocol shape
 - `docs/thread-bridge-proof.md`: Codex App thread creation and reuse proof
 - `docs/origin-thread-delivery-proof.md`: Zac origin thread delivery proof
 - `docs/task-completion-policy.md`: task completion, ownership transfer, timeout, and follow-up policy
@@ -69,6 +71,18 @@ The important Phase 1 requirement is thread reuse:
 - [x] Document user-owned local inbox hook/adapter contract in `ZilingXie/agent-relay-mcp`.
 - [x] Migrate production runtime to Docker Compose.
 - [x] Verify Zac/Frank two-agent local-listener message and reply loop.
+
+## Phase 3 Direction
+
+Phase 3 turns the working PoC into a productizable agent collaboration protocol. The relay remains transport and durable state; the agents own reasoning, human approval, and semantic completion.
+
+Next implementation slice:
+
+- [x] Create Phase 3 plan.
+- [x] Document the current Phase 1/2 agent communication protocol.
+- [ ] Add JSON schemas for protocol payloads.
+- [ ] Implement and test an explicit task state transition validator.
+- [ ] Add idempotency keys and first-class human approval records.
 
 ## Run Locally
 

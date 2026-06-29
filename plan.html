@@ -320,12 +320,12 @@
     <header>
       <div>
         <h1>AgentRelay PoC Plan</h1>
-        <p class="subtitle">Use A2A as the agent-to-agent protocol, and use this public VM as the relay server for local Codex-style agents that do not have public IP addresses.</p>
+        <p class="subtitle">Define how agents collaborate to solve problems, and use this public VM as the relay server for local Codex-style agents that do not have public IP addresses.</p>
         <p class="subtitle">GitHub: <a href="https://github.com/ZilingXie/agentRelay">github.com/ZilingXie/agentRelay</a></p>
       </div>
       <div class="status-box">
         <strong>Current decision</strong>
-        <p>Keep A2A as the external protocol. Replace the original local-only mailbox with a public store-and-forward relay that hosts agent identity, task state, queues, artifacts, and audit history.</p>
+        <p>AgentRelay should stay a relay: durable transport, auth, notification, state, and audit. Phase 3 defines the agent collaboration protocol on top, with A2A as an interoperability target.</p>
       </div>
     </header>
 
@@ -337,6 +337,7 @@
       <a href="#steps">Steps</a>
       <a href="#phase1-thread">Phase 1</a>
       <a href="#phase2-push">Phase 2</a>
+      <a href="#phase3-protocol">Phase 3</a>
       <a href="#completion">Completion</a>
       <a href="#mvp">MVP</a>
       <a href="#risks">Risks</a>
@@ -354,7 +355,7 @@
         <div class="card">
           <span class="tag green">Solution</span>
           <h3>Public relay server</h3>
-          <p>This machine hosts public A2A endpoints. Local agents connect outward to claim tasks, update state, request human approval, and return artifacts.</p>
+          <p>This machine hosts public relay endpoints. Local agents connect outward to claim tasks, update state, request human approval, and return artifacts.</p>
         </div>
       </div>
     </section>
@@ -376,26 +377,26 @@
           <span class="tag green">Preserved intent</span>
           <h3>Humans stop being copy-paste routers</h3>
           <p>The important idea is not the folder itself. The important idea is that each human has a representative agent, and agents can coordinate asynchronously while humans only approve decisions, fill missing context, and set boundaries.</p>
-          <p>AgentRelay keeps this intent, but replaces ad hoc Markdown mail as the external protocol with A2A, and replaces local-only inbox folders with a public relay that local agents can reach through outbound HTTPS.</p>
+          <p>AgentRelay keeps this intent, but replaces ad hoc Markdown mail with structured task/message/artifact semantics, and replaces local-only inbox folders with a public relay that local agents can reach through outbound HTTPS/WSS.</p>
         </div>
       </div>
     </section>
 
     <section id="comparison">
       <h2>3. From Mailbox to AgentRelay</h2>
-      <p>The original plan used an email-like folder structure. The revised plan keeps the same async collaboration model, but upgrades the external protocol to A2A.</p>
+      <p>The original plan used an email-like folder structure. The revised plan keeps the same async collaboration model, but turns it into a task/message/artifact protocol that can later map cleanly to A2A.</p>
       <table>
         <thead>
           <tr>
             <th>Original mailbox idea</th>
-            <th>AgentRelay with A2A</th>
+            <th>AgentRelay protocol shape</th>
             <th>Why it changes</th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <td><code>agentlist.md</code></td>
-            <td>A2A Agent Card registry</td>
+            <td>Agent Card registry</td>
             <td>Remote agents need machine-readable identity, capability, endpoint, and auth metadata.</td>
           </tr>
           <tr>
@@ -405,8 +406,8 @@
           </tr>
           <tr>
             <td>Markdown email</td>
-            <td>A2A Message with structured parts</td>
-            <td>A2A gives a standard message envelope for interoperable agents.</td>
+            <td>Structured message parts</td>
+            <td>Structured envelopes make agent requests auditable and later A2A-compatible.</td>
           </tr>
           <tr>
             <td><code>thread_id</code></td>
@@ -415,7 +416,7 @@
           </tr>
           <tr>
             <td>Reply file</td>
-            <td>A2A Artifact or task status message</td>
+            <td>Artifact plus task status transition</td>
             <td>Results should be typed and attached to task history.</td>
           </tr>
           <tr>
@@ -441,14 +442,14 @@
       <h2>4. Target Architecture</h2>
       <div class="flow" aria-label="AgentRelay flow">
         <div><strong>Zac Codex</strong><span>Creates a request through a local connector or MCP tool.</span></div>
-        <div><strong>Relay A2A API</strong><span>Receives the A2A message and creates a task.</span></div>
+        <div><strong>Relay API</strong><span>Receives structured requests and creates tasks.</span></div>
         <div><strong>Task Queue</strong><span>Stores state for Frank's agent until it connects.</span></div>
         <div><strong>Frank Connector</strong><span>Claims the task using outbound HTTP and asks Frank when needed.</span></div>
         <div><strong>Artifact Reply</strong><span>Returns result to the relay for Zac's agent to fetch or subscribe to.</span></div>
       </div>
       <pre><code>Zac local Codex
   -> local connector / MCP tool
-  -> HTTPS A2A message to https://server.stellarix.space/agentrelay/
+  -> HTTPS request to https://server.stellarix.space/agentrelay/api
   -> relay creates task for frank-agent
 
 Frank local Codex
@@ -470,13 +471,13 @@ Zac local Codex
         <li>
           <div>
             <h3>Rename and freeze the project shape</h3>
-            <p>Use <code>agentRelay</code> as the canonical project name. Keep the existing folder model as a readable debug view, but treat A2A as the external protocol.</p>
+            <p>Use <code>agentRelay</code> as the canonical project name. Keep the original mailbox idea as the mental model, but treat task/message/artifact semantics as the protocol core.</p>
           </div>
         </li>
         <li>
           <div>
-            <h3>Define the A2A subset</h3>
-            <p>Implement only the minimum needed for the PoC: Agent Cards, message send, task lookup, task status updates, and artifacts.</p>
+            <h3>Define the collaboration protocol subset</h3>
+            <p>Implement only the minimum needed for the PoC: Agent Cards, task creation, message parts, task lookup, task status updates, and artifacts.</p>
           </div>
         </li>
         <li>
@@ -487,8 +488,8 @@ Zac local Codex
         </li>
         <li>
           <div>
-            <h3>Expose public A2A endpoints</h3>
-            <p>Serve each remote-facing agent at a stable URL such as <code>/agentrelay/agents/frank-agent/a2a</code>. The outside world talks to the relay as if it is Frank's A2A endpoint.</p>
+            <h3>Expose public relay endpoints</h3>
+            <p>Serve each remote-facing agent through stable HTTPS/WSS relay endpoints. Local agents connect outward, so they do not need public IP addresses.</p>
           </div>
         </li>
         <li>
@@ -697,6 +698,67 @@ host nginx                    -> REST + WSS under /agentrelay/api</code></pre>
       <p class="note">Current checkpoint: Phase 2 cloud relay and public MCP/listener contract are complete. The local hook boundary is intentionally user-owned so the relay is not tied to one human interface. Detailed implementation plan: <code>phase2-plan.md</code>.</p>
     </section>
 
+    <section id="phase3-protocol">
+      <h2>6.6 Phase 3: Agent Collaboration Protocol</h2>
+      <p>Phase 3 turns the working PoC into a productizable protocol. AgentRelay remains the relay; the protocol defines how agents coordinate work, transfer ownership, ask humans, submit action results, and decide completion.</p>
+
+      <div class="grid three">
+        <div class="card">
+          <span class="tag blue">Relay</span>
+          <h3>Transport and state</h3>
+          <p>AgentRelay owns auth, routing, durable task state, pending notifications, recovery, thread binding metadata, and audit history.</p>
+        </div>
+        <div class="card">
+          <span class="tag green">Agents</span>
+          <h3>Reasoning and completion</h3>
+          <p>Local agents own reasoning, tool use, human confirmation, evaluating <code>done_criteria</code>, and deciding whether to continue, close, reject, or create child tasks.</p>
+        </div>
+        <div class="card">
+          <span class="tag amber">Adapters</span>
+          <h3>User-owned workflows</h3>
+          <p>Codex App, Codex CLI, WeChat, Slack, and custom workflows are local adapter choices. The cloud relay does not hard-bind itself to one human interface.</p>
+        </div>
+      </div>
+
+      <h3>Current protocol shape from Phase 1/2</h3>
+      <pre><code>Agent
+  agent_id, owner, name, description, Agent Card
+
+Task
+  task_id, context_id, requester_agent_id, target_agent_id
+  status, done_criteria, completion_owner_agent_id
+  pending_on_agent_id, pending_on_human_id, next_action
+
+Message
+  from_agent_id, to_agent_id, role, structured parts
+
+Artifact
+  action result, typed parts, next_status, ownership transfer
+
+Task Event
+  append-only audit history
+
+Agent Event
+  durable task.pending notification for local listeners
+
+Thread Binding
+  per-agent mapping to local workflow surfaces</code></pre>
+
+      <h3>Phase 3 implementation roadmap</h3>
+      <ul>
+        <li>Done: create <code>phase3-plan.md</code>.</li>
+        <li>Done: document the current Phase 1/2 communication semantics in <code>docs/agent-collaboration-protocol-v0.md</code>.</li>
+        <li>Next: add <code>protocol_version</code> to task/message/artifact/event payloads.</li>
+        <li>Next: create JSON schemas for task creation, artifact submission, status transition, close, and agent events.</li>
+        <li>Next: implement a state transition validator and negative tests for invalid transitions.</li>
+        <li>Next: add idempotency keys and first-class human approval records.</li>
+        <li>Next: expand Agent Cards with capabilities, scopes, and accepted task types.</li>
+        <li>Next: map this protocol to an A2A-compatible endpoint plan.</li>
+      </ul>
+
+      <p class="note">Phase 3 should start with schemas and transition validation. Do not begin with a dashboard or full A2A coverage; the highest leverage next step is preventing ambiguous or invalid collaboration states.</p>
+    </section>
+
     <section id="completion">
       <h2>7. Task Completion Policy</h2>
       <p>AgentRelay must distinguish between an agent finishing its current action and the whole workflow task reaching terminal completion.</p>
@@ -769,7 +831,7 @@ Zac accepts then changes his mind after completion:
         <div class="card">
           <span class="tag red">Safety</span>
           <h3>Prompt injection</h3>
-          <p>Remote A2A messages are untrusted input. The connector must never let a remote task override local system instructions, read arbitrary files, or skip owner approval.</p>
+          <p>Remote agent messages are untrusted input. The connector must never let a remote task override local system instructions, read arbitrary files, or skip owner approval.</p>
         </div>
         <div class="card">
           <span class="tag amber">Reliability</span>
