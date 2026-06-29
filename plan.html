@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AgentRelay PoC Plan</title>
+  <title>AgentRelay Roadmap</title>
   <style>
     :root {
       color-scheme: light;
@@ -44,7 +44,7 @@
 
     header {
       display: grid;
-      grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
+      grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.8fr);
       gap: 28px;
       align-items: end;
       padding: 22px 0 28px;
@@ -53,22 +53,65 @@
 
     h1 {
       margin: 0 0 12px;
-      font-size: clamp(2rem, 5vw, 4.5rem);
+      font-size: clamp(2.1rem, 5vw, 4.4rem);
       line-height: 0.98;
       letter-spacing: 0;
     }
 
-    .subtitle {
-      max-width: 760px;
+    h2 {
+      margin: 0 0 16px;
+      font-size: 1.55rem;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    code,
+    pre {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    pre {
+      overflow-x: auto;
       margin: 0;
+      padding: 16px;
+      background: #182026;
+      color: #edf2f4;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+
+    section {
+      padding: 32px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .subtitle {
+      max-width: 780px;
+      margin: 0 0 10px;
       color: var(--muted);
       font-size: 1.05rem;
     }
 
-    .status-box {
+    .status-box,
+    .card,
+    details {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
+    }
+
+    .status-box {
       padding: 18px;
       box-shadow: var(--shadow);
     }
@@ -99,28 +142,6 @@
       font-size: 0.92rem;
     }
 
-    section {
-      padding: 32px 0;
-      border-bottom: 1px solid var(--line);
-    }
-
-    h2 {
-      margin: 0 0 16px;
-      font-size: 1.55rem;
-      line-height: 1.2;
-      letter-spacing: 0;
-    }
-
-    h3 {
-      margin: 0 0 8px;
-      font-size: 1.05rem;
-      letter-spacing: 0;
-    }
-
-    p {
-      margin: 0 0 14px;
-    }
-
     .grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -132,9 +153,6 @@
     }
 
     .card {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
       padding: 18px;
       min-width: 0;
     }
@@ -161,26 +179,91 @@
     .tag.amber { background: var(--amber); }
     .tag.red { background: var(--red); }
 
-    .flow {
-      display: grid;
-      grid-template-columns: repeat(5, minmax(120px, 1fr));
-      gap: 10px;
-      align-items: stretch;
+    .note {
+      border-left: 4px solid var(--amber);
+      padding: 12px 16px;
+      background: #fff8ea;
+      border-radius: 0 8px 8px 0;
     }
 
-    .flow div {
-      position: relative;
+    .repo-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 12px;
+    }
+
+    .repo {
+      padding: 16px;
       background: #fff;
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 14px;
-      min-height: 96px;
     }
 
-    .flow strong {
+    .repo strong {
       display: block;
       margin-bottom: 6px;
       color: var(--blue);
+    }
+
+    .architecture {
+      display: grid;
+      grid-template-columns: minmax(190px, 1fr) 56px minmax(190px, 1fr) 56px minmax(190px, 1fr);
+      gap: 12px;
+      align-items: stretch;
+      margin-top: 18px;
+    }
+
+    .node {
+      display: grid;
+      gap: 10px;
+      align-content: start;
+      min-height: 190px;
+      padding: 16px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .node h3 {
+      color: var(--blue);
+    }
+
+    .node ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .arrow {
+      display: grid;
+      place-items: center;
+      min-height: 190px;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .arrow span {
+      display: block;
+      width: 44px;
+      height: 2px;
+      background: var(--line);
+      position: relative;
+    }
+
+    .arrow span::after {
+      content: "";
+      position: absolute;
+      right: -1px;
+      top: -5px;
+      width: 0;
+      height: 0;
+      border-top: 6px solid transparent;
+      border-bottom: 6px solid transparent;
+      border-left: 9px solid var(--line);
+    }
+
+    .flow-note {
+      margin-top: 14px;
     }
 
     .steps {
@@ -215,78 +298,21 @@
       font-weight: 800;
     }
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: 8px;
+    details {
+      margin: 14px 0;
       overflow: hidden;
-      display: table;
     }
 
-    th,
-    td {
-      padding: 12px 14px;
-      border-bottom: 1px solid var(--line);
-      text-align: left;
-      vertical-align: top;
-    }
-
-    th {
-      background: #eef3f7;
-      color: #263238;
-      font-size: 0.92rem;
-    }
-
-    tr:last-child td {
-      border-bottom: 0;
-    }
-
-    code,
-    pre {
-      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-    }
-
-    pre {
-      overflow-x: auto;
-      margin: 0;
-      padding: 16px;
-      background: #182026;
-      color: #edf2f4;
-      border-radius: 8px;
-      font-size: 0.9rem;
-      line-height: 1.45;
-    }
-
-    .note {
-      border-left: 4px solid var(--amber);
-      padding: 12px 16px;
-      background: #fff8ea;
-      border-radius: 0 8px 8px 0;
-    }
-
-    blockquote {
-      margin: 0 0 16px;
+    summary {
+      cursor: pointer;
       padding: 16px 18px;
-      border-left: 4px solid var(--teal);
-      background: #eef8f7;
-      border-radius: 0 8px 8px 0;
-      color: #203c40;
+      font-weight: 800;
+      color: var(--blue);
+      background: #eef3f7;
     }
 
-    blockquote p {
-      margin-bottom: 10px;
-    }
-
-    blockquote p:last-child {
-      margin-bottom: 0;
-    }
-
-    .sources {
-      display: grid;
-      gap: 8px;
-      padding-left: 18px;
+    .details-body {
+      padding: 18px;
     }
 
     footer {
@@ -295,22 +321,26 @@
       font-size: 0.92rem;
     }
 
-    @media (max-width: 860px) {
+    @media (max-width: 900px) {
       header,
       .grid,
       .three,
-      .flow {
+      .repo-list,
+      .architecture {
         grid-template-columns: 1fr;
+      }
+
+      .arrow {
+        min-height: 38px;
+        transform: rotate(90deg);
+      }
+
+      .node {
+        min-height: 0;
       }
 
       .page {
         padding: 24px 16px 48px;
-      }
-
-      table {
-        display: block;
-        overflow-x: auto;
-        white-space: nowrap;
       }
     }
   </style>
@@ -319,410 +349,122 @@
   <main class="page">
     <header>
       <div>
-        <h1>AgentRelay PoC Plan</h1>
-        <p class="subtitle">Define how agents collaborate to solve problems, and use this public VM as the relay server for local Codex-style agents that do not have public IP addresses.</p>
-        <p class="subtitle">GitHub: <a href="https://github.com/ZilingXie/agentRelay">github.com/ZilingXie/agentRelay</a></p>
+        <h1>AgentRelay Roadmap</h1>
+        <p class="subtitle">AgentRelay defines how personal agents collaborate to solve problems while staying behind NAT. The cloud server is only the relay; the agents keep the reasoning, human approval, and workflow decisions.</p>
+        <p class="subtitle">Public page: <code>https://server.stellarix.space/agentrelay/plan.html</code></p>
       </div>
       <div class="status-box">
-        <strong>Current decision</strong>
-        <p>AgentRelay should stay a relay: durable transport, auth, notification, state, and audit. Phase 3 defines the agent collaboration protocol on top, with A2A as an interoperability target.</p>
+        <strong>Current focus</strong>
+        <p>Phase 3: productize the agent collaboration protocol. Completed Phase 1/2 details are folded below so the active roadmap stays readable.</p>
       </div>
     </header>
 
     <nav aria-label="Plan sections">
-      <a href="#goal">Goal</a>
-      <a href="#origin">Origin</a>
-      <a href="#comparison">Comparison</a>
+      <a href="#intro">Project</a>
       <a href="#architecture">Architecture</a>
-      <a href="#steps">Steps</a>
-      <a href="#phase1-thread">Phase 1</a>
-      <a href="#phase2-push">Phase 2</a>
-      <a href="#phase3-protocol">Phase 3</a>
-      <a href="#completion">Completion</a>
-      <a href="#mvp">MVP</a>
-      <a href="#risks">Risks</a>
-      <a href="#sources">Sources</a>
+      <a href="#phase3">Phase 3</a>
+      <a href="#completed">Completed</a>
+      <a href="#references">References</a>
     </nav>
 
-    <section id="goal">
-      <h2>1. Goal</h2>
-      <div class="grid">
-        <div class="card">
-          <span class="tag blue">Problem</span>
-          <h3>Agents are behind NAT</h3>
-          <p>Zac's local Codex agent and Frank's local Codex agent cannot expose public HTTP endpoints. Direct A2A peer-to-peer transport is therefore not realistic for the first version.</p>
+    <section id="intro">
+      <h2>Project Introduction</h2>
+      <p>AgentRelay explores a simple product idea: instead of humans copying messages between agents, each human should be able to say, "ask my agent." Agents then coordinate asynchronously, ask their owners when needed, and return structured results.</p>
+      <p>The project currently has two GitHub repositories with separate responsibilities:</p>
+
+      <div class="repo-list">
+        <div class="repo">
+          <strong><a href="https://github.com/ZilingXie/agentRelay">ZilingXie/agentRelay</a></strong>
+          <p>Server-side relay. It runs on the public VM with Docker Compose, stores agents/tasks/messages/artifacts/events in SQLite, exposes HTTPS/WSS through nginx, and provides durable task notification and recovery.</p>
         </div>
-        <div class="card">
-          <span class="tag green">Solution</span>
-          <h3>Public relay server</h3>
-          <p>This machine hosts public relay endpoints. Local agents connect outward to claim tasks, update state, request human approval, and return artifacts.</p>
+        <div class="repo">
+          <strong><a href="https://github.com/ZilingXie/agent-relay-mcp">ZilingXie/agent-relay-mcp</a></strong>
+          <p>Client-side agent package. Local Codex agents install it as an MCP server/listener, store credentials in `.env`, call AgentRelay tools, receive WebSocket notifications, and write incoming work into a local inbox.</p>
         </div>
       </div>
-    </section>
 
-    <section id="origin">
-      <h2>2. Original Intuition</h2>
-      <blockquote>
-        <p>Another project is how agents communicate with each other. Sometimes I want to say: do not ask me, ask my agent. I am just a brainless vessel that only does copy and paste.</p>
-        <p>The first thought was RTM, but that may be too complicated. The current intuition is more like email: a root folder on a VM, an <code>agentlist.md</code> file that lists available agents and their functions, an archive folder, and one inbox per agent.</p>
-      </blockquote>
-      <div class="grid">
-        <div class="card">
-          <span class="tag blue">Original flow</span>
-          <h3>Email-like agent handoff</h3>
-          <p>Zac tells his agent that he wants a meeting with Frank but does not know Frank's schedule. Zac's agent writes a structured message with <code>from</code>, <code>to</code>, <code>subject</code>, and <code>body</code>, then places it in Frank agent's inbox.</p>
-          <p>Frank's agent checks the inbox on a schedule, reads new messages, decides whether action is needed, asks Frank for confirmation when needed, writes a reply, and sends it back to Zac agent's inbox. The loop continues until the issue is resolved and archived.</p>
-        </div>
-        <div class="card">
-          <span class="tag green">Preserved intent</span>
-          <h3>Humans stop being copy-paste routers</h3>
-          <p>The important idea is not the folder itself. The important idea is that each human has a representative agent, and agents can coordinate asynchronously while humans only approve decisions, fill missing context, and set boundaries.</p>
-          <p>AgentRelay keeps this intent, but replaces ad hoc Markdown mail with structured task/message/artifact semantics, and replaces local-only inbox folders with a public relay that local agents can reach through outbound HTTPS/WSS.</p>
-        </div>
+      <div class="note">
+        <p><strong>Product boundary:</strong> AgentRelay is not the agent brain. It routes, persists, authenticates, notifies, and audits. Local agents decide how to reason, when to ask humans, and how to continue or close work.</p>
       </div>
-    </section>
-
-    <section id="comparison">
-      <h2>3. From Mailbox to AgentRelay</h2>
-      <p>The original plan used an email-like folder structure. The revised plan keeps the same async collaboration model, but turns it into a task/message/artifact protocol that can later map cleanly to A2A.</p>
-      <table>
-        <thead>
-          <tr>
-            <th>Original mailbox idea</th>
-            <th>AgentRelay protocol shape</th>
-            <th>Why it changes</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>agentlist.md</code></td>
-            <td>Agent Card registry</td>
-            <td>Remote agents need machine-readable identity, capability, endpoint, and auth metadata.</td>
-          </tr>
-          <tr>
-            <td><code>inboxes/frank-agent/</code></td>
-            <td>Frank task queue on the relay</td>
-            <td>Frank's local agent has no public IP, so it claims tasks from the relay using outbound HTTP.</td>
-          </tr>
-          <tr>
-            <td>Markdown email</td>
-            <td>Structured message parts</td>
-            <td>Structured envelopes make agent requests auditable and later A2A-compatible.</td>
-          </tr>
-          <tr>
-            <td><code>thread_id</code></td>
-            <td><code>contextId</code> and <code>taskId</code></td>
-            <td>Multi-turn collaboration and task lifecycle should be explicit.</td>
-          </tr>
-          <tr>
-            <td>Reply file</td>
-            <td>Artifact plus task status transition</td>
-            <td>Results should be typed and attached to task history.</td>
-          </tr>
-          <tr>
-            <td><code>archive/</code></td>
-            <td>Task history, artifacts, and audit log</td>
-            <td>The relay needs recovery, traceability, and governance.</td>
-          </tr>
-          <tr>
-            <td>Cron checks inbox</td>
-            <td>Local connector polling, long-polling, SSE, or WebSocket</td>
-            <td>Local agents can initiate outbound connections even without public IPs.</td>
-          </tr>
-          <tr>
-            <td><code>requires_human</code></td>
-            <td><code>input-required</code> or <code>auth-required</code></td>
-            <td>Human approval becomes part of task state rather than an informal note.</td>
-          </tr>
-        </tbody>
-      </table>
     </section>
 
     <section id="architecture">
-      <h2>4. Target Architecture</h2>
-      <div class="flow" aria-label="AgentRelay flow">
-        <div><strong>Zac Codex</strong><span>Creates a request through a local connector or MCP tool.</span></div>
-        <div><strong>Relay API</strong><span>Receives structured requests and creates tasks.</span></div>
-        <div><strong>Task Queue</strong><span>Stores state for Frank's agent until it connects.</span></div>
-        <div><strong>Frank Connector</strong><span>Claims the task using outbound HTTP and asks Frank when needed.</span></div>
-        <div><strong>Artifact Reply</strong><span>Returns result to the relay for Zac's agent to fetch or subscribe to.</span></div>
-      </div>
-      <pre><code>Zac local Codex
-  -> local connector / MCP tool
-  -> HTTPS request to https://server.stellarix.space/agentrelay/api
-  -> relay creates task for frank-agent
+      <h2>How Agents Communicate</h2>
+      <p>Zac's agent and Frank's agent both live on private machines. They cannot accept inbound public HTTP calls, so both connect outward to the relay. The MCP client gives each local agent tools for creating tasks, claiming work, submitting artifacts, and listening for pending events.</p>
 
-Frank local Codex
-  -> outbound worker connection to relay
-  -> claims task
-  -> processes locally
-  -> updates task state
-  -> returns artifact/result
-
-Zac local Codex
-  -> polls/subscribes to task
-  -> receives result
-  -> reports to Zac</code></pre>
-    </section>
-
-    <section id="steps">
-      <h2>5. Implementation Steps</h2>
-      <ol class="steps">
-        <li>
-          <div>
-            <h3>Rename and freeze the project shape</h3>
-            <p>Use <code>agentRelay</code> as the canonical project name. Keep the original mailbox idea as the mental model, but treat task/message/artifact semantics as the protocol core.</p>
-          </div>
-        </li>
-        <li>
-          <div>
-            <h3>Define the collaboration protocol subset</h3>
-            <p>Implement only the minimum needed for the PoC: Agent Cards, task creation, message parts, task lookup, task status updates, and artifacts.</p>
-          </div>
-        </li>
-        <li>
-          <div>
-            <h3>Build the relay data model</h3>
-            <p>Create storage for agents, tasks, messages, artifacts, task events, worker sessions, and approval records. SQLite is enough for the first version.</p>
-          </div>
-        </li>
-        <li>
-          <div>
-            <h3>Expose public relay endpoints</h3>
-            <p>Serve each remote-facing agent through stable HTTPS/WSS relay endpoints. Local agents connect outward, so they do not need public IP addresses.</p>
-          </div>
-        </li>
-        <li>
-          <div>
-            <h3>Create the local connector</h3>
-            <p>Run a small local process beside each Codex agent. It claims tasks from the relay, passes them to the local agent, and posts updates back to the relay.</p>
-          </div>
-        </li>
-        <li>
-          <div>
-            <h3>Add human confirmation states</h3>
-            <p>Map privacy, scheduling, authorization, and commitment decisions to <code>input-required</code> or <code>auth-required</code>. Do not let remote messages bypass the owner.</p>
-          </div>
-        </li>
-        <li>
-          <div>
-            <h3>Run the meeting-scheduling scenario</h3>
-            <p>Test the first thread: Zac asks to meet Frank, Frank's connector requests approval, Frank approves limited availability, and Zac receives candidate times.</p>
-          </div>
-        </li>
-        <li>
-          <div>
-            <h3>Harden transport and audit</h3>
-            <p>Add authentication, signed worker sessions, idempotency keys, replay protection, task TTL, max turns, and immutable task event logs.</p>
-          </div>
-        </li>
-      </ol>
-    </section>
-
-    <section id="phase1-thread">
-      <h2>6. Phase 1: Codex App Thread Loop</h2>
-      <p>Phase 1 should not be a CLI-first demo. The PoC experience should happen inside Codex App threads, because the real product idea is that humans talk to their own agents, not to a relay command line.</p>
-      <pre><code>Zac Codex App thread abc
-  -> Zac asks: use AgentRelay to ask Frank when he is free
-  -> Zac Codex creates an AgentRelay task and records requesterThreadId=abc
-  -> AgentRelay queues the task for frank-agent
-
-Frank connector
-  -> periodically GET /workers/frank-agent/claim
-  -> if a claim exists, create or reuse a Frank Codex App thread
-  -> Frank Codex asks Frank for availability
-  -> Frank replies in that thread
-  -> Frank Codex submits artifact/result to AgentRelay
-
-AgentRelay delivery
-  -> sends Frank's reply back to Zac requesterThreadId=abc
-  -> Zac Codex continues in the original thread</code></pre>
-
-      <div class="grid">
-        <div class="card">
+      <div class="architecture" aria-label="AgentRelay architecture diagram">
+        <div class="node">
           <span class="tag blue">Zac side</span>
-          <h3>Reuse the origin thread</h3>
-          <p>When Zac creates the request from thread <code>abc</code>, AgentRelay must store <code>requester_thread_id=abc</code>. All replies from Frank must be delivered back to that same thread, not to a new Zac thread.</p>
+          <h3>Zac local agent</h3>
+          <ul>
+            <li>Codex App / CLI thread</li>
+            <li>AgentRelay MCP tools</li>
+            <li>Local listener and inbox</li>
+            <li>User-owned hook adapter</li>
+          </ul>
         </div>
-        <div class="card">
-          <span class="tag green">Frank side</span>
-          <h3>Create once, then reuse</h3>
-          <p>When Frank connector claims a new task, it creates a Codex App thread for Frank if one does not already exist. The resulting <code>target_thread_id</code> is saved to the task and reused for follow-ups.</p>
+
+        <div class="arrow" aria-hidden="true"><span></span></div>
+
+        <div class="node">
+          <span class="tag green">Cloud relay</span>
+          <h3>AgentRelay server</h3>
+          <ul>
+            <li>Docker Compose API and WS services</li>
+            <li>HTTPS/WSS via nginx</li>
+            <li>SQLite task/event store</li>
+            <li>Token auth and audit trail</li>
+          </ul>
+        </div>
+
+        <div class="arrow" aria-hidden="true"><span></span></div>
+
+        <div class="node">
+          <span class="tag amber">Frank side</span>
+          <h3>Frank local agent</h3>
+          <ul>
+            <li>Codex App / CLI / other surface</li>
+            <li>AgentRelay MCP tools</li>
+            <li>WebSocket listener</li>
+            <li>Human confirmation with Frank</li>
+          </ul>
         </div>
       </div>
 
-      <h3>Phase 1 success criteria</h3>
-      <ul>
-        <li>Zac starts in one Codex App thread and never becomes a copy-paste messenger.</li>
-        <li>Frank receives the request in his own Codex App thread and can approve or reply there.</li>
-        <li>AgentRelay stores task state, message history, artifacts, and both sides' thread ids.</li>
-        <li>Frank's reply is posted back into Zac's original thread.</li>
-      </ul>
-
-      <h3>Minimum thread mapping data</h3>
-      <pre><code>{
-  "task_id": "task_123",
-  "context_id": "ctx_meeting_frank_20260625",
-  "requester_agent_id": "zac-agent",
-  "target_agent_id": "frank-agent",
-  "requester_thread_id": "abc",
-  "target_thread_id": "frank-thread-123",
-  "requester_thread_policy": "reuse-origin-thread",
-  "target_thread_policy": "reuse-task-thread",
-  "status": "input-required"
-}</code></pre>
-
-      <p class="note">The main implementation risk is whether a background connector can create and continue Codex App threads directly. If not, Phase 1 needs a small Codex App bridge or MCP server that exposes thread delivery operations to the relay.</p>
-
-      <h3>Local MCP install decision</h3>
-      <p>Because the AgentRelay server repo is private, the installable MCP client and local Codex setup guide now live in the public repo <a href="https://github.com/ZilingXie/agent-relay-mcp"><code>ZilingXie/agent-relay-mcp</code></a>. Local Codex agents should install that repo; this private repo keeps the relay server and planning docs.</p>
-      <p>The cloud relay issues <code>username + agent_id + token</code>. The local MCP client stores them in its private <code>.env</code> file and sends <code>Authorization: Bearer</code>, <code>X-AgentRelay-Agent-Id</code>, and <code>X-AgentRelay-Username</code> headers.</p>
-      <p>Public API: <code>https://server.stellarix.space/agentrelay/api</code>, reverse-proxied by host nginx to the Docker Compose API service on <code>127.0.0.1:8787</code>.</p>
-      <pre><code>[mcp_servers.agentrelay]
-command = "node"
-args = ["/absolute/path/to/agent-relay-mcp/mcp/server.mjs"]
-cwd = "/absolute/path/to/agent-relay-mcp"
-
-[mcp_servers.agentrelay.env]
-AGENTRELAY_BASE_URL = "http://127.0.0.1:8787/agentrelay"</code></pre>
-
-      <h3>Progress</h3>
-      <ul>
-        <li>Done: create GitHub repository and push planning docs.</li>
-        <li>Done: add official A2A repository as upstream reference.</li>
-        <li>Done: scaffold relay server project.</li>
-        <li>Done: implement SQLite data model.</li>
-        <li>Done: implement A2A-shaped task and worker APIs.</li>
-        <li>Done: verify with a local smoke test.</li>
-        <li>Done: add Codex App thread bridge proof.</li>
-        <li>Done: encode requester-side completion ownership in task metadata and API payloads.</li>
-        <li>Done: implement controlled delivery back to Zac's origin thread.</li>
-        <li>Done: package Codex App bridge into a reusable connector/MCP flow.</li>
-        <li>Done: implement AgentRelay MCP tools that wrap the relay HTTP API.</li>
-        <li>Done: publish standalone local Codex MCP installer in <code>ZilingXie/agent-relay-mcp</code>.</li>
-        <li>Done: add Phase 1 username/token auth support for public MCP clients.</li>
-        <li>Done: deploy AgentRelay behind Docker Compose and nginx HTTPS reverse proxy.</li>
-        <li>Done: correct public MCP installer docs to a two-phase flow: configure and write <code>.env</code> template first, then user fills <code>.env</code> and restarts, then agent runs doctor and MCP checks.</li>
-        <li>Done: configure Codex App to use AgentRelay MCP and run the full Phase 1 meeting scenario.</li>
-        <li>Done: implement Phase 2 WebSocket notify push while keeping manual fetch available.</li>
-      </ul>
+      <pre class="flow-note"><code>1. Zac tells Zac agent: ask Frank when he can meet.
+2. Zac agent uses agent-relay-mcp to create a task on AgentRelay.
+3. AgentRelay stores the task and emits task.pending for frank-agent.
+4. Frank listener receives the WebSocket event, claims the task, and writes local inbox work.
+5. Frank agent asks Frank if needed, then submits an artifact/result.
+6. AgentRelay transfers pending ownership back to zac-agent.
+7. Zac listener receives the result and Zac agent continues in Zac's chosen workflow.</code></pre>
     </section>
 
-
-    <section id="phase2-push">
-      <h2>6.5 Phase 2: WebSocket Notify Push</h2>
-      <p>Phase 2 keeps the current manual fetch and HTTP claim flow, then adds WebSocket notify as an incremental realtime path. The cloud relay does not create Codex App threads; local listeners handle local Codex routing.</p>
-
-      <div class="grid">
-        <div class="card">
-          <span class="tag blue">Keep</span>
-          <h3>Manual fetch stays</h3>
-          <p>Existing REST APIs, MCP tools, and manual <code>claim</code> / <code>get_task</code> flows remain supported. WebSocket notify is additive, not a replacement.</p>
-        </div>
-        <div class="card">
-          <span class="tag green">Add</span>
-          <h3>Cloud push</h3>
-          <p>Local listeners make outbound WSS connections to AgentRelay. When a task becomes pending on an agent, the cloud pushes a lightweight <code>task.pending</code> event.</p>
-        </div>
-      </div>
-
-      <h3>Boundary</h3>
-      <ul>
-        <li>Cloud AgentRelay owns durable task state, auth, pending events, precise claim, and thread binding metadata.</li>
-        <li>Local listener owns WebSocket client behavior, background process management, logs, local state, and local inbox writes.</li>
-        <li>Codex App, Codex CLI, WeChat, Slack, or custom workflow adapters remain user-owned hook logic.</li>
-        <li>Codex App thread semantics and human confirmation remain local agent logic.</li>
-      </ul>
-
-      <h3>Cloud endpoints</h3>
-      <pre><code>GET  /agentrelay/api/workers/:agentId/pending
-POST /agentrelay/api/workers/:agentId/tasks/:taskId/claim
-GET  /agentrelay/api/workers/:agentId/events/ws
-POST /agentrelay/api/workers/:agentId/events/:eventId/ack</code></pre>
-
-      <h3>WebSocket contract</h3>
-      <pre><code>wss://server.stellarix.space/agentrelay/api/workers/zac-agent/events/ws
-
-Authorization: Bearer &lt;token&gt;
-X-AgentRelay-Agent-Id: zac-agent
-X-AgentRelay-Username: zac
-
-{
-  "type": "task.pending",
-  "eventId": "evt_abc",
-  "agentId": "zac-agent",
-  "taskId": "task_abc",
-  "subject": "Meeting availability",
-  "status": "delivery_pending",
-  "pendingOnAgentId": "zac-agent",
-  "updatedAt": 1782500000,
-  "reason": "ownership.transferred"
-}</code></pre>
-
-      <h3>Data model additions</h3>
-      <div class="grid">
-        <div class="card">
-          <span class="tag blue">Outbox</span>
-          <h3><code>agent_events</code></h3>
-          <p>Durable event outbox for WebSocket push. It prevents lost notifications when local listeners disconnect and reconnect.</p>
-        </div>
-        <div class="card">
-          <span class="tag green">Thread map</span>
-          <h3><code>task_thread_bindings</code></h3>
-          <p>Per-agent thread binding metadata so local listeners can create/reuse their own Codex App threads without overwriting another agent's thread id.</p>
-        </div>
-      </div>
-
-      <h3>Deployment shape</h3>
-      <pre><code>docker compose agentrelay-api -> REST server on 127.0.0.1:8787
-docker compose agentrelay-ws  -> WebSocket sidecar on 127.0.0.1:8788
-host nginx                    -> REST + WSS under /agentrelay/api</code></pre>
-
-      <h3>Progress</h3>
-      <ul>
-        <li>Done: define Phase 2 as WebSocket notify push without removing manual fetch.</li>
-        <li>Done: keep local listener and Codex App thread adapter outside cloud scope.</li>
-        <li>Done: add durable <code>agent_events</code> schema/helpers and per-agent <code>task_thread_bindings</code> schema/helpers.</li>
-        <li>Done: include Phase 2 store smoke coverage in <code>npm test</code>.</li>
-        <li>Done: add pending sync, precise claim, and event ack HTTP APIs.</li>
-        <li>Done: include Phase 2 API smoke coverage in <code>npm test</code>.</li>
-        <li>Done: automatically emit durable <code>task.pending</code> events on task creation, ownership transfer, status update, and delivery retry failure.</li>
-        <li>Done: deploy WebSocket notify sidecar at <code>wss://server.stellarix.space/agentrelay/api/workers/:agentId/events/ws</code>.</li>
-        <li>Done: include WebSocket smoke coverage in <code>npm test</code> and verify public WSS delivery.</li>
-        <li>Done: update the public <code>agent-relay-mcp</code> repo with listener install, doctor WSS checks, and listener docs.</li>
-        <li>Done: document the user-owned local inbox hook/adapter contract for Codex App, Codex CLI, WeChat, Slack, or custom workflows.</li>
-        <li>Done: migrate production runtime to Docker Compose.</li>
-        <li>Done: Zac and Frank reinstall the public repo, run doctor/MCP/WSS checks, start listeners, and complete the two-agent local-listener message/reply test.</li>
-      </ul>
-
-      <p class="note">Current checkpoint: Phase 2 cloud relay and public MCP/listener contract are complete. The local hook boundary is intentionally user-owned so the relay is not tied to one human interface. Detailed implementation plan: <code>phase2-plan.md</code>.</p>
-    </section>
-
-    <section id="phase3-protocol">
-      <h2>6.6 Phase 3: Agent Collaboration Protocol</h2>
-      <p>Phase 3 turns the working PoC into a productizable protocol. AgentRelay remains the relay; the protocol defines how agents coordinate work, transfer ownership, ask humans, submit action results, and decide completion.</p>
+    <section id="phase3">
+      <h2>Phase 3: Agent Collaboration Protocol</h2>
+      <p>Phase 1 and Phase 2 proved that the relay works. Phase 3 defines the protocol that lets agents collaborate reliably: task ownership, human approval, action results, terminal completion, retries, and child tasks.</p>
 
       <div class="grid three">
         <div class="card">
           <span class="tag blue">Relay</span>
-          <h3>Transport and state</h3>
-          <p>AgentRelay owns auth, routing, durable task state, pending notifications, recovery, thread binding metadata, and audit history.</p>
+          <h3>Small and durable</h3>
+          <p>Route work, persist task state, authenticate callers, push notifications, support recovery, and keep audit history.</p>
         </div>
         <div class="card">
-          <span class="tag green">Agents</span>
-          <h3>Reasoning and completion</h3>
-          <p>Local agents own reasoning, tool use, human confirmation, evaluating <code>done_criteria</code>, and deciding whether to continue, close, reject, or create child tasks.</p>
+          <span class="tag green">Protocol</span>
+          <h3>Shared contract</h3>
+          <p>Define task/message/artifact/event schemas, state transitions, idempotency, ownership transfer, and human approval records.</p>
         </div>
         <div class="card">
           <span class="tag amber">Adapters</span>
-          <h3>User-owned workflows</h3>
-          <p>Codex App, Codex CLI, WeChat, Slack, and custom workflows are local adapter choices. The cloud relay does not hard-bind itself to one human interface.</p>
+          <h3>User-owned surface</h3>
+          <p>Codex App, Codex CLI, WeChat, Slack, or custom workflows stay local choices. The cloud relay does not decide the user interface.</p>
         </div>
       </div>
 
-      <h3>Current protocol shape from Phase 1/2</h3>
+      <h3>Current Protocol Shape</h3>
       <pre><code>Agent
-  agent_id, owner, name, description, Agent Card
+  identity, owner, capabilities, Agent Card
 
 Task
   task_id, context_id, requester_agent_id, target_agent_id
@@ -730,10 +472,10 @@ Task
   pending_on_agent_id, pending_on_human_id, next_action
 
 Message
-  from_agent_id, to_agent_id, role, structured parts
+  structured input from one agent to another
 
 Artifact
-  action result, typed parts, next_status, ownership transfer
+  action result; not automatically task completion
 
 Task Event
   append-only audit history
@@ -742,115 +484,135 @@ Agent Event
   durable task.pending notification for local listeners
 
 Thread Binding
-  per-agent mapping to local workflow surfaces</code></pre>
+  local workflow mapping for each agent</code></pre>
 
-      <h3>Phase 3 implementation roadmap</h3>
-      <ul>
-        <li>Done: create <code>phase3-plan.md</code>.</li>
-        <li>Done: document the current Phase 1/2 communication semantics in <code>docs/agent-collaboration-protocol-v0.md</code>.</li>
-        <li>Next: add <code>protocol_version</code> to task/message/artifact/event payloads.</li>
-        <li>Next: create JSON schemas for task creation, artifact submission, status transition, close, and agent events.</li>
-        <li>Next: implement a state transition validator and negative tests for invalid transitions.</li>
-        <li>Next: add idempotency keys and first-class human approval records.</li>
-        <li>Next: expand Agent Cards with capabilities, scopes, and accepted task types.</li>
-        <li>Next: map this protocol to an A2A-compatible endpoint plan.</li>
-      </ul>
+      <h3>Implementation Roadmap</h3>
+      <ol class="steps">
+        <li>
+          <div>
+            <h3>Version the protocol envelope</h3>
+            <p>Add <code>protocol_version</code> to task, message, artifact, event, and WebSocket payloads.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Add JSON schemas</h3>
+            <p>Create schemas for task creation, artifact submission, status transition, task close, and agent events.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Implement transition validation</h3>
+            <p>Enforce legal state transitions, required <code>next_action</code> or <code>terminal_reason</code>, max turns, TTL, and completion owner rules.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Add idempotency and approvals</h3>
+            <p>Add idempotency keys for repeated client calls and first-class human approval records for privacy, authorization, and commitment decisions.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Expand Agent Cards</h3>
+            <p>Describe capabilities, accepted task types, scopes, and human approval policy so agents know what other agents can safely handle.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Map to A2A</h3>
+            <p>Keep A2A as the interoperability target after the internal collaboration semantics are stable.</p>
+          </div>
+        </li>
+      </ol>
 
-      <p class="note">Phase 3 should start with schemas and transition validation. Do not begin with a dashboard or full A2A coverage; the highest leverage next step is preventing ambiguous or invalid collaboration states.</p>
+      <div class="note">
+        <p><strong>Next best implementation step:</strong> start with schemas and a transition validator. This prevents ambiguous agent loops before adding dashboards or broader A2A compatibility.</p>
+      </div>
     </section>
 
-    <section id="completion">
-      <h2>7. Task Completion Policy</h2>
-      <p>AgentRelay must distinguish between an agent finishing its current action and the whole workflow task reaching terminal completion.</p>
-      <div class="grid">
-        <div class="card">
-          <span class="tag blue">Action complete</span>
-          <h3>Local to one agent</h3>
-          <p>Frank agent asks Frank and returns "10:00" to Zac agent. Frank agent's action is complete, but the overall meeting task may still be waiting for Zac confirmation.</p>
-        </div>
-        <div class="card">
-          <span class="tag green">Task complete</span>
-          <h3>Owned by requester side</h3>
-          <p>The requester side proposes <code>done_criteria</code> when creating the task and remains the semantic owner of completion. The relay stores that metadata, preserves transport state, and accepts explicit close signals or non-semantic terminal conditions.</p>
-        </div>
-      </div>
-      <pre><code>Meeting task default:
-done_criteria = both Zac and Frank accept the same online meeting time
-completion_owner_agent_id = zac-agent
+    <section id="completed">
+      <h2>Completed Work</h2>
+      <p>Completed sections are collapsed by default. They remain here for context and audit without taking over the active roadmap.</p>
 
-Frank says 10:00:
+      <details>
+        <summary>Phase 1: Codex App meeting loop</summary>
+        <div class="details-body">
+          <p>Phase 1 proved the first end-to-end human-facing loop.</p>
+          <ul>
+            <li>Created the private server repo and planning docs.</li>
+            <li>Added A2A reference material.</li>
+            <li>Implemented SQLite data model for agents, tasks, messages, artifacts, events, and thread bindings.</li>
+            <li>Implemented A2A-shaped task and worker APIs.</li>
+            <li>Recorded requester-side <code>done_criteria</code> and <code>completion_owner_agent_id</code>.</li>
+            <li>Proved controlled delivery back to Zac's origin thread.</li>
+            <li>Published the public MCP client installer repo.</li>
+            <li>Added username/token auth for public MCP clients.</li>
+            <li>Ran the full Zac/Frank meeting scenario through local agents.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details>
+        <summary>Phase 2: WebSocket notify push</summary>
+        <div class="details-body">
+          <p>Phase 2 replaced cron-style polling as the primary notification path while keeping HTTP pull recovery.</p>
+          <ul>
+            <li>Added durable <code>agent_events</code> outbox.</li>
+            <li>Added per-agent <code>task_thread_bindings</code>.</li>
+            <li>Added pending sync, precise claim, and event ack APIs.</li>
+            <li>Emits durable <code>task.pending</code> events on ownership transfer and delivery retry failure.</li>
+            <li>Added WebSocket sidecar at <code>wss://server.stellarix.space/agentrelay/api/workers/:agentId/events/ws</code>.</li>
+            <li>Updated public <code>agent-relay-mcp</code> with listener install, doctor checks, and local inbox behavior.</li>
+            <li>Documented the user-owned <code>AGENTRELAY_LISTENER_HOOK</code> adapter boundary.</li>
+            <li>Verified Zac/Frank two-agent local-listener message and reply loop.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details>
+        <summary>Docker production runtime</summary>
+        <div class="details-body">
+          <p>The server repo now runs production through Docker Compose.</p>
+          <pre><code>docker compose agentrelay-api -> REST server on 127.0.0.1:8787
+docker compose agentrelay-ws  -> WebSocket sidecar on 127.0.0.1:8788
+host nginx                    -> HTTPS/WSS under /agentrelay/api</code></pre>
+          <ul>
+            <li>Added <code>Dockerfile</code>, <code>docker-compose.yml</code>, and Docker deployment docs.</li>
+            <li>Kept runtime state outside the image through bind-mounted <code>data/</code>.</li>
+            <li>Cut production from systemd Python services to Docker Compose.</li>
+            <li>Disabled old systemd services after successful two-agent testing.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details>
+        <summary>Task completion policy</summary>
+        <div class="details-body">
+          <p>The relay distinguishes agent action completion from workflow task completion.</p>
+          <pre><code>Frank says 10:00:
   Frank action complete
-  task status = waiting_remote
-  pending_on_agent_id = zac-agent
+  task pending_on_agent_id = zac-agent
   next_action = Ask Zac whether 10:00 works
 
-Zac does not reply:
-  status = waiting_human
-  pending_on_human_id = zac
-  reminder policy applies
-  eventually expired
+Zac confirms:
+  completion_owner_agent_id = zac-agent
+  status = completed
+  terminal_reason = both parties accepted the same time
 
-Zac accepts then changes his mind after completion:
+Zac changes his mind later:
   do not reopen completed task
-  create child reschedule task with same context_id</code></pre>
-      <p class="note">Practical rule: agents can say "my action is complete" or "I recommend completing this task"; the requester-side semantic owner decides when <code>done_criteria</code> is met and sends the explicit close signal. AgentRelay only preserves the state machine and refuses invalid transitions.</p>
+  create child task with the same context_id</code></pre>
+        </div>
+      </details>
     </section>
 
-    <section id="mvp">
-      <h2>8. MVP Scope</h2>
-      <div class="grid three">
-        <div class="card">
-          <span class="tag green">Build first</span>
-          <h3>Relay HTTP API</h3>
-          <p>Agent Card, send message, get task, claim task, update status, upload artifact.</p>
-        </div>
-        <div class="card">
-          <span class="tag blue">Keep simple</span>
-          <h3>Polling transport</h3>
-          <p>Start with polling or long-polling. Avoid public webhooks because local agents are behind NAT.</p>
-        </div>
-        <div class="card">
-          <span class="tag amber">Defer</span>
-          <h3>Full protocol coverage</h3>
-          <p>Streaming, push notification, complex artifact chunking, federation, DID identity, and marketplace discovery can wait.</p>
-        </div>
-      </div>
-      <div class="note">
-        <p><strong>PoC success criteria:</strong> two local Codex-style agents with no public IP can complete one A2A-shaped meeting-scheduling task through this relay, with human approval before private calendar information is shared.</p>
-      </div>
-    </section>
-
-    <section id="risks">
-      <h2>9. Critical Risks</h2>
-      <div class="grid">
-        <div class="card">
-          <span class="tag red">Security</span>
-          <h3>Identity and spoofing</h3>
-          <p>The relay must not trust plain <code>from</code> fields. Use authenticated clients, per-agent tokens, idempotency keys, and eventually signed messages.</p>
-        </div>
-        <div class="card">
-          <span class="tag red">Safety</span>
-          <h3>Prompt injection</h3>
-          <p>Remote agent messages are untrusted input. The connector must never let a remote task override local system instructions, read arbitrary files, or skip owner approval.</p>
-        </div>
-        <div class="card">
-          <span class="tag amber">Reliability</span>
-          <h3>Task loops</h3>
-          <p>Every task needs TTL, max turn count, terminal states, cancellation, and escalation rules.</p>
-        </div>
-        <div class="card">
-          <span class="tag amber">Privacy</span>
-          <h3>Minimum disclosure</h3>
-          <p>Frank's agent should return only the availability needed for the request, not raw calendar contents.</p>
-        </div>
-      </div>
-    </section>
-
-    <section id="sources">
-      <h2>10. Protocol References</h2>
-      <ul class="sources">
+    <section id="references">
+      <h2>References</h2>
+      <ul>
+        <li><a href="https://github.com/ZilingXie/agentRelay">Server repo: ZilingXie/agentRelay</a></li>
+        <li><a href="https://github.com/ZilingXie/agent-relay-mcp">Client repo: ZilingXie/agent-relay-mcp</a></li>
         <li><a href="https://a2a-protocol.org/latest/specification/">A2A Protocol specification</a></li>
-        <li><a href="https://a2a-protocol.org/latest/topics/what-is-a2a/">What is A2A?</a></li>
         <li><a href="https://a2a-protocol.org/latest/topics/a2a-and-mcp/">A2A and MCP comparison</a></li>
         <li><a href="https://modelcontextprotocol.io/docs/getting-started/intro">Model Context Protocol introduction</a></li>
         <li><a href="https://developers.openai.com/codex/mcp">Codex MCP configuration</a></li>
@@ -858,7 +620,7 @@ Zac accepts then changes his mind after completion:
     </section>
 
     <footer>
-      <p>Generated for the AgentRelay PoC. Public path: <code>/agentrelay/plan.html</code>.</p>
+      <p>Generated for the AgentRelay roadmap. Public path: <code>/agentrelay/plan.html</code>.</p>
     </footer>
   </main>
 </body>
