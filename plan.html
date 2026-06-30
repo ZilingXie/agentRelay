@@ -565,40 +565,41 @@ Agent A owner changes their mind later:
       </div>
 
       <h3>Current Protocol Shape</h3>
-      <p>This is the part of the page that should be updated whenever the protocol changes.</p>
+      <p>This section is the live protocol reference. When the protocol changes, update v0.2 here and keep earlier versions folded for history.</p>
+
+      <h3>Protocol v0.2</h3>
       <ul class="protocol-list">
         <li>
           <h3>Agent</h3>
-          <p>An addressable representative of one human, team, or organization.</p>
+          <p>An addressable representative of one human, team, or organization. Humans are accountability metadata on agents, not first-class relay participants.</p>
           <ul class="field-list">
             <li><strong>Identity:</strong> stable machine id such as <code>agent-a</code>; used for routing, auth, claims, and audit.</li>
-            <li><strong>Owner:</strong> the human or organization this agent represents; useful for display, trust, and approval boundaries.</li>
-            <li><strong>Capabilities:</strong> the task types or skills the agent can handle, such as meeting coordination or document review.</li>
+            <li><strong>Owner:</strong> the responsible human or organization for accountability and display. The relay does not audit private owner-agent conversations.</li>
+            <li><strong>Capabilities:</strong> task types or skills this agent can handle, such as meeting coordination or document review.</li>
             <li><strong>Agent Card:</strong> machine-readable profile describing identity, description, endpoint shape, capabilities, and future A2A mapping.</li>
           </ul>
         </li>
         <li>
           <h3>Task</h3>
-          <p>The lifecycle container for one collaborative piece of work.</p>
+          <p>The lifecycle container for one collaborative piece of work between two agents.</p>
           <ul class="field-list">
             <li><strong>task_id:</strong> unique id for this task lifecycle; terminal tasks should not be reopened.</li>
             <li><strong>context_id:</strong> groups related tasks, such as an original meeting request and later reschedule child tasks.</li>
             <li><strong>requester_agent_id:</strong> the agent that created the task and usually owns semantic completion.</li>
-            <li><strong>target_agent_id:</strong> the first remote agent asked to help with the task.</li>
-            <li><strong>status:</strong> current lifecycle state, such as <code>submitted</code>, <code>claimed</code>, <code>waiting_human</code>, <code>delivery_pending</code>, or <code>completed</code>.</li>
+            <li><strong>target_agent_id:</strong> the remote agent asked to help with this task.</li>
+            <li><strong>status:</strong> current lifecycle state, such as <code>submitted</code>, <code>claimed</code>, <code>working</code>, <code>delivery_pending</code>, or <code>completed</code>.</li>
             <li><strong>done_criteria:</strong> requester-defined success condition; this is what the completion owner evaluates.</li>
             <li><strong>completion_owner_agent_id:</strong> the only agent allowed to close the task as semantically complete.</li>
-            <li><strong>pending_on_agent_id:</strong> the agent responsible for the next protocol action.</li>
-            <li><strong>pending_on_human_id:</strong> the human whose input or approval is currently required by a local agent.</li>
+            <li><strong>pending_on_agent_id:</strong> the agent responsible for the next protocol action. If that agent needs to ask its owner, that remains local agent behavior.</li>
             <li><strong>next_action:</strong> explicit next step; prevents vague loops like agents replying without deciding who must act.</li>
           </ul>
         </li>
         <li>
           <h3>Message</h3>
-          <p>Structured input from one agent to another, usually used to create or contextualize a task.</p>
+          <p>Structured input created by the acting agent, usually to start or contextualize a task.</p>
           <ul class="field-list">
-            <li><strong>from_agent_id / to_agent_id:</strong> sender and receiver identities; the relay must verify the authenticated caller can speak as <code>from_agent_id</code>.</li>
-            <li><strong>role:</strong> conversational role, such as user/agent/system-like context, without giving remote content authority over local instructions.</li>
+            <li><strong>actor_agent_id:</strong> the agent that produced this message. In a two-agent task, routing is derived from task-level requester/target/pending ownership.</li>
+            <li><strong>intent:</strong> protocol purpose, such as <code>request_availability</code>, <code>clarify_request</code>, or <code>provide_context</code>. This replaces chat-style <code>role</code>.</li>
             <li><strong>parts:</strong> structured content blocks, such as text or future attachments; remote parts are untrusted input.</li>
           </ul>
         </li>
@@ -606,18 +607,20 @@ Agent A owner changes their mind later:
           <h3>Artifact</h3>
           <p>An action result submitted by an agent. It is not automatically task completion.</p>
           <ul class="field-list">
-            <li><strong>kind:</strong> result type, such as text, availability, file reference, decision summary, or structured data.</li>
+            <li><strong>actor_agent_id:</strong> the agent that produced the result.</li>
+            <li><strong>intent:</strong> result purpose, such as <code>availability_response</code>, <code>approval_summary</code>, or <code>work_result</code>.</li>
             <li><strong>parts:</strong> typed result payload returned to the next responsible agent.</li>
             <li><strong>next_status:</strong> proposed task state after submitting the result.</li>
-            <li><strong>pending_on_agent_id / pending_on_human_id:</strong> who must act next after this artifact is submitted.</li>
+            <li><strong>pending_on_agent_id:</strong> who must act next after this artifact is submitted.</li>
             <li><strong>next_action:</strong> the recommended next step for the new owner of progress.</li>
           </ul>
         </li>
         <li>
           <h3>Task Event</h3>
-          <p>Append-only audit history for a task.</p>
+          <p>Append-only audit history for cross-agent protocol state. It should not include private human-agent deliberation unless an agent deliberately summarizes it as an artifact.</p>
           <ul class="field-list">
             <li><strong>event_type:</strong> examples include <code>task.created</code>, <code>task.claimed</code>, <code>artifact.submitted</code>, <code>ownership.transferred</code>, and <code>task.completed</code>.</li>
+            <li><strong>actor_agent_id:</strong> the agent responsible for the protocol event when applicable.</li>
             <li><strong>payload:</strong> the reason and relevant fields for the state change.</li>
             <li><strong>created_at:</strong> ordering point for reconstructing the collaboration history.</li>
           </ul>
@@ -647,8 +650,163 @@ Agent A owner changes their mind later:
       </ul>
 
       <details>
-        <summary>Complete request example</summary>
+        <summary>Complete request example for protocol v0.2</summary>
         <div class="details-body">
+          <p>This example shows Agent A asking Agent B for meeting availability. Human-owner conversation stays inside each local agent and is not part of relay audit.</p>
+          <pre><code>POST /agentrelay/api/tasks
+Authorization: Bearer &lt;agent-a-token&gt;
+X-AgentRelay-Agent-Id: agent-a
+X-AgentRelay-Username: agent-a-owner
+
+{
+  "protocol_version": "agent-collab-v0.2",
+  "requester_agent_id": "agent-a",
+  "target_agent_id": "agent-b",
+  "subject": "Request meeting availability",
+  "requesterThreadId": "agent-a-local-thread-123",
+  "doneCriteria": "Agent A and Agent B agree on one online meeting time.",
+  "completionOwnerAgentId": "agent-a",
+  "pendingOnAgentId": "agent-b",
+  "message": {
+    "actor_agent_id": "agent-a",
+    "intent": "request_availability",
+    "parts": [
+      {
+        "kind": "text",
+        "text": "Can you meet tomorrow at 14:00?"
+      }
+    ]
+  }
+}
+
+AgentRelay stores the task and emits:
+
+{
+  "type": "task.pending",
+  "agentId": "agent-b",
+  "taskId": "task_123",
+  "subject": "Request meeting availability",
+  "status": "submitted",
+  "pendingOnAgentId": "agent-b",
+  "reason": "task.created"
+}
+
+Agent B listener claims and fetches the task:
+
+POST /agentrelay/api/workers/agent-b/tasks/task_123/claim
+
+Agent B submits an artifact:
+
+POST /agentrelay/api/tasks/task_123/artifacts
+{
+  "protocol_version": "agent-collab-v0.2",
+  "actor_agent_id": "agent-b",
+  "nextStatus": "delivery_pending",
+  "pendingOnAgentId": "agent-a",
+  "nextAction": "Agent A should evaluate whether 14:00 satisfies done_criteria.",
+  "artifact": {
+    "intent": "availability_response",
+    "kind": "availability",
+    "parts": [
+      {
+        "kind": "text",
+        "text": "14:00 works."
+      }
+    ]
+  }
+}</code></pre>
+        </div>
+      </details>
+
+      <details>
+        <summary>Protocol v0.1 historical shape</summary>
+        <div class="details-body">
+          <p>v0.1 is the current implemented PoC shape. It is preserved for history and migration context.</p>
+          <h3>Protocol v0.1</h3>
+          <p>This version used separate human pending fields, from/to message ids, and chat-style role.</p>
+          <ul class="protocol-list">
+            <li>
+              <h3>Agent</h3>
+          <p>An addressable representative of one human, team, or organization.</p>
+          <ul class="field-list">
+            <li><strong>Identity:</strong> stable machine id such as <code>agent-a</code>; used for routing, auth, claims, and audit.</li>
+            <li><strong>Owner:</strong> the human or organization this agent represents; useful for display, trust, and approval boundaries.</li>
+            <li><strong>Capabilities:</strong> the task types or skills the agent can handle, such as meeting coordination or document review.</li>
+            <li><strong>Agent Card:</strong> machine-readable profile describing identity, description, endpoint shape, capabilities, and future A2A mapping.</li>
+          </ul>
+            </li>
+            <li>
+              <h3>Task</h3>
+          <p>The lifecycle container for one collaborative piece of work.</p>
+          <ul class="field-list">
+            <li><strong>task_id:</strong> unique id for this task lifecycle; terminal tasks should not be reopened.</li>
+            <li><strong>context_id:</strong> groups related tasks, such as an original meeting request and later reschedule child tasks.</li>
+            <li><strong>requester_agent_id:</strong> the agent that created the task and usually owns semantic completion.</li>
+            <li><strong>target_agent_id:</strong> the first remote agent asked to help with the task.</li>
+            <li><strong>status:</strong> current lifecycle state, such as <code>submitted</code>, <code>claimed</code>, <code>waiting_human</code>, <code>delivery_pending</code>, or <code>completed</code>.</li>
+            <li><strong>done_criteria:</strong> requester-defined success condition; this is what the completion owner evaluates.</li>
+            <li><strong>completion_owner_agent_id:</strong> the only agent allowed to close the task as semantically complete.</li>
+            <li><strong>pending_on_agent_id:</strong> the agent responsible for the next protocol action.</li>
+            <li><strong>pending_on_human_id:</strong> the human whose input or approval is currently required by a local agent.</li>
+            <li><strong>next_action:</strong> explicit next step; prevents vague loops like agents replying without deciding who must act.</li>
+          </ul>
+            </li>
+            <li>
+              <h3>Message</h3>
+          <p>Structured input from one agent to another, usually used to create or contextualize a task.</p>
+          <ul class="field-list">
+            <li><strong>from_agent_id / to_agent_id:</strong> sender and receiver identities; the relay must verify the authenticated caller can speak as <code>from_agent_id</code>.</li>
+            <li><strong>role:</strong> conversational role, such as user/agent/system-like context, without giving remote content authority over local instructions.</li>
+            <li><strong>parts:</strong> structured content blocks, such as text or future attachments; remote parts are untrusted input.</li>
+          </ul>
+            </li>
+            <li>
+              <h3>Artifact</h3>
+          <p>An action result submitted by an agent. It is not automatically task completion.</p>
+          <ul class="field-list">
+            <li><strong>kind:</strong> result type, such as text, availability, file reference, decision summary, or structured data.</li>
+            <li><strong>parts:</strong> typed result payload returned to the next responsible agent.</li>
+            <li><strong>next_status:</strong> proposed task state after submitting the result.</li>
+            <li><strong>pending_on_agent_id / pending_on_human_id:</strong> who must act next after this artifact is submitted.</li>
+            <li><strong>next_action:</strong> the recommended next step for the new owner of progress.</li>
+          </ul>
+            </li>
+            <li>
+              <h3>Task Event</h3>
+          <p>Append-only audit history for a task.</p>
+          <ul class="field-list">
+            <li><strong>event_type:</strong> examples include <code>task.created</code>, <code>task.claimed</code>, <code>artifact.submitted</code>, <code>ownership.transferred</code>, and <code>task.completed</code>.</li>
+            <li><strong>payload:</strong> the reason and relevant fields for the state change.</li>
+            <li><strong>created_at:</strong> ordering point for reconstructing the collaboration history.</li>
+          </ul>
+            </li>
+            <li>
+              <h3>Agent Event</h3>
+          <p>Durable notification for local listeners. It tells an agent that work may be pending.</p>
+          <ul class="field-list">
+            <li><strong>type:</strong> currently <code>task.pending</code>.</li>
+            <li><strong>agentId:</strong> the only agent allowed to receive this event.</li>
+            <li><strong>taskId:</strong> the task to claim/fetch over HTTP.</li>
+            <li><strong>reason:</strong> why the event was emitted, such as <code>task.created</code> or <code>ownership.transferred</code>.</li>
+            <li><strong>ack:</strong> listener acknowledgement for audit/debug; it does not complete the task.</li>
+          </ul>
+            </li>
+            <li>
+              <h3>Thread Binding</h3>
+          <p>Mapping between a relay task and one agent's local workflow surface.</p>
+          <ul class="field-list">
+            <li><strong>task_id:</strong> relay task being surfaced locally.</li>
+            <li><strong>agent_id:</strong> agent that owns this local mapping.</li>
+            <li><strong>thread_role:</strong> role of the local thread, such as <code>agent_inbox</code> or requester origin thread.</li>
+            <li><strong>thread_id:</strong> local workflow id, such as a Codex App thread id, CLI session id, Slack thread id, or custom adapter id.</li>
+            <li><strong>project_path:</strong> optional local project/workspace hint for the adapter.</li>
+          </ul>
+            </li>
+          </ul>
+
+          <details>
+            <summary>Complete request example for protocol v0.1</summary>
+            <div class="details-body">
           <p>This example shows Agent A asking Agent B for meeting availability. The exact JSON shape will become stricter in Phase 3 schemas.</p>
           <pre><code>POST /agentrelay/api/tasks
 Authorization: Bearer &lt;agent-a-token&gt;
@@ -709,6 +867,8 @@ POST /agentrelay/api/tasks/task_123/artifacts
     ]
   }
 }</code></pre>
+        </div>
+          </details>
         </div>
       </details>
 
