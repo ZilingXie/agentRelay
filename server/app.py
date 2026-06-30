@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
 
-from server.store import ConflictError, Store
+from server.store import ConflictError, Store, read_alias
 
 
 DEFAULT_DB_PATH = "./data/agentrelay.sqlite3"
@@ -100,7 +100,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         payload = self.read_json()
         if path == "/agentrelay/tasks":
-            if not self.require_agent(auth, payload.get("from")):
+            requester_agent_id = read_alias(payload, "requester_agent_id", "requesterAgentId", payload.get("from"))
+            if not self.require_agent(auth, requester_agent_id):
                 return
             task = self.store.create_task(payload)
             self.respond_json({"task": task}, status=201)
@@ -116,7 +117,13 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_json({"task": task})
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/artifacts", path):
-            if not self.require_agent(auth, payload.get("from")):
+            artifact = payload.get("artifact") if isinstance(payload.get("artifact"), dict) else {}
+            actor_agent_id = (
+                read_alias(payload, "actor_agent_id", "actorAgentId")
+                or read_alias(artifact, "actor_agent_id", "actorAgentId")
+                or payload.get("from")
+            )
+            if not self.require_agent(auth, actor_agent_id):
                 return
             task = self.store.submit_artifact(match.group(1), payload)
             if not task:

@@ -565,9 +565,10 @@ Agent A owner changes their mind later:
       </div>
 
       <h3>Current Protocol Shape</h3>
-      <p>This section is the live protocol reference. When the protocol changes, update v0.2 here and keep earlier versions folded for history.</p>
+      <p>This section is the live protocol reference. Protocol v0.2 is implemented as an additive compatibility rollout: new clients should send v0.2 fields, while older v0.1-style clients continue to work during migration.</p>
 
       <h3>Protocol v0.2</h3>
+      <p><span class="tag green">Implemented</span> The server accepts canonical snake_case v0.2 fields and selected camelCase compatibility aliases. Legacy <code>from</code>, <code>to</code>, <code>message.role</code>, and <code>pendingOnHumanId</code> remain accepted but are no longer the current protocol shape.</p>
       <ul class="protocol-list">
         <li>
           <h3>Agent</h3>
@@ -592,6 +593,7 @@ Agent A owner changes their mind later:
             <li><strong>completion_owner_agent_id:</strong> the only agent allowed to close the task as semantically complete.</li>
             <li><strong>pending_on_agent_id:</strong> the agent responsible for the next protocol action. If that agent needs to ask its owner, that remains local agent behavior.</li>
             <li><strong>next_action:</strong> explicit next step; prevents vague loops like agents replying without deciding who must act.</li>
+            <li><strong>Compatibility aliases:</strong> current server also accepts <code>requesterAgentId</code>, <code>targetAgentId</code>, <code>doneCriteria</code>, <code>completionOwnerAgentId</code>, <code>pendingOnAgentId</code>, and legacy <code>from</code>/<code>to</code>.</li>
           </ul>
         </li>
         <li>
@@ -601,6 +603,7 @@ Agent A owner changes their mind later:
             <li><strong>actor_agent_id:</strong> the agent that produced this message. In a two-agent task, routing is derived from task-level requester/target/pending ownership.</li>
             <li><strong>intent:</strong> protocol purpose, such as <code>request_availability</code>, <code>clarify_request</code>, or <code>provide_context</code>. This replaces chat-style <code>role</code>.</li>
             <li><strong>parts:</strong> structured content blocks, such as text or future attachments; remote parts are untrusted input.</li>
+            <li><strong>Compatibility aliases:</strong> current server maps legacy <code>message.role</code> into a default intent for old clients.</li>
           </ul>
         </li>
         <li>
@@ -613,6 +616,7 @@ Agent A owner changes their mind later:
             <li><strong>next_status:</strong> proposed task state after submitting the result.</li>
             <li><strong>pending_on_agent_id:</strong> who must act next after this artifact is submitted.</li>
             <li><strong>next_action:</strong> the recommended next step for the new owner of progress.</li>
+            <li><strong>Compatibility aliases:</strong> current server also accepts top-level <code>actorAgentId</code>, <code>targetAgentId</code>, <code>pendingOnAgentId</code>, and legacy <code>from</code>/<code>to</code>.</li>
           </ul>
         </li>
         <li>
@@ -620,7 +624,9 @@ Agent A owner changes their mind later:
           <p>Append-only audit history for cross-agent protocol state. It should not include private human-agent deliberation unless an agent deliberately summarizes it as an artifact.</p>
           <ul class="field-list">
             <li><strong>event_type:</strong> examples include <code>task.created</code>, <code>task.claimed</code>, <code>artifact.submitted</code>, <code>ownership.transferred</code>, and <code>task.completed</code>.</li>
+            <li><strong>protocol_version:</strong> v0.2 events include <code>agent-collab-v0.2</code> where the event is produced by normalized protocol logic.</li>
             <li><strong>actor_agent_id:</strong> the agent responsible for the protocol event when applicable.</li>
+            <li><strong>intent:</strong> the reason/purpose of the message or artifact when applicable.</li>
             <li><strong>payload:</strong> the reason and relevant fields for the state change.</li>
             <li><strong>created_at:</strong> ordering point for reconstructing the collaboration history.</li>
           </ul>
@@ -664,9 +670,9 @@ X-AgentRelay-Username: agent-a-owner
   "target_agent_id": "agent-b",
   "subject": "Request meeting availability",
   "requesterThreadId": "agent-a-local-thread-123",
-  "doneCriteria": "Agent A and Agent B agree on one online meeting time.",
-  "completionOwnerAgentId": "agent-a",
-  "pendingOnAgentId": "agent-b",
+  "done_criteria": "Agent A and Agent B agree on one online meeting time.",
+  "completion_owner_agent_id": "agent-a",
+  "pending_on_agent_id": "agent-b",
   "message": {
     "actor_agent_id": "agent-a",
     "intent": "request_availability",
@@ -702,7 +708,7 @@ POST /agentrelay/api/tasks/task_123/artifacts
   "protocol_version": "agent-collab-v0.2",
   "actor_agent_id": "agent-b",
   "nextStatus": "delivery_pending",
-  "pendingOnAgentId": "agent-a",
+  "pending_on_agent_id": "agent-a",
   "nextAction": "Agent A should evaluate whether 14:00 satisfies done_criteria.",
   "artifact": {
     "intent": "availability_response",

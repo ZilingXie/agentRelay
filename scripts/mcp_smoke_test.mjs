@@ -30,11 +30,12 @@ try {
   await callJson("agentrelay_health", {});
 
   const created = await callJson("agentrelay_create_task", {
-    from: "zac-agent",
-    to: "frank-agent",
+    requester_agent_id: "zac-agent",
+    target_agent_id: "frank-agent",
     requesterThreadId: "zac-thread-mcp-smoke",
     subject: "MCP smoke meeting availability",
     requestText: "Zac wants a 30-minute online meeting with Frank. Please ask Frank when he is available.",
+    intent: "request_availability",
     doneCriteria: "Both Zac and Frank accept the same online meeting time.",
     completionOwnerAgentId: "zac-agent",
     humanBoundaryReason: "Frank must approve sharing availability."
@@ -53,8 +54,9 @@ try {
 
   const afterArtifact = await callJson("agentrelay_submit_artifact", {
     taskId,
-    from: "frank-agent",
-    to: "zac-agent",
+    actor_agent_id: "frank-agent",
+    target_agent_id: "zac-agent",
+    intent: "availability_response",
     kind: "meeting_availability",
     text: "Frank is available Tuesday 10:00-11:00 China time."
   });
@@ -167,11 +169,12 @@ function assert(condition, message) {
 
 async function createClaimableReturnTask() {
   const created = await callJson("agentrelay_create_task", {
-    from: "zac-agent",
-    to: "frank-agent",
+    requester_agent_id: "zac-agent",
+    target_agent_id: "frank-agent",
     requesterThreadId: "zac-thread-artifact-submitted-mcp",
     subject: "MCP artifact_submitted claim regression",
     requestText: "Return a candidate time.",
+    intent: "request_availability",
     doneCriteria: "Zac evaluates Frank's returned artifact."
   });
   const taskId = created.task.task_id;
@@ -179,8 +182,9 @@ async function createClaimableReturnTask() {
   assert(frankClaim.task?.task_id === taskId, "frank-agent did not claim artifact_submitted regression task");
   const afterArtifact = await callJson("agentrelay_submit_artifact", {
     taskId,
-    from: "frank-agent",
-    to: "zac-agent",
+    actor_agent_id: "frank-agent",
+    target_agent_id: "zac-agent",
+    intent: "availability_response",
     kind: "meeting_availability",
     text: "Frank is available at 15:00.",
     nextStatus: "artifact_submitted",

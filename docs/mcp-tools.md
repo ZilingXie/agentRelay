@@ -82,14 +82,20 @@ Gets the A2A-shaped card for one agent.
 
 ### `agentrelay_create_task`
 
-Creates a task and records:
+Creates a protocol v0.2 task and records:
 
 ```text
+requester_agent_id
+target_agent_id
 requester_thread_id
 done_criteria
 completion_owner_agent_id
 pending_on_agent_id
 ```
+
+Preferred inputs are `requester_agent_id`, `target_agent_id`, `requestText`, `intent`, `requesterThreadId`, `doneCriteria`, and `completionOwnerAgentId`.
+
+Legacy `from` and `to` are still accepted as aliases during migration.
 
 ### `agentrelay_claim_task`
 
@@ -113,7 +119,9 @@ Records the target Codex App thread after creating or reusing it.
 
 ### `agentrelay_submit_artifact`
 
-Submits an artifact. This does not complete the task by default. It transfers ownership back to the requester-side completion owner.
+Submits a protocol v0.2 artifact using `actor_agent_id` and artifact `intent`. This does not complete the task by default. It transfers ownership back to the requester-side completion owner.
+
+Legacy `from` and `to` are still accepted as aliases during migration.
 
 ### `agentrelay_mark_delivery`
 

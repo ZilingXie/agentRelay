@@ -54,12 +54,15 @@ function registerTools(mcpServer) {
     "agentrelay_create_task",
     {
       title: "Create AgentRelay task",
-      description: "Create an A2A-shaped task and record requester-side completion ownership.",
+      description: "Create an AgentRelay protocol v0.2 task and record requester-side completion ownership.",
       inputSchema: {
-        from: z.string().min(1).describe("Requester agent id, for example zac-agent"),
-        to: z.string().min(1).describe("Target agent id, for example frank-agent"),
+        requester_agent_id: z.string().min(1).optional().describe("Protocol v0.2 requester agent id"),
+        target_agent_id: z.string().min(1).optional().describe("Protocol v0.2 target agent id"),
+        from: z.string().min(1).optional().describe("Legacy requester agent id alias"),
+        to: z.string().min(1).optional().describe("Legacy target agent id alias"),
         requestText: z.string().min(1).describe("Human-readable request to send"),
         requesterThreadId: z.string().min(1).describe("Codex App thread id to deliver replies back to"),
+        intent: z.string().optional().describe("Protocol v0.2 message intent, for example request_availability"),
         subject: z.string().optional(),
         contextId: z.string().optional(),
         doneCriteria: z.string().optional(),
@@ -71,19 +74,26 @@ function registerTools(mcpServer) {
       }
     },
     async (args) => {
+      const requesterAgentId = args.requester_agent_id || args.from;
+      const targetAgentId = args.target_agent_id || args.to;
+      if (!requesterAgentId || !targetAgentId) {
+        throw new Error("agentrelay_create_task requires requester_agent_id/target_agent_id or legacy from/to");
+      }
       const payload = {
+        protocol_version: "agent-collab-v0.2",
         contextId: args.contextId,
-        from: args.from,
-        to: args.to,
+        requester_agent_id: requesterAgentId,
+        target_agent_id: targetAgentId,
         requesterThreadId: args.requesterThreadId,
         subject: args.subject || "AgentRelay task",
-        doneCriteria: args.doneCriteria || "",
-        completionOwnerAgentId: args.completionOwnerAgentId || args.from,
-        pendingOnAgentId: args.pendingOnAgentId || args.to,
+        done_criteria: args.doneCriteria || "",
+        completion_owner_agent_id: args.completionOwnerAgentId || requesterAgentId,
+        pending_on_agent_id: args.pendingOnAgentId || targetAgentId,
         ttl: args.ttl,
         maxTurns: args.maxTurns,
         message: {
-          role: "user",
+          actor_agent_id: requesterAgentId,
+          intent: args.intent || "request",
           parts: [{ kind: "text", text: args.requestText }]
         },
         humanBoundary: args.humanBoundaryReason
@@ -154,11 +164,14 @@ function registerTools(mcpServer) {
     "agentrelay_submit_artifact",
     {
       title: "Submit AgentRelay artifact",
-      description: "Submit an artifact for a task. By default, this transfers ownership back to the completion owner instead of completing the task.",
+      description: "Submit a protocol v0.2 artifact. By default, this transfers ownership back to the completion owner instead of completing the task.",
       inputSchema: {
         taskId: z.string().min(1),
-        from: z.string().min(1),
-        to: z.string().min(1),
+        actor_agent_id: z.string().min(1).optional().describe("Protocol v0.2 agent that produced the artifact"),
+        target_agent_id: z.string().min(1).optional().describe("Optional target/receiving agent id"),
+        from: z.string().min(1).optional().describe("Legacy actor agent id alias"),
+        to: z.string().min(1).optional().describe("Legacy target agent id alias"),
+        intent: z.string().optional().describe("Protocol v0.2 artifact intent, for example availability_response"),
         kind: z.string().optional(),
         text: z.string().min(1),
         pendingOnAgentId: z.string().optional(),
@@ -168,14 +181,20 @@ function registerTools(mcpServer) {
       }
     },
     async (args) => {
+      const actorAgentId = args.actor_agent_id || args.from;
+      if (!actorAgentId) {
+        throw new Error("agentrelay_submit_artifact requires actor_agent_id or legacy from");
+      }
       const payload = {
-        from: args.from,
-        to: args.to,
-        pendingOnAgentId: args.pendingOnAgentId,
+        protocol_version: "agent-collab-v0.2",
+        actor_agent_id: actorAgentId,
+        target_agent_id: args.target_agent_id || args.to,
+        pending_on_agent_id: args.pendingOnAgentId,
         pendingOnHumanId: args.pendingOnHumanId,
         nextStatus: args.nextStatus,
         nextAction: args.nextAction,
         artifact: {
+          intent: args.intent || "work_result",
           kind: args.kind || "text",
           parts: [{ kind: "text", text: args.text }]
         }
@@ -309,4 +328,3 @@ function compact(value) {
     Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== null)
   );
 }
-

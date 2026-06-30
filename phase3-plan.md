@@ -15,6 +15,20 @@ Agent Collaboration Protocol is how agents coordinate work.
 
 AgentRelay connects local agents that do not have public IP addresses. It should provide durable transport, auth, state, notification, and audit. It should not become the semantic brain that decides what the humans want or whether the real-world task is complete.
 
+## 0.1 Protocol v0.2 Implementation Status
+
+Protocol v0.2 is now implemented as an additive compatibility rollout.
+
+- Server task creation accepts canonical `requester_agent_id`, `target_agent_id`, `done_criteria`, `completion_owner_agent_id`, and `pending_on_agent_id`.
+- Server artifact submission accepts canonical `actor_agent_id`, artifact `intent`, `kind`, `parts`, and `pending_on_agent_id`.
+- Legacy `from`, `to`, `message.role`, and `pendingOnHumanId` remain accepted for older clients.
+- Auth checks now use requester identity for task creation and actor identity for artifact submission.
+- Audit events include `protocol_version`, `actor_agent_id`, `intent`, and pending ownership fields for v0.2 events.
+- MCP clients now prefer v0.2 payloads while keeping legacy input aliases.
+- `scripts/protocol_v02_smoke_test.py` verifies v0.2 create/claim/artifact/close flow, auth rejection, and legacy create compatibility.
+
+The SQLite schema is intentionally unchanged in this rollout. Existing columns remain the storage compatibility layer while v0.2 semantics are expressed through normalized payloads and audit event payloads.
+
 ## 1. What Phase 1 And Phase 2 Already Define
 
 Phase 1 defined the basic collaboration loop:
@@ -32,13 +46,13 @@ AgentRelay Cloud -> durable task.pending event -> local listener
 local listener -> precise HTTP claim/fetch/ack -> user-owned local workflow adapter
 ```
 
-The current protocol already has these concepts:
+The implemented protocol now has these concepts:
 
 - Agent identity and Agent Card.
-- Task lifecycle with `task_id`, `context_id`, `status`, `pending_on_agent_id`, and `pending_on_human_id`.
+- Task lifecycle with `task_id`, `context_id`, `status`, and `pending_on_agent_id`.
 - Requester-defined `done_criteria`.
 - Requester-side `completion_owner_agent_id`.
-- Structured messages and artifacts.
+- Structured messages and artifacts with `actor_agent_id` and `intent`.
 - Durable task events and agent events.
 - Per-agent thread bindings for local workflow reuse.
 - Manual HTTP recovery plus WebSocket notification.

@@ -205,7 +205,10 @@ Phase 3 Progress:
 
 - [x] Create `phase3-plan.md`.
 - [x] Document current Phase 1/2 communication semantics in `docs/agent-collaboration-protocol-v0.md`.
-- [ ] Add `protocol_version` to task/message/artifact/event payloads.
+- [x] Implement Protocol v0.2 compatibility layer in server APIs.
+- [x] Add `protocol_version`, `actor_agent_id`, and `intent` to task/artifact audit payloads.
+- [x] Update MCP clients to prefer Protocol v0.2 payloads while keeping legacy aliases.
+- [x] Add Protocol v0.2 smoke coverage and legacy compatibility coverage.
 - [ ] Create JSON schemas for task creation, artifact submission, status transition, close, and agent events.
 - [ ] Implement a task state transition validator.
 - [ ] Add negative tests for invalid transitions and unauthorized completion.

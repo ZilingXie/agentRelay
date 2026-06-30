@@ -9,6 +9,7 @@ from typing import Any
 
 
 TERMINAL_STATES = {"completed", "failed", "cancelled", "expired", "rejected"}
+PROTOCOL_VERSION = "agent-collab-v0.2"
 CLAIMABLE_STATES = {
     "submitted",
     "input_required",
@@ -234,26 +235,27 @@ class Store:
 
     def create_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = int(time.time())
-        task_id = payload.get("taskId") or f"task_{uuid.uuid4().hex}"
-        context_id = payload.get("contextId") or f"ctx_{uuid.uuid4().hex}"
-        from_agent = required(payload, "from")
-        to_agent = required(payload, "to")
-        message = required(payload, "message")
-        subject = payload.get("subject") or "AgentRelay task"
-        parts = message.get("parts") or []
-        requester_thread_id = payload.get("requesterThreadId")
-        ttl = payload.get("ttl")
-        max_turns = int(payload.get("maxTurns") or 12)
-        done_criteria = payload.get("doneCriteria") or ""
-        completion_owner_agent_id = payload.get("completionOwnerAgentId") or from_agent
-        pending_on_agent_id = payload.get("pendingOnAgentId") or to_agent
-        pending_on_human_id = payload.get("pendingOnHumanId")
-        next_action = payload.get("nextAction")
-        parent_task_id = payload.get("parentTaskId")
+        normalized = normalize_task_create(payload)
+        task_id = normalized["task_id"]
+        context_id = normalized["context_id"]
+        requester_agent_id = normalized["requester_agent_id"]
+        target_agent_id = normalized["target_agent_id"]
+        message = normalized["message"]
+        subject = normalized["subject"]
+        parts = message["parts"]
+        requester_thread_id = normalized["requester_thread_id"]
+        ttl = normalized["ttl"]
+        max_turns = normalized["max_turns"]
+        done_criteria = normalized["done_criteria"]
+        completion_owner_agent_id = normalized["completion_owner_agent_id"]
+        pending_on_agent_id = normalized["pending_on_agent_id"]
+        pending_on_human_id = normalized["pending_on_human_id"]
+        next_action = normalized["next_action"]
+        parent_task_id = normalized["parent_task_id"]
 
         with self.connect() as conn:
-            assert_agent_exists(conn, from_agent)
-            assert_agent_exists(conn, to_agent)
+            assert_agent_exists(conn, requester_agent_id)
+            assert_agent_exists(conn, target_agent_id)
             conn.execute(
                 """
                 INSERT INTO tasks (
@@ -269,8 +271,8 @@ class Store:
                 (
                     task_id,
                     context_id,
-                    from_agent,
-                    to_agent,
+                    requester_agent_id,
+                    target_agent_id,
                     requester_thread_id,
                     done_criteria,
                     completion_owner_agent_id,
@@ -285,7 +287,7 @@ class Store:
                     now,
                 ),
             )
-            message_id = message.get("messageId") or f"msg_{uuid.uuid4().hex}"
+            message_id = message["message_id"]
             conn.execute(
                 """
                 INSERT INTO messages (
@@ -298,9 +300,9 @@ class Store:
                     message_id,
                     task_id,
                     context_id,
-                    from_agent,
-                    to_agent,
-                    message.get("role") or "user",
+                    requester_agent_id,
+                    target_agent_id,
+                    message["legacy_role"],
                     json.dumps(parts),
                     now,
                 ),
@@ -310,13 +312,17 @@ class Store:
                 task_id,
                 "task.created",
                 {
+                    "protocol_version": PROTOCOL_VERSION,
                     "contextId": context_id,
-                    "from": from_agent,
-                    "to": to_agent,
+                    "requester_agent_id": requester_agent_id,
+                    "target_agent_id": target_agent_id,
+                    "actor_agent_id": message["actor_agent_id"],
+                    "intent": message["intent"],
                     "requesterThreadId": requester_thread_id,
                     "doneCriteria": done_criteria,
                     "completionOwnerAgentId": completion_owner_agent_id,
                     "pendingOnAgentId": pending_on_agent_id,
+                    "pending_on_agent_id": pending_on_agent_id,
                 },
                 now,
             )
@@ -502,7 +508,7 @@ class Store:
                 return None
             terminal_reason = payload.get("terminalReason")
             next_action = payload.get("nextAction")
-            pending_on_agent_id = payload.get("pendingOnAgentId")
+            pending_on_agent_id = read_alias(payload, "pending_on_agent_id", "pendingOnAgentId")
             pending_on_human_id = payload.get("pendingOnHumanId")
             conn.execute(
                 "UPDATE tasks SET status = ?, updated_at = ? WHERE task_id = ?",
@@ -539,20 +545,24 @@ class Store:
 
     def submit_artifact(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         now = int(time.time())
-        from_agent = required(payload, "from")
-        to_agent = required(payload, "to")
-        artifact = required(payload, "artifact")
-        parts = artifact.get("parts") or []
-        artifact_id = artifact.get("artifactId") or f"art_{uuid.uuid4().hex}"
-        next_status = payload.get("nextStatus")
-        pending_on_agent_id = payload.get("pendingOnAgentId")
-        pending_on_human_id = payload.get("pendingOnHumanId")
-        next_action = payload.get("nextAction")
+        normalized = normalize_artifact_submit(payload)
+        actor_agent_id = normalized["actor_agent_id"]
+        to_agent = normalized["to_agent_id"]
+        artifact = normalized["artifact"]
+        parts = artifact["parts"]
+        artifact_id = artifact["artifact_id"]
+        artifact_intent = artifact["intent"]
+        next_status = normalized["next_status"]
+        pending_on_agent_id = normalized["pending_on_agent_id"]
+        pending_on_human_id = normalized["pending_on_human_id"]
+        next_action = normalized["next_action"]
         with self.connect() as conn:
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
-            if not pending_on_agent_id and from_agent != task["completion_owner_agent_id"]:
+            if not to_agent:
+                to_agent = other_task_agent(task, actor_agent_id)
+            if not pending_on_agent_id and actor_agent_id != task["completion_owner_agent_id"]:
                 pending_on_agent_id = task["completion_owner_agent_id"]
             if not next_status:
                 next_status = "delivery_pending" if pending_on_agent_id else "working"
@@ -569,7 +579,7 @@ class Store:
                 (
                     artifact_id,
                     task_id,
-                    from_agent,
+                    actor_agent_id,
                     to_agent,
                     artifact.get("kind") or "text",
                     json.dumps(parts),
@@ -604,12 +614,15 @@ class Store:
                 task_id,
                 "artifact.submitted",
                 {
+                    "protocol_version": PROTOCOL_VERSION,
                     "artifactId": artifact_id,
-                    "from": from_agent,
-                    "to": to_agent,
+                    "actor_agent_id": actor_agent_id,
+                    "intent": artifact_intent,
+                    "target_agent_id": to_agent,
+                    "requester_agent_id": task["requester_agent_id"],
                     "nextStatus": next_status,
                     "pendingOnAgentId": pending_on_agent_id,
-                    "pendingOnHumanId": pending_on_human_id,
+                    "pending_on_agent_id": pending_on_agent_id,
                     "nextAction": next_action,
                 },
                 now,
@@ -619,9 +632,10 @@ class Store:
                 task_id,
                 "ownership.transferred",
                 {
-                    "from": from_agent,
+                    "protocol_version": PROTOCOL_VERSION,
+                    "actor_agent_id": actor_agent_id,
                     "pendingOnAgentId": pending_on_agent_id,
-                    "pendingOnHumanId": pending_on_human_id,
+                    "pending_on_agent_id": pending_on_agent_id,
                 },
                 now,
             )
@@ -645,7 +659,7 @@ class Store:
                 raise ValueError("delivery threadId must match requester_thread_id")
             if delivery_status == "delivered":
                 next_status = payload.get("nextStatus") or "waiting_human"
-                pending_on_human_id = payload.get("pendingOnHumanId") or "zac"
+                pending_on_human_id = payload.get("pendingOnHumanId")
                 next_action = payload.get("nextAction") or "Waiting for requester human confirmation."
                 conn.execute(
                     """
@@ -955,6 +969,112 @@ def required(payload: dict[str, Any], key: str) -> Any:
     if value is None:
         raise ValueError(f"missing required field: {key}")
     return value
+
+
+def read_alias(payload: dict[str, Any], snake_key: str, camel_key: str, default: Any = None) -> Any:
+    if snake_key in payload:
+        return payload.get(snake_key)
+    if camel_key in payload:
+        return payload.get(camel_key)
+    return default
+
+
+def normalize_task_create(payload: dict[str, Any]) -> dict[str, Any]:
+    requester_agent_id = read_alias(payload, "requester_agent_id", "requesterAgentId", payload.get("from"))
+    target_agent_id = read_alias(payload, "target_agent_id", "targetAgentId", payload.get("to"))
+    if not requester_agent_id:
+        raise ValueError("missing required field: requester_agent_id")
+    if not target_agent_id:
+        raise ValueError("missing required field: target_agent_id")
+
+    message = required(payload, "message")
+    if not isinstance(message, dict):
+        raise ValueError("message must be an object")
+    message_actor = read_alias(message, "actor_agent_id", "actorAgentId", requester_agent_id)
+    if message_actor != requester_agent_id:
+        raise ValueError("task create message actor_agent_id must match requester_agent_id")
+    intent = message.get("intent") or role_to_intent(message.get("role"))
+    parts = message.get("parts") or []
+    if not isinstance(parts, list):
+        raise ValueError("message.parts must be an array")
+
+    return {
+        "task_id": payload.get("taskId") or payload.get("task_id") or f"task_{uuid.uuid4().hex}",
+        "context_id": payload.get("contextId") or payload.get("context_id") or f"ctx_{uuid.uuid4().hex}",
+        "requester_agent_id": requester_agent_id,
+        "target_agent_id": target_agent_id,
+        "message": {
+            "message_id": message.get("messageId") or message.get("message_id") or f"msg_{uuid.uuid4().hex}",
+            "actor_agent_id": message_actor,
+            "intent": intent,
+            "legacy_role": message.get("role") or "user",
+            "parts": parts,
+        },
+        "subject": payload.get("subject") or "AgentRelay task",
+        "requester_thread_id": payload.get("requesterThreadId") or payload.get("requester_thread_id"),
+        "ttl": payload.get("ttl"),
+        "max_turns": int(payload.get("maxTurns") or payload.get("max_turns") or 12),
+        "done_criteria": payload.get("doneCriteria") or payload.get("done_criteria") or "",
+        "completion_owner_agent_id": (
+            payload.get("completionOwnerAgentId")
+            or payload.get("completion_owner_agent_id")
+            or requester_agent_id
+        ),
+        "pending_on_agent_id": (
+            payload.get("pendingOnAgentId")
+            or payload.get("pending_on_agent_id")
+            or target_agent_id
+        ),
+        "pending_on_human_id": payload.get("pendingOnHumanId") or payload.get("pending_on_human_id"),
+        "next_action": payload.get("nextAction") or payload.get("next_action"),
+        "parent_task_id": payload.get("parentTaskId") or payload.get("parent_task_id"),
+    }
+
+
+def normalize_artifact_submit(payload: dict[str, Any]) -> dict[str, Any]:
+    artifact = required(payload, "artifact")
+    if not isinstance(artifact, dict):
+        raise ValueError("artifact must be an object")
+    actor_agent_id = (
+        read_alias(payload, "actor_agent_id", "actorAgentId")
+        or read_alias(artifact, "actor_agent_id", "actorAgentId")
+        or payload.get("from")
+    )
+    if not actor_agent_id:
+        raise ValueError("missing required field: actor_agent_id")
+    to_agent_id = read_alias(payload, "target_agent_id", "targetAgentId", payload.get("to"))
+    parts = artifact.get("parts") or []
+    if not isinstance(parts, list):
+        raise ValueError("artifact.parts must be an array")
+    intent = artifact.get("intent") or payload.get("intent") or "work_result"
+    return {
+        "actor_agent_id": actor_agent_id,
+        "to_agent_id": to_agent_id,
+        "next_status": payload.get("nextStatus") or payload.get("next_status"),
+        "pending_on_agent_id": payload.get("pendingOnAgentId") or payload.get("pending_on_agent_id"),
+        "pending_on_human_id": payload.get("pendingOnHumanId") or payload.get("pending_on_human_id"),
+        "next_action": payload.get("nextAction") or payload.get("next_action"),
+        "artifact": {
+            "artifact_id": artifact.get("artifactId") or artifact.get("artifact_id") or f"art_{uuid.uuid4().hex}",
+            "intent": intent,
+            "kind": artifact.get("kind") or "text",
+            "parts": parts,
+        },
+    }
+
+
+def role_to_intent(role: Any) -> str:
+    if role == "agent" or role == "ROLE_AGENT":
+        return "agent_message"
+    if role == "system" or role == "ROLE_SYSTEM":
+        return "system_context"
+    return "request"
+
+
+def other_task_agent(task: dict[str, Any], actor_agent_id: str) -> str:
+    if actor_agent_id == task.get("requester_agent_id"):
+        return task["target_agent_id"]
+    return task["requester_agent_id"]
 
 
 def assert_agent_exists(conn: sqlite3.Connection, agent_id: str) -> None:
