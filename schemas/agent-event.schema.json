@@ -3,7 +3,7 @@
   "$id": "https://server.stellarix.space/agentrelay/schemas/agent-event.schema.json",
   "title": "AgentRelay Agent Event",
   "type": "object",
-  "required": ["event_id", "event_type", "task_id", "agent_id"],
+  "required": ["event_id", "event_type", "task_id", "agent_id", "delivery_state"],
   "properties": {
     "event_id": {
       "type": "string",
@@ -12,6 +12,29 @@
     "event_type": {
       "type": "string",
       "enum": ["task.pending", "heartbeat"]
+    },
+    "delivery_state": {
+      "type": "string",
+      "enum": ["pending", "inflight", "done", "failed"]
+    },
+    "delivery_attempts": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "inflight_until": {
+      "type": ["integer", "null"]
+    },
+    "acked_at": {
+      "type": ["integer", "null"]
+    },
+    "done_at": {
+      "type": ["integer", "null"]
+    },
+    "failed_at": {
+      "type": ["integer", "null"]
+    },
+    "last_error": {
+      "type": ["string", "null"]
     },
     "task_id": {
       "type": "string",
@@ -35,6 +58,10 @@
         }
       },
       "additionalProperties": false
+    },
+    "payload": {
+      "type": "object",
+      "description": "Secret-safe notification metadata. Full task/artifact content is fetched via payload_ref."
     }
   },
   "additionalProperties": true

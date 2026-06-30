@@ -215,7 +215,7 @@ Phase 3 Progress:
 - [x] Schema and agent-first envelope: task create, artifact submit, close, agent events, response envelope, structured errors, and `next_action`.
 - [x] Timeline and audit model: refactor task events into dashboard-ready task timeline/activity log.
 - [x] Transition validator and completion authority: legal state transitions, terminal rules, max turns, TTL, close permissions, and human completion authority via agent.
-- [ ] Reliable event delivery: idempotency keys, event cursor, `dedup`, `inflight`, `done`, ack, and no secrets in WebSocket push payloads.
+- [x] Reliable event delivery: idempotency keys, event cursor, `dedup`, `inflight`, `done`, ack, and no secrets in WebSocket push payloads.
 - [ ] Source refs and approval summaries: optional `source_refs` and redacted completion/approval summaries.
 - [ ] Expand Agent Cards and A2A mapping: capabilities, accepted task types, scopes, approval policy, and minimal A2A compatibility map.
 - [ ] Add admin/debug views or CLI for agents, tasks, timelines, events, and pending work.
@@ -232,6 +232,15 @@ Latest Phase 3 implementation note:
 - Terminal tasks are protected from later claim/artifact/delivery/close mutations.
 - `turn_count` and `max_turns` are enforced on ownership handoff to reduce infinite agent loops.
 - Added transition smoke coverage and kept existing Phase 1/2/v0.2/MCP compatibility tests passing.
+
+Latest reliable event delivery note:
+
+- Agent events now have explicit delivery state: `pending`, `inflight`, `done`, or `failed`.
+- `GET /workers/{agent_id}/events` supports cursor reads, limits, state filters, and optional claim/lease semantics.
+- `task.pending` event creation uses idempotency keys so duplicate pending notifications deduplicate.
+- WebSocket push claims events as `inflight` and sends secret-safe metadata plus `payloadRef`; agents fetch full task content separately.
+- Ack remains backward compatible: old ack calls mark events as `done`, while new clients can explicitly mark `done` or `failed`.
+- MCP exposes agent-first tools to list, claim, and ack agent events.
 
 ## 3. 建议的消息格式
 

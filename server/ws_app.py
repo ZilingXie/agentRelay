@@ -26,6 +26,7 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
     auth_required: bool = False
     poll_interval_seconds: float = 2.0
     heartbeat_seconds: float = 30.0
+    lease_seconds: int = 60
 
     def do_GET(self) -> None:
         path = clean_path(self.path)
@@ -53,7 +54,6 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
         self.stream_events(agent_id)
 
     def stream_events(self, agent_id: str) -> None:
-        sent_event_ids: set[str] = set()
         next_heartbeat_at = time.time() + self.heartbeat_seconds
         try:
             self.send_json_frame(
@@ -64,12 +64,13 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
                 }
             )
             while True:
-                events = self.store.list_agent_events(agent_id, include_acked=False)
+                events = self.store.claim_agent_events(
+                    agent_id,
+                    limit=100,
+                    lease_seconds=self.lease_seconds,
+                )
                 for event in events:
-                    if event["event_id"] in sent_event_ids:
-                        continue
                     self.send_json_frame(format_event_message(event))
-                    sent_event_ids.add(event["event_id"])
                 now = time.time()
                 if now >= next_heartbeat_at:
                     self.send_json_frame({"type": "heartbeat", "serverTime": int(now)})
@@ -164,6 +165,10 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
 
 def format_event_message(event: dict[str, Any]) -> dict[str, Any]:
     payload = dict(event.get("payload") or {})
+    payload_ref = payload.get("payloadRef") or payload.get("payload_ref") or {
+        "method": "GET",
+        "href": f"/agentrelay/tasks/{event['task_id']}",
+    }
     message = {
         "type": payload.pop("type", event["event_type"]),
         "eventId": event["event_id"],
@@ -171,8 +176,15 @@ def format_event_message(event: dict[str, Any]) -> dict[str, Any]:
         "agentId": event["agent_id"],
         "taskId": event["task_id"],
         "createdAt": event["created_at"],
+        "cursor": event.get("cursor"),
+        "deliveryState": event.get("delivery_state"),
+        "deliveryAttempts": event.get("delivery_attempts"),
+        "inflightUntil": event.get("inflight_until"),
+        "payloadRef": payload_ref,
     }
-    message.update(payload)
+    for key in ("contextId", "status", "pendingOnAgentId", "updatedAt", "reason"):
+        if key in payload:
+            message[key] = payload[key]
     return message
 
 
@@ -187,6 +199,7 @@ def create_server() -> ThreadingHTTPServer:
     AgentRelayWebSocketHandler.auth_identities = identities
     AgentRelayWebSocketHandler.poll_interval_seconds = float(os.environ.get("AGENTRELAY_WS_POLL_SECONDS", "2"))
     AgentRelayWebSocketHandler.heartbeat_seconds = float(os.environ.get("AGENTRELAY_WS_HEARTBEAT_SECONDS", "30"))
+    AgentRelayWebSocketHandler.lease_seconds = int(os.environ.get("AGENTRELAY_WS_LEASE_SECONDS", "60"))
     return ThreadingHTTPServer((host, port), AgentRelayWebSocketHandler)
 
 

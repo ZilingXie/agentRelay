@@ -322,7 +322,7 @@ Implementation stance:
 4. [x] Schema and agent-first envelope: create JSON schemas for task create, artifact submit, close, and agent events; standardize MCP/API/CLI responses with `ok`, `data`, `error`, `hint`, and `next_action`.
 5. [x] Timeline and audit model: refactor task events into a clearer dashboard-ready task timeline/activity log.
 6. [x] Transition validator and completion authority: enforce legal state changes, terminal rules, max turns, TTL, close permissions, and human completion authority via agent.
-7. [ ] Reliable event delivery: add idempotency keys, event cursor support, local delivery states for `dedup`, `inflight`, `done`, and ack semantics; keep secrets out of push payloads.
+7. [x] Reliable event delivery: add idempotency keys, event cursor support, local delivery states for `dedup`, `inflight`, `done`, and ack semantics; keep secrets out of push payloads.
 8. [ ] Source refs and approval summaries: add optional `source_refs` and redacted approval summaries for important artifacts and closes.
 9. [ ] Expand Agent Cards and A2A mapping: add capabilities, accepted task types, scopes, approval policy, and a minimal A2A compatibility map.
 10. [ ] Add admin/debug views or CLI for agents, tasks, timelines, events, and pending work.
@@ -401,6 +401,28 @@ Implemented outputs:
 - `npm run test:transitions`.
 
 Compatibility note: this slice keeps the existing database schema stable and keeps legacy/v0.2 clients working. Precise claim conflicts still return HTTP 409 for existing Phase 2 clients, while validator failures remain structured validation errors in newer protocol paths.
+
+## 8.3 Reliable Event Delivery Slice
+
+Status: completed as an additive agent event delivery layer.
+
+Implemented outputs:
+
+- Agent event delivery states: `pending`, `inflight`, `done`, and `failed`.
+- Additive SQLite columns for `idempotency_key`, `delivery_attempts`, `inflight_until`, `done_at`, `failed_at`, and `last_error`.
+- Durable cursor format over `(created_at, event_id)`.
+- `GET /agentrelay/api/workers/:agentId/events` for cursor reads, state filters, and optional `claim=true` lease behavior.
+- Backward-compatible ack endpoint that treats legacy ack statuses as `done`.
+- Explicit `done` and `failed` ack semantics; failed events remain claimable.
+- WebSocket delivery now claims events as `inflight` and sends secret-safe notification metadata plus `payloadRef`.
+- MCP tools:
+  - `agentrelay_list_agent_events`
+  - `agentrelay_claim_agent_events`
+  - `agentrelay_ack_agent_event`
+- `scripts/reliable_event_smoke_test.py`.
+- Reliable event checks included in `npm test`.
+
+Compatibility note: this slice preserves existing `/pending`, `/claim`, and old event ack behavior. Full task content is still available through authenticated task fetch; push notifications avoid task body fields so future adapters can safely route notifications through local or third-party channels.
 
 The first implementation slice should be intentionally small:
 

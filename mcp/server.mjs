@@ -141,6 +141,89 @@ function registerTools(mcpServer) {
   );
 
   mcpServer.registerTool(
+    "agentrelay_list_agent_events",
+    {
+      title: "List AgentRelay agent events",
+      description: "List durable task.pending notifications for one agent. Supports cursor reads and optional delivery state filtering.",
+      inputSchema: {
+        agentId: z.string().min(1),
+        cursor: z.string().optional(),
+        limit: z.number().int().positive().max(500).optional(),
+        includeAcked: z.boolean().optional(),
+        deliveryState: z.enum(["pending", "inflight", "done", "failed"]).optional()
+      }
+    },
+    async (args) =>
+      jsonResult(
+        await relayGet(
+          withQuery(`/workers/${encodeURIComponent(args.agentId)}/events`, {
+            cursor: args.cursor,
+            limit: args.limit,
+            include_acked: args.includeAcked,
+            delivery_state: args.deliveryState
+          })
+        )
+      )
+  );
+
+  mcpServer.registerTool(
+    "agentrelay_claim_agent_events",
+    {
+      title: "Claim AgentRelay agent events",
+      description: "Claim durable notifications for local delivery. Claimed events become inflight until acked done/failed or their lease expires.",
+      inputSchema: {
+        agentId: z.string().min(1),
+        cursor: z.string().optional(),
+        limit: z.number().int().positive().max(500).optional(),
+        leaseSeconds: z.number().int().positive().max(3600).optional()
+      }
+    },
+    async (args) =>
+      jsonResult(
+        await relayGet(
+          withQuery(`/workers/${encodeURIComponent(args.agentId)}/events`, {
+            claim: true,
+            cursor: args.cursor,
+            limit: args.limit,
+            lease_seconds: args.leaseSeconds
+          })
+        )
+      )
+  );
+
+  mcpServer.registerTool(
+    "agentrelay_ack_agent_event",
+    {
+      title: "Ack AgentRelay agent event",
+      description: "Mark a local notification delivery as done or failed. Legacy done ack hides the event from default lists.",
+      inputSchema: {
+        agentId: z.string().min(1),
+        eventId: z.string().min(1),
+        taskId: z.string().min(1).optional(),
+        deliveryState: z.enum(["done", "failed"]).optional(),
+        error: z.string().optional(),
+        threadId: z.string().optional(),
+        threadRole: z.string().optional(),
+        projectPath: z.string().optional()
+      }
+    },
+    async (args) =>
+      jsonResult(
+        await relayPost(
+          `/workers/${encodeURIComponent(args.agentId)}/events/${encodeURIComponent(args.eventId)}/ack`,
+          compact({
+            taskId: args.taskId,
+            deliveryState: args.deliveryState || "done",
+            error: args.error,
+            threadId: args.threadId,
+            threadRole: args.threadRole,
+            projectPath: args.projectPath
+          })
+        )
+      )
+  );
+
+  mcpServer.registerTool(
     "agentrelay_claim_task",
     {
       title: "Claim AgentRelay task",
@@ -333,6 +416,17 @@ function jsonResult(data) {
 
 function normalizeBaseUrl(value) {
   return value.replace(/\/+$/, "");
+}
+
+function withQuery(path, params) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null) {
+      query.set(key, String(value));
+    }
+  }
+  const text = query.toString();
+  return text ? `${path}?${text}` : path;
 }
 
 function compact(value) {

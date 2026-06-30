@@ -6,7 +6,7 @@ import os
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from server.store import ConflictError, Store, read_alias
 from server.protocol_v03 import (
@@ -58,6 +58,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
 
     def route_get(self) -> None:
         path = clean_path(self.path)
+        query = query_params(self.path)
         if path == "/health":
             self.respond_json({"ok": True, "service": "agentrelay"})
             return
@@ -104,6 +105,28 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             if not self.require_agent(auth, agent_id):
                 return
             self.respond_protocol({"tasks": self.store.list_pending_tasks(agent_id)})
+            return
+        if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/events", path):
+            agent_id = match.group(1)
+            if not self.require_agent(auth, agent_id):
+                return
+            limit = parse_int_query(query, "limit", 100, min_value=1, max_value=500)
+            cursor = first_query_value(query, "cursor") or first_query_value(query, "after")
+            delivery_state = first_query_value(query, "delivery_state") or first_query_value(query, "state")
+            should_claim = parse_bool_query(query, "claim", False)
+            if should_claim:
+                lease_seconds = parse_int_query(query, "lease_seconds", 60, min_value=1, max_value=3600)
+                events = self.store.claim_agent_events(agent_id, limit, cursor, lease_seconds)
+            else:
+                include_acked = parse_bool_query(query, "include_acked", False)
+                events = self.store.list_agent_events(
+                    agent_id,
+                    include_acked=include_acked,
+                    limit=limit,
+                    after_cursor=cursor,
+                    delivery_state=delivery_state,
+                )
+            self.respond_protocol(agent_events_response(events))
             return
         if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/claim", path):
             agent_id = match.group(1)
@@ -196,7 +219,18 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             if not self.require_agent(auth, agent_id):
                 return
             task_id = payload.get("taskId")
-            event = self.store.ack_agent_event(agent_id, event_id, task_id)
+            delivery_state = payload.get("deliveryState") or payload.get("delivery_state") or payload.get("status") or "done"
+            if delivery_state == "acked":
+                delivery_state = "done"
+            if delivery_state not in {"done", "failed"}:
+                delivery_state = "done"
+            event = self.store.ack_agent_event(
+                agent_id,
+                event_id,
+                task_id,
+                delivery_state=delivery_state,
+                error=payload.get("error"),
+            )
             if not event:
                 self.respond_error(404, "event not found")
                 return
@@ -359,6 +393,51 @@ def clean_path(path: str) -> str:
     if clean.startswith("/agentrelay/api/"):
         return "/agentrelay/" + clean[len("/agentrelay/api/"):]
     return clean
+
+
+def query_params(path: str) -> dict[str, list[str]]:
+    return parse_qs(urlparse(path).query, keep_blank_values=False)
+
+
+def first_query_value(query: dict[str, list[str]], key: str) -> str | None:
+    values = query.get(key)
+    return values[0] if values else None
+
+
+def parse_bool_query(query: dict[str, list[str]], key: str, default: bool) -> bool:
+    value = first_query_value(query, key)
+    if value is None:
+        return default
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
+def parse_int_query(
+    query: dict[str, list[str]],
+    key: str,
+    default: int,
+    *,
+    min_value: int,
+    max_value: int,
+) -> int:
+    value = first_query_value(query, key)
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{key} must be an integer") from exc
+    if parsed < min_value or parsed > max_value:
+        raise ValueError(f"{key} must be between {min_value} and {max_value}")
+    return parsed
+
+
+def agent_events_response(events: list[dict[str, Any]]) -> dict[str, Any]:
+    next_cursor = events[-1]["cursor"] if events else None
+    return {
+        "events": events,
+        "next_cursor": next_cursor,
+        "nextCursor": next_cursor,
+    }
 
 
 def agent_card(agent: dict[str, Any]) -> dict[str, Any]:
