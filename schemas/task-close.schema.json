@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/task-close.schema.json",
+  "title": "AgentRelay Protocol v0.3 Task Close",
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "idempotency_key",
+    "closed_by_agent_id",
+    "completion_authority",
+    "terminal_reason"
+  ],
+  "properties": {
+    "protocol_version": {
+      "const": "agent-collab-v0.3"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "closed_by_agent_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "completion_authority": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["agent", "human"]
+        },
+        "owner_id": {
+          "type": "string"
+        },
+        "via_agent_id": {
+          "type": "string"
+        },
+        "approval_ref": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "terminal_reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "final_artifact": {
+      "type": "object",
+      "required": ["kind", "parts"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "part.schema.json"
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "completion_authority": {
+            "properties": {
+              "type": {
+                "const": "human"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "completion_authority": {
+            "required": ["owner_id", "via_agent_id", "approval_ref"]
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": true
+}

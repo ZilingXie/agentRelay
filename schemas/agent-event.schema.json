@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/agent-event.schema.json",
+  "title": "AgentRelay Agent Event",
+  "type": "object",
+  "required": ["event_id", "event_type", "task_id", "agent_id"],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["task.pending", "heartbeat"]
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "agent_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cursor": {
+      "type": "string"
+    },
+    "payload_ref": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "const": "GET"
+        },
+        "href": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

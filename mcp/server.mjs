@@ -129,6 +129,18 @@ function registerTools(mcpServer) {
   );
 
   mcpServer.registerTool(
+    "agentrelay_get_timeline",
+    {
+      title: "Get AgentRelay task timeline",
+      description: "Fetch the dashboard-ready normalized timeline for a task.",
+      inputSchema: {
+        taskId: z.string().min(1)
+      }
+    },
+    async ({ taskId }) => jsonResult(await relayGet(`/tasks/${encodeURIComponent(taskId)}/timeline`))
+  );
+
+  mcpServer.registerTool(
     "agentrelay_claim_task",
     {
       title: "Claim AgentRelay task",

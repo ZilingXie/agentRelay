@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/response-envelope.schema.json",
+  "title": "AgentRelay Agent-First Response Envelope",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["ok", "data"],
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "data": {
+          "type": "object"
+        },
+        "next_action": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "meta": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["ok", "error"],
+      "properties": {
+        "ok": {
+          "const": false
+        },
+        "error": {
+          "type": "object",
+          "required": ["type", "code", "message"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "hint": {
+              "type": "string"
+            },
+            "detail": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

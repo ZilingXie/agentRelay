@@ -196,10 +196,13 @@ Phase 1/2 已经定义出的协议事实：
 - `completion_owner_agent_id` 通常是 requester agent，负责语义完成判断。
 - target agent 可以完成自己的 action，但不能单方面关闭整个 workflow。
 - artifact 表示 action result，不等同于 task complete。
-- `pending_on_agent_id` / `pending_on_human_id` 定义下一步责任归属。
+- `pending_on_agent_id` 定义下一步协议责任归属；如果 agent 需要问 human owner，那是本地 agent workflow。
 - WebSocket `task.pending` 只是通知；HTTP task state 才是 source of truth。
 - 本地 inbox 到 Codex App/CLI/WeChat/Slack 的投递由用户自己的 adapter/hook 决定。
 - terminal task 不重新打开；后续变更创建同 `context_id` 的 child task。
+- artifact 可带 optional `source_refs`，用于说明重要结果来自 owner confirmation、calendar lookup、file、message、tool result 等来源；默认不暴露私密 human-agent 对话。
+- close 必须由 `completion_owner_agent_id` 执行；如果最终判断来自 human，可以通过 `completion_authority.type = human` 记录为经由 agent 执行的 human authority。
+- AgentRelay 借鉴 Octo 的 timeline、delivery reliability、secret hygiene、agent-first tooling，但不采用 Octo 的 IM/workspace-centered 核心范式。
 
 Phase 3 Progress:
 
@@ -209,15 +212,26 @@ Phase 3 Progress:
 - [x] Add `protocol_version`, `actor_agent_id`, and `intent` to task/artifact audit payloads.
 - [x] Update MCP clients to prefer Protocol v0.2 payloads while keeping legacy aliases.
 - [x] Add Protocol v0.2 smoke coverage and legacy compatibility coverage.
-- [ ] Create JSON schemas for task creation, artifact submission, status transition, close, and agent events.
-- [ ] Implement a task state transition validator.
-- [ ] Add negative tests for invalid transitions and unauthorized completion.
-- [ ] Add idempotency keys for create/artifact/ack/close operations.
-- [ ] Add first-class human approval records.
-- [ ] Expand agent cards with capabilities, scopes, and accepted task types.
-- [ ] Add A2A mapping document and minimal compatibility endpoint plan.
+- [x] Schema and agent-first envelope: task create, artifact submit, close, agent events, response envelope, structured errors, and `next_action`.
+- [x] Timeline and audit model: refactor task events into dashboard-ready task timeline/activity log.
+- [x] Transition validator and completion authority: legal state transitions, terminal rules, max turns, TTL, close permissions, and human completion authority via agent.
+- [ ] Reliable event delivery: idempotency keys, event cursor, `dedup`, `inflight`, `done`, ack, and no secrets in WebSocket push payloads.
+- [ ] Source refs and approval summaries: optional `source_refs` and redacted completion/approval summaries.
+- [ ] Expand Agent Cards and A2A mapping: capabilities, accepted task types, scopes, approval policy, and minimal A2A compatibility map.
+- [ ] Add admin/debug views or CLI for agents, tasks, timelines, events, and pending work.
+- [ ] Run the two-agent meeting flow again under the validated v0.3 protocol.
 
 详细计划见 `phase3-plan.md`。
+
+Latest Phase 3 implementation note:
+
+- Added `server/transitions.py` as the centralized task state validator.
+- Artifact submission is explicitly non-terminal: artifacts can transfer ownership and produce results, but cannot complete a task.
+- Non-terminal protocol movement now requires a pending owner plus a next action.
+- Closing is restricted to `completion_owner_agent_id`; human authority can be recorded through the closing agent.
+- Terminal tasks are protected from later claim/artifact/delivery/close mutations.
+- `turn_count` and `max_turns` are enforced on ownership handoff to reduce infinite agent loops.
+- Added transition smoke coverage and kept existing Phase 1/2/v0.2/MCP compatibility tests passing.
 
 ## 3. 建议的消息格式
 
