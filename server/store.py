@@ -24,6 +24,7 @@ from server.transitions import (
 
 
 PROTOCOL_VERSION = "agent-collab-v0.2"
+AGENT_EVENT_DELIVERY_STATES = {"pending", "inflight", "done", "failed"}
 
 
 class ConflictError(Exception):
@@ -126,6 +127,13 @@ class Store:
                     event_type TEXT NOT NULL,
                     task_id TEXT NOT NULL,
                     payload_json TEXT NOT NULL,
+                    idempotency_key TEXT,
+                    delivery_state TEXT NOT NULL DEFAULT 'pending',
+                    delivery_attempts INTEGER NOT NULL DEFAULT 0,
+                    inflight_until INTEGER,
+                    done_at INTEGER,
+                    failed_at INTEGER,
+                    last_error TEXT,
                     acked_at INTEGER,
                     created_at INTEGER NOT NULL,
                     FOREIGN KEY (agent_id) REFERENCES agents(agent_id),
@@ -156,6 +164,7 @@ class Store:
                 """
             )
             self.ensure_task_columns(conn)
+            self.ensure_agent_event_columns(conn)
             self.ensure_seed_agents(conn)
 
     def ensure_task_columns(self, conn: sqlite3.Connection) -> None:
@@ -175,6 +184,37 @@ class Store:
             "delivered_to_thread_id": "ALTER TABLE tasks ADD COLUMN delivered_to_thread_id TEXT",
             "delivered_at": "ALTER TABLE tasks ADD COLUMN delivered_at INTEGER",
             "delivery_error": "ALTER TABLE tasks ADD COLUMN delivery_error TEXT",
+        }
+        for column, sql in migrations.items():
+            if column not in columns:
+                conn.execute(sql)
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_agent_events_agent_delivery
+                ON agent_events (agent_id, delivery_state, created_at, event_id)
+            """
+        )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_events_idempotency
+                ON agent_events (agent_id, idempotency_key)
+                WHERE idempotency_key IS NOT NULL
+            """
+        )
+
+    def ensure_agent_event_columns(self, conn: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(agent_events)").fetchall()
+        }
+        migrations = {
+            "idempotency_key": "ALTER TABLE agent_events ADD COLUMN idempotency_key TEXT",
+            "delivery_state": "ALTER TABLE agent_events ADD COLUMN delivery_state TEXT NOT NULL DEFAULT 'pending'",
+            "delivery_attempts": "ALTER TABLE agent_events ADD COLUMN delivery_attempts INTEGER NOT NULL DEFAULT 0",
+            "inflight_until": "ALTER TABLE agent_events ADD COLUMN inflight_until INTEGER",
+            "done_at": "ALTER TABLE agent_events ADD COLUMN done_at INTEGER",
+            "failed_at": "ALTER TABLE agent_events ADD COLUMN failed_at INTEGER",
+            "last_error": "ALTER TABLE agent_events ADD COLUMN last_error TEXT",
         }
         for column, sql in migrations.items():
             if column not in columns:
@@ -811,9 +851,17 @@ class Store:
         event_type: str,
         task_id: str,
         payload: dict[str, Any],
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         with self.connect() as conn:
-            return self.create_agent_event_conn(conn, agent_id, event_type, task_id, payload)
+            return self.create_agent_event_conn(
+                conn,
+                agent_id,
+                event_type,
+                task_id,
+                payload,
+                idempotency_key=idempotency_key,
+            )
 
     def create_pending_agent_event_conn(
         self,
@@ -834,7 +882,8 @@ class Store:
             "task.pending",
             task_id,
             pending_event_payload(task, reason),
-            created_at,
+            idempotency_key=f"{task_id}:{agent_id}:{reason}:{task.get('updated_at')}",
+            created_at=created_at,
         )
 
     def create_agent_event_conn(
@@ -844,21 +893,35 @@ class Store:
         event_type: str,
         task_id: str,
         payload: dict[str, Any],
+        idempotency_key: str | None = None,
         created_at: int | None = None,
     ) -> dict[str, Any]:
         assert_agent_exists(conn, agent_id)
         if not self.get_task_conn(conn, task_id):
             raise ValueError(f"unknown task: {task_id}")
         now = created_at or int(time.time())
+        if idempotency_key:
+            existing = conn.execute(
+                """
+                SELECT * FROM agent_events
+                WHERE agent_id = ? AND idempotency_key = ?
+                """,
+                (agent_id, idempotency_key),
+            ).fetchone()
+            if existing:
+                return decode_payload(existing)
         event_id = f"aevt_{uuid.uuid4().hex}"
         conn.execute(
             """
             INSERT INTO agent_events (
-                event_id, agent_id, event_type, task_id, payload_json, acked_at, created_at
+                event_id, agent_id, event_type, task_id, payload_json,
+                idempotency_key, delivery_state, delivery_attempts,
+                inflight_until, done_at, failed_at, last_error,
+                acked_at, created_at
             )
-            VALUES (?, ?, ?, ?, ?, NULL, ?)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, NULL, NULL, NULL, NULL, NULL, ?)
             """,
-            (event_id, agent_id, event_type, task_id, json.dumps(payload), now),
+            (event_id, agent_id, event_type, task_id, json.dumps(payload), idempotency_key, now),
         )
         row = conn.execute(
             "SELECT * FROM agent_events WHERE event_id = ?",
@@ -871,20 +934,96 @@ class Store:
         agent_id: str,
         include_acked: bool = False,
         limit: int = 100,
+        after_cursor: str | None = None,
+        delivery_state: str | None = None,
     ) -> list[dict[str, Any]]:
         with self.connect() as conn:
             assert_agent_exists(conn, agent_id)
             ack_filter = "" if include_acked else "AND acked_at IS NULL"
+            state_filter = ""
+            params: list[Any] = [agent_id]
+            if delivery_state:
+                if delivery_state not in AGENT_EVENT_DELIVERY_STATES:
+                    raise ValueError(f"unknown delivery_state: {delivery_state}")
+                state_filter = "AND delivery_state = ?"
+                params.append(delivery_state)
+            cursor_filter = ""
+            if after_cursor:
+                created_at, event_id = parse_agent_event_cursor(after_cursor)
+                cursor_filter = "AND (created_at > ? OR (created_at = ? AND event_id > ?))"
+                params.extend([created_at, created_at, event_id])
+            params.append(limit)
             rows = conn.execute(
                 f"""
                 SELECT * FROM agent_events
-                WHERE agent_id = ? {ack_filter}
+                WHERE agent_id = ? {ack_filter} {state_filter} {cursor_filter}
                 ORDER BY created_at, event_id
                 LIMIT ?
                 """,
-                (agent_id, limit),
+                params,
             ).fetchall()
             return [decode_payload(row) for row in rows]
+
+    def claim_agent_events(
+        self,
+        agent_id: str,
+        limit: int = 100,
+        after_cursor: str | None = None,
+        lease_seconds: int = 60,
+    ) -> list[dict[str, Any]]:
+        now = int(time.time())
+        lease_until = now + max(1, lease_seconds)
+        with self.connect() as conn:
+            assert_agent_exists(conn, agent_id)
+            cursor_filter = ""
+            params: list[Any] = [agent_id, now]
+            if after_cursor:
+                created_at, event_id = parse_agent_event_cursor(after_cursor)
+                cursor_filter = "AND (created_at > ? OR (created_at = ? AND event_id > ?))"
+                params.extend([created_at, created_at, event_id])
+            params.append(limit)
+            rows = conn.execute(
+                f"""
+                SELECT * FROM agent_events
+                WHERE agent_id = ?
+                  AND acked_at IS NULL
+                  AND (
+                    delivery_state IN ('pending', 'failed')
+                    OR (delivery_state = 'inflight' AND COALESCE(inflight_until, 0) <= ?)
+                  )
+                  {cursor_filter}
+                ORDER BY created_at, event_id
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+            event_ids = [row["event_id"] for row in rows]
+            if not event_ids:
+                return []
+            placeholders = ", ".join("?" for _ in event_ids)
+            conn.execute(
+                f"""
+                UPDATE agent_events
+                SET delivery_state = 'inflight',
+                    delivery_attempts = delivery_attempts + 1,
+                    inflight_until = ?,
+                    last_error = NULL
+                WHERE agent_id = ?
+                  AND event_id IN ({placeholders})
+                  AND acked_at IS NULL
+                """,
+                (lease_until, agent_id, *event_ids),
+            )
+            refreshed = conn.execute(
+                f"""
+                SELECT * FROM agent_events
+                WHERE agent_id = ?
+                  AND event_id IN ({placeholders})
+                ORDER BY created_at, event_id
+                """,
+                (agent_id, *event_ids),
+            ).fetchall()
+            return [decode_payload(row) for row in refreshed]
 
     def ack_agent_event(
         self,
@@ -892,8 +1031,12 @@ class Store:
         event_id: str,
         expected_task_id: str | None = None,
         acked_at: int | None = None,
+        delivery_state: str = "done",
+        error: str | None = None,
     ) -> dict[str, Any] | None:
         now = acked_at or int(time.time())
+        if delivery_state not in {"done", "failed"}:
+            raise ValueError("delivery_state must be done or failed")
         with self.connect() as conn:
             assert_agent_exists(conn, agent_id)
             row = conn.execute(
@@ -904,10 +1047,31 @@ class Store:
                 return None
             if expected_task_id and expected_task_id != row["task_id"]:
                 raise ValueError("taskId does not match event")
-            if row["acked_at"] is None:
+            if row["acked_at"] is None and delivery_state == "done":
                 conn.execute(
-                    "UPDATE agent_events SET acked_at = ? WHERE agent_id = ? AND event_id = ?",
-                    (now, agent_id, event_id),
+                    """
+                    UPDATE agent_events
+                    SET delivery_state = 'done',
+                        acked_at = ?,
+                        done_at = ?,
+                        failed_at = NULL,
+                        inflight_until = NULL,
+                        last_error = NULL
+                    WHERE agent_id = ? AND event_id = ?
+                    """,
+                    (now, now, agent_id, event_id),
+                )
+            elif row["acked_at"] is None and delivery_state == "failed":
+                conn.execute(
+                    """
+                    UPDATE agent_events
+                    SET delivery_state = 'failed',
+                        failed_at = ?,
+                        inflight_until = NULL,
+                        last_error = ?
+                    WHERE agent_id = ? AND event_id = ?
+                    """,
+                    (now, error or "delivery failed", agent_id, event_id),
                 )
             row = conn.execute(
                 "SELECT * FROM agent_events WHERE agent_id = ? AND event_id = ?",
@@ -1181,14 +1345,15 @@ def pending_event_payload(task: dict[str, Any], reason: str) -> dict[str, Any]:
         "type": "task.pending",
         "taskId": task["task_id"],
         "contextId": task["context_id"],
-        "subject": task["subject"],
         "status": task["status"],
         "agentId": task["pending_on_agent_id"],
         "pendingOnAgentId": task["pending_on_agent_id"],
-        "pendingOnHumanId": task["pending_on_human_id"],
-        "nextAction": task["next_action"],
         "updatedAt": task["updated_at"],
         "reason": reason,
+        "payloadRef": {
+            "method": "GET",
+            "href": f"/agentrelay/tasks/{task['task_id']}",
+        },
     }
 
 
@@ -1201,7 +1366,24 @@ def decode_parts(row: sqlite3.Row) -> dict[str, Any]:
 def decode_payload(row: sqlite3.Row) -> dict[str, Any]:
     data = dict(row)
     data["payload"] = json.loads(data.pop("payload_json"))
+    if "created_at" in data and "event_id" in data:
+        data["cursor"] = agent_event_cursor(data["created_at"], data["event_id"])
     return data
+
+
+def agent_event_cursor(created_at: int, event_id: str) -> str:
+    return f"{int(created_at)}:{event_id}"
+
+
+def parse_agent_event_cursor(cursor: str) -> tuple[int, str]:
+    try:
+        created_at_text, event_id = cursor.split(":", 1)
+        created_at = int(created_at_text)
+    except (AttributeError, ValueError) as exc:
+        raise ValueError("invalid event cursor") from exc
+    if not event_id:
+        raise ValueError("invalid event cursor")
+    return created_at, event_id
 
 
 def summarize_timeline(entries: list[dict[str, Any]]) -> dict[str, Any]:

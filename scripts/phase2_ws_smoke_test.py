@@ -84,6 +84,12 @@ def main() -> None:
                 raise AssertionError("WebSocket event did not preserve pending reason")
             if not event.get("eventId"):
                 raise AssertionError("WebSocket event did not include eventId")
+            if event.get("deliveryState") != "inflight":
+                raise AssertionError("WebSocket event should be claimed as inflight")
+            if not event.get("payloadRef"):
+                raise AssertionError("WebSocket event should include a payloadRef")
+            if "subject" in event or "nextAction" in event:
+                raise AssertionError("WebSocket push should not include task content fields")
             print(json.dumps({"ok": True, "taskId": task_id, "eventId": event["eventId"]}, indent=2))
         finally:
             if sock:

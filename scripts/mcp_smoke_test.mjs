@@ -30,6 +30,10 @@ try {
     tools.tools.some((tool) => tool.name === "agentrelay_get_timeline"),
     "agentrelay_get_timeline tool not found"
   );
+  assert(
+    tools.tools.some((tool) => tool.name === "agentrelay_claim_agent_events"),
+    "agentrelay_claim_agent_events tool not found"
+  );
 
   await callJson("agentrelay_health", {});
 
@@ -46,6 +50,20 @@ try {
   });
   const taskId = created.task.task_id;
   assert(created.task.completion_owner_agent_id === "zac-agent", "completion owner missing");
+
+  const frankEvents = await callJson("agentrelay_claim_agent_events", {
+    agentId: "frank-agent",
+    leaseSeconds: 30
+  });
+  assert(frankEvents.events.length === 1, "frank-agent should have one claimed event");
+  assert(frankEvents.events[0].delivery_state === "inflight", "claimed event should be inflight");
+  assert(frankEvents.events[0].payload.payloadRef, "claimed event should include payloadRef");
+  const ackedFrankEvent = await callJson("agentrelay_ack_agent_event", {
+    agentId: "frank-agent",
+    eventId: frankEvents.events[0].event_id,
+    taskId
+  });
+  assert(ackedFrankEvent.event.delivery_state === "done", "acked event should be done");
 
   const frankClaim = await callJson("agentrelay_claim_task", { agentId: "frank-agent" });
   assert(frankClaim.task?.task_id === taskId, "frank-agent did not claim task");

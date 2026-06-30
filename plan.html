@@ -1139,7 +1139,7 @@ AgentRelay records timeline events:
         <li>
           <div>
             <h3>Reliable event delivery</h3>
-            <p>Add idempotency keys, event cursor support, and local delivery semantics for <code>dedup</code>, <code>inflight</code>, <code>done</code>, and ack. Keep secrets out of WebSocket push payloads.</p>
+            <p><span class="tag green">Completed</span> Added idempotency keys, cursor-based event reads, local delivery states for <code>pending</code>, <code>inflight</code>, <code>done</code>, and <code>failed</code>, lease-based event claiming, backward-compatible ack semantics, MCP event tools, and secret-safe WebSocket push payloads with <code>payloadRef</code>.</p>
           </div>
         </li>
         <li>
@@ -1157,7 +1157,7 @@ AgentRelay records timeline events:
       </ol>
 
       <div class="note">
-        <p><strong>Next best implementation step:</strong> implement reliable event delivery with idempotency keys, cursor-based reads, explicit delivery states, stronger ack semantics, and secret-safe WebSocket notification payloads.</p>
+        <p><strong>Next best implementation step:</strong> implement source refs and approval summaries so important artifacts and closes can explain their basis without exposing private human-agent conversations.</p>
       </div>
     </section>
 
