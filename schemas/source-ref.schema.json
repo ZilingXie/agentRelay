@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/source-ref.schema.json",
+  "title": "AgentRelay Protocol Source Reference",
+  "type": "object",
+  "required": ["type", "label"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": ["owner_confirmation", "calendar_lookup", "file", "message", "tool_result", "external_url", "other"]
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string"
+    },
+    "visibility": {
+      "type": "string",
+      "enum": ["public", "redacted", "private"],
+      "default": "redacted"
+    },
+    "uri": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

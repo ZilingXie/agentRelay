@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/task-create.schema.json",
+  "title": "AgentRelay Protocol v0.3 Task Create",
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "idempotency_key",
+    "task_type",
+    "subject",
+    "requester_agent_id",
+    "target_agent_id",
+    "done_criteria",
+    "completion_owner_agent_id",
+    "pending_on_agent_id",
+    "next_action",
+    "message"
+  ],
+  "properties": {
+    "protocol_version": {
+      "const": "agent-collab-v0.3"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "context_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parent_task_id": {
+      "type": "string"
+    },
+    "task_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "subject": {
+      "type": "string",
+      "minLength": 1
+    },
+    "requester_agent_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target_agent_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "done_criteria": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "additionalProperties": true
+        }
+      ]
+    },
+    "completion_owner_agent_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pending_on_agent_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "next_action": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ttl": {
+      "type": "string"
+    },
+    "max_turns": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "message": {
+      "type": "object",
+      "required": ["actor_agent_id", "intent", "parts"],
+      "properties": {
+        "actor_agent_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "part.schema.json"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "thread_binding": {
+      "type": "object",
+      "required": ["agent_id", "thread_role", "thread_id"],
+      "properties": {
+        "agent_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "thread_role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "thread_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "project_path": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

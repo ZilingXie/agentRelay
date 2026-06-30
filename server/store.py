@@ -7,17 +7,23 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from server.timeline import build_timeline_entry
+from server.transitions import (
+    CLAIMABLE_STATES,
+    TERMINAL_STATES,
+    TransitionError,
+    assert_artifact_allowed,
+    assert_claim_allowed,
+    assert_close_allowed,
+    assert_delivery_allowed,
+    assert_known_status,
+    assert_max_turns,
+    assert_update_status_allowed,
+    next_turn_count,
+)
 
-TERMINAL_STATES = {"completed", "failed", "cancelled", "expired", "rejected"}
+
 PROTOCOL_VERSION = "agent-collab-v0.2"
-CLAIMABLE_STATES = {
-    "submitted",
-    "input_required",
-    "auth_required",
-    "waiting_remote",
-    "delivery_pending",
-    "artifact_submitted",
-}
 
 
 class ConflictError(Exception):
@@ -252,6 +258,9 @@ class Store:
         pending_on_human_id = normalized["pending_on_human_id"]
         next_action = normalized["next_action"]
         parent_task_id = normalized["parent_task_id"]
+        protocol_version = normalized["protocol_version"]
+        idempotency_key = normalized["idempotency_key"]
+        done_criteria_payload = normalized["done_criteria_payload"]
 
         with self.connect() as conn:
             assert_agent_exists(conn, requester_agent_id)
@@ -312,17 +321,20 @@ class Store:
                 task_id,
                 "task.created",
                 {
-                    "protocol_version": PROTOCOL_VERSION,
+                    "protocol_version": protocol_version,
                     "contextId": context_id,
+                    "idempotency_key": idempotency_key,
                     "requester_agent_id": requester_agent_id,
                     "target_agent_id": target_agent_id,
                     "actor_agent_id": message["actor_agent_id"],
                     "intent": message["intent"],
                     "requesterThreadId": requester_thread_id,
                     "doneCriteria": done_criteria,
+                    "done_criteria": done_criteria_payload,
                     "completionOwnerAgentId": completion_owner_agent_id,
                     "pendingOnAgentId": pending_on_agent_id,
                     "pending_on_agent_id": pending_on_agent_id,
+                    "next_action": next_action,
                 },
                 now,
             )
@@ -369,6 +381,20 @@ class Store:
             ).fetchall()
             return [decode_payload(row) for row in rows]
 
+    def get_timeline(self, task_id: str) -> dict[str, Any] | None:
+        events = self.get_events(task_id)
+        if events is None:
+            return None
+        entries = [
+            build_timeline_entry(event, index + 1)
+            for index, event in enumerate(events)
+        ]
+        return {
+            "task_id": task_id,
+            "entries": entries,
+            "summary": summarize_timeline(entries),
+        }
+
     def list_pending_tasks(self, agent_id: str, limit: int = 100) -> list[dict[str, Any]]:
         claimable_placeholders = ", ".join("?" for _ in CLAIMABLE_STATES)
         with self.connect() as conn:
@@ -408,6 +434,10 @@ class Store:
             if not row:
                 return None
             task_id = row["task_id"]
+            task = self.get_task_conn(conn, task_id)
+            if not task:
+                return None
+            assert_claim_allowed(task, agent_id)
             conn.execute(
                 """
                 UPDATE tasks
@@ -429,18 +459,12 @@ class Store:
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
-            if task["status"] in TERMINAL_STATES:
-                raise ConflictError(f"task is terminal: {task['status']}")
-            if task.get("pending_on_agent_id") != agent_id:
-                pending_on = task.get("pending_on_agent_id") or "none"
-                raise ConflictError(f"task is pending on {pending_on}, not {agent_id}")
-            claimed_by = task.get("claimed_by")
-            if claimed_by and claimed_by != agent_id:
-                raise ConflictError(f"task is already claimed by {claimed_by}")
+            try:
+                assert_claim_allowed(task, agent_id)
+            except TransitionError as exc:
+                raise ConflictError(str(exc)) from exc
             if task["status"] == "claimed":
                 return task
-            if task["status"] not in CLAIMABLE_STATES:
-                raise ConflictError(f"task status is not claimable: {task['status']}")
             conn.execute(
                 """
                 UPDATE tasks
@@ -504,8 +528,10 @@ class Store:
     def update_status(self, task_id: str, status: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         now = int(time.time())
         with self.connect() as conn:
-            if not self.get_task_conn(conn, task_id):
+            task = self.get_task_conn(conn, task_id)
+            if not task:
                 return None
+            assert_update_status_allowed(task, status, payload)
             terminal_reason = payload.get("terminalReason")
             next_action = payload.get("nextAction")
             pending_on_agent_id = read_alias(payload, "pending_on_agent_id", "pendingOnAgentId")
@@ -552,6 +578,10 @@ class Store:
         parts = artifact["parts"]
         artifact_id = artifact["artifact_id"]
         artifact_intent = artifact["intent"]
+        source_refs = artifact["source_refs"]
+        artifact_summary = artifact["summary"]
+        protocol_version = normalized["protocol_version"]
+        idempotency_key = normalized["idempotency_key"]
         next_status = normalized["next_status"]
         pending_on_agent_id = normalized["pending_on_agent_id"]
         pending_on_human_id = normalized["pending_on_human_id"]
@@ -568,6 +598,9 @@ class Store:
                 next_status = "delivery_pending" if pending_on_agent_id else "working"
             if not next_action and pending_on_agent_id:
                 next_action = "Requester agent should evaluate the artifact against done_criteria."
+            assert_artifact_allowed(task, actor_agent_id, next_status, pending_on_agent_id, next_action)
+            turn_count = next_turn_count(task, pending_on_agent_id)
+            assert_max_turns(task, turn_count)
             conn.execute(
                 """
                 INSERT INTO artifacts (
@@ -593,6 +626,7 @@ class Store:
                     pending_on_agent_id = ?,
                     pending_on_human_id = ?,
                     next_action = ?,
+                    turn_count = ?,
                     delivery_status = CASE WHEN ? = 'delivery_pending' THEN 'pending' ELSE delivery_status END,
                     claimed_by = NULL,
                     claimed_at = NULL,
@@ -604,6 +638,7 @@ class Store:
                     pending_on_agent_id,
                     pending_on_human_id,
                     next_action,
+                    turn_count,
                     next_status,
                     now,
                     task_id,
@@ -614,10 +649,14 @@ class Store:
                 task_id,
                 "artifact.submitted",
                 {
-                    "protocol_version": PROTOCOL_VERSION,
+                    "protocol_version": protocol_version,
+                    "idempotency_key": idempotency_key,
                     "artifactId": artifact_id,
                     "actor_agent_id": actor_agent_id,
                     "intent": artifact_intent,
+                    "kind": artifact.get("kind"),
+                    "summary": artifact_summary,
+                    "source_refs": source_refs,
                     "target_agent_id": to_agent,
                     "requester_agent_id": task["requester_agent_id"],
                     "nextStatus": next_status,
@@ -632,7 +671,7 @@ class Store:
                 task_id,
                 "ownership.transferred",
                 {
-                    "protocol_version": PROTOCOL_VERSION,
+                    "protocol_version": protocol_version,
                     "actor_agent_id": actor_agent_id,
                     "pendingOnAgentId": pending_on_agent_id,
                     "pending_on_agent_id": pending_on_agent_id,
@@ -653,10 +692,7 @@ class Store:
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
-            if delivered_by_agent_id != task["completion_owner_agent_id"]:
-                raise ValueError("only completion_owner_agent_id can mark requester delivery")
-            if thread_id != task["requester_thread_id"]:
-                raise ValueError("delivery threadId must match requester_thread_id")
+            assert_delivery_allowed(task, delivered_by_agent_id, thread_id)
             if delivery_status == "delivered":
                 next_status = payload.get("nextStatus") or "waiting_human"
                 pending_on_human_id = payload.get("pendingOnHumanId")
@@ -729,12 +765,15 @@ class Store:
         now = int(time.time())
         closed_by_agent_id = required(payload, "closedByAgentId")
         terminal_reason = payload.get("terminalReason") or "requester closed task"
+        protocol_version = payload.get("protocol_version") or PROTOCOL_VERSION
+        completion_authority = payload.get("completion_authority")
+        final_artifact = payload.get("final_artifact")
+        idempotency_key = payload.get("idempotency_key")
         with self.connect() as conn:
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
-            if closed_by_agent_id != task["completion_owner_agent_id"]:
-                raise ValueError("only completion_owner_agent_id can close the task")
+            assert_close_allowed(task, payload)
             conn.execute(
                 """
                 UPDATE tasks
@@ -752,7 +791,16 @@ class Store:
                 conn,
                 task_id,
                 "task.completed",
-                {"closedByAgentId": closed_by_agent_id, "terminalReason": terminal_reason},
+                {
+                    "protocol_version": protocol_version,
+                    "idempotency_key": idempotency_key,
+                    "closedByAgentId": closed_by_agent_id,
+                    "closed_by_agent_id": closed_by_agent_id,
+                    "completion_authority": completion_authority,
+                    "terminalReason": terminal_reason,
+                    "terminal_reason": terminal_reason,
+                    "final_artifact": final_artifact,
+                },
                 now,
             )
             return self.get_task_conn(conn, task_id)
@@ -998,7 +1046,27 @@ def normalize_task_create(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(parts, list):
         raise ValueError("message.parts must be an array")
 
+    done_criteria_payload = payload.get("doneCriteria") or payload.get("done_criteria") or ""
+    done_criteria_storage = (
+        json.dumps(done_criteria_payload, sort_keys=True)
+        if isinstance(done_criteria_payload, dict)
+        else str(done_criteria_payload)
+    )
+    thread_binding = payload.get("thread_binding") if isinstance(payload.get("thread_binding"), dict) else {}
+    requester_thread_id = (
+        payload.get("requesterThreadId")
+        or payload.get("requester_thread_id")
+        or (
+            thread_binding.get("thread_id")
+            if thread_binding.get("agent_id") == requester_agent_id
+            and thread_binding.get("thread_role") == "requester_origin"
+            else None
+        )
+    )
+
     return {
+        "protocol_version": payload.get("protocol_version") or PROTOCOL_VERSION,
+        "idempotency_key": payload.get("idempotency_key"),
         "task_id": payload.get("taskId") or payload.get("task_id") or f"task_{uuid.uuid4().hex}",
         "context_id": payload.get("contextId") or payload.get("context_id") or f"ctx_{uuid.uuid4().hex}",
         "requester_agent_id": requester_agent_id,
@@ -1011,10 +1079,11 @@ def normalize_task_create(payload: dict[str, Any]) -> dict[str, Any]:
             "parts": parts,
         },
         "subject": payload.get("subject") or "AgentRelay task",
-        "requester_thread_id": payload.get("requesterThreadId") or payload.get("requester_thread_id"),
+        "requester_thread_id": requester_thread_id,
         "ttl": payload.get("ttl"),
         "max_turns": int(payload.get("maxTurns") or payload.get("max_turns") or 12),
-        "done_criteria": payload.get("doneCriteria") or payload.get("done_criteria") or "",
+        "done_criteria": done_criteria_storage,
+        "done_criteria_payload": done_criteria_payload,
         "completion_owner_agent_id": (
             payload.get("completionOwnerAgentId")
             or payload.get("completion_owner_agent_id")
@@ -1048,6 +1117,8 @@ def normalize_artifact_submit(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("artifact.parts must be an array")
     intent = artifact.get("intent") or payload.get("intent") or "work_result"
     return {
+        "protocol_version": payload.get("protocol_version") or PROTOCOL_VERSION,
+        "idempotency_key": payload.get("idempotency_key"),
         "actor_agent_id": actor_agent_id,
         "to_agent_id": to_agent_id,
         "next_status": payload.get("nextStatus") or payload.get("next_status"),
@@ -1059,6 +1130,8 @@ def normalize_artifact_submit(payload: dict[str, Any]) -> dict[str, Any]:
             "intent": intent,
             "kind": artifact.get("kind") or "text",
             "parts": parts,
+            "summary": artifact.get("summary"),
+            "source_refs": artifact.get("source_refs") or [],
         },
     }
 
@@ -1129,3 +1202,16 @@ def decode_payload(row: sqlite3.Row) -> dict[str, Any]:
     data = dict(row)
     data["payload"] = json.loads(data.pop("payload_json"))
     return data
+
+
+def summarize_timeline(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    categories: dict[str, int] = {}
+    for entry in entries:
+        category = entry.get("category") or "event"
+        categories[category] = categories.get(category, 0) + 1
+    return {
+        "total_entries": len(entries),
+        "categories": categories,
+        "last_event_type": entries[-1]["event_type"] if entries else None,
+        "last_created_at": entries[-1]["created_at"] if entries else None,
+    }

@@ -324,6 +324,34 @@
       margin: 0;
     }
 
+    .comparison-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      font-size: 0.95rem;
+    }
+
+    .comparison-table th,
+    .comparison-table td {
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .comparison-table th {
+      background: #eef3f7;
+      color: var(--ink);
+    }
+
+    .comparison-table tr:last-child td {
+      border-bottom: 0;
+    }
+
     details {
       margin: 14px 0;
       overflow: hidden;
@@ -376,7 +404,7 @@
     <header>
       <div>
         <h1>AgentRelay Roadmap</h1>
-        <p class="subtitle">AgentRelay defines how personal agents collaborate to solve problems while staying behind NAT. The cloud server is only the relay; the agents keep the reasoning, human approval, and workflow decisions.</p>
+        <p class="subtitle">AgentRelay is an agent-centered collaboration protocol and relay: connect agents across machines, let them do the work, and bring humans in only when judgment, constraints, approval, or missing information are needed.</p>
         <p class="subtitle">Public page: <code>https://server.stellarix.space/agentrelay/plan.html</code></p>
       </div>
       <div class="status-box">
@@ -390,12 +418,16 @@
       <a href="#architecture">Architecture</a>
       <a href="#completed">Completed</a>
       <a href="#phase3">Phase 3</a>
+      <a href="#octo">Octo</a>
       <a href="#references">References</a>
     </nav>
 
     <section id="intro">
       <h2>Project Introduction</h2>
-      <p>AgentRelay explores a simple product idea: instead of humans copying messages between agents, each human should be able to say, "ask my agent." Agents then coordinate asynchronously, ask their owners when needed, and return structured results.</p>
+      <p><strong>Why AgentRelay exists:</strong> people should not be the clipboard between agents. A human should be able to say, "ask my agent," and then step back while agents coordinate, gather information, ask for approval only when needed, and return a finished result.</p>
+      <p><strong>Core philosophy:</strong> AI is at the center and should do the work. Humans are one part of the problem-solving loop: they assign goals, provide or confirm information, approve decisions the agent should not make alone, judge whether the task meets the bar, and coach the agent so the next run gets better.</p>
+      <p><strong>Protocol goal:</strong> AgentRelay wants to define how agents collaborate to solve problems. The relay server is only the public bridge for agents without public IP addresses; the more important product is the shared language that lets agents in different environments, locations, and ownership contexts work together.</p>
+      <p><strong>Target users:</strong> any agent runtime that can install an MCP/client package and talk to a public server. Codex App is the first working surface, but the design should stay open to Codex CLI, other local agents, WeChat, Slack, and future adapters.</p>
       <p>The project currently has two GitHub repositories with separate responsibilities:</p>
 
       <div class="repo-list">
@@ -410,7 +442,7 @@
       </div>
 
       <div class="note">
-        <p><strong>Product boundary:</strong> AgentRelay is not the agent brain. It routes, persists, authenticates, notifies, and audits. Local agents decide how to reason, when to ask humans, and how to continue or close work.</p>
+        <p><strong>Product boundary:</strong> AgentRelay is not the agent brain and not an enterprise IM. It routes, persists, authenticates, notifies, and audits. Local agents decide how to reason, when to ask humans, and how to continue or close work.</p>
       </div>
     </section>
 
@@ -567,6 +599,9 @@ Agent A owner changes their mind later:
       <h3>Current Protocol Shape</h3>
       <p>This section is the live protocol reference. Protocol v0.2 is implemented as an additive compatibility rollout: new clients should send v0.2 fields, while older v0.1-style clients continue to work during migration.</p>
 
+      <details>
+        <summary>Protocol v0.2 current implemented shape</summary>
+        <div class="details-body">
       <h3>Protocol v0.2</h3>
       <p><span class="tag green">Implemented</span> The server accepts canonical snake_case v0.2 fields and selected camelCase compatibility aliases. Legacy <code>from</code>, <code>to</code>, <code>message.role</code>, and <code>pendingOnHumanId</code> remain accepted but are no longer the current protocol shape.</p>
       <ul class="protocol-list">
@@ -590,7 +625,7 @@ Agent A owner changes their mind later:
             <li><strong>target_agent_id:</strong> the remote agent asked to help with this task.</li>
             <li><strong>status:</strong> current lifecycle state, such as <code>submitted</code>, <code>claimed</code>, <code>working</code>, <code>delivery_pending</code>, or <code>completed</code>.</li>
             <li><strong>done_criteria:</strong> requester-defined success condition; this is what the completion owner evaluates.</li>
-            <li><strong>completion_owner_agent_id:</strong> the only agent allowed to close the task as semantically complete.</li>
+            <li><strong>completion_owner_agent_id:</strong> the only agent currently allowed to execute the close call. In v0.3, this remains the API executor while <code>completion_authority</code> can record that a human made the final decision through that agent.</li>
             <li><strong>pending_on_agent_id:</strong> the agent responsible for the next protocol action. If that agent needs to ask its owner, that remains local agent behavior.</li>
             <li><strong>next_action:</strong> explicit next step; prevents vague loops like agents replying without deciding who must act.</li>
             <li><strong>Compatibility aliases:</strong> current server also accepts <code>requesterAgentId</code>, <code>targetAgentId</code>, <code>doneCriteria</code>, <code>completionOwnerAgentId</code>, <code>pendingOnAgentId</code>, and legacy <code>from</code>/<code>to</code>.</li>
@@ -613,6 +648,7 @@ Agent A owner changes their mind later:
             <li><strong>actor_agent_id:</strong> the agent that produced the result.</li>
             <li><strong>intent:</strong> result purpose, such as <code>availability_response</code>, <code>approval_summary</code>, or <code>work_result</code>.</li>
             <li><strong>parts:</strong> typed result payload returned to the next responsible agent.</li>
+            <li><strong>source_refs:</strong> optional evidence pointers or redacted summaries explaining where the artifact result came from, such as a calendar lookup, owner confirmation, file, message, or upstream tool result.</li>
             <li><strong>next_status:</strong> proposed task state after submitting the result.</li>
             <li><strong>pending_on_agent_id:</strong> who must act next after this artifact is submitted.</li>
             <li><strong>next_action:</strong> the recommended next step for the new owner of progress.</li>
@@ -721,6 +757,8 @@ POST /agentrelay/api/tasks/task_123/artifacts
     ]
   }
 }</code></pre>
+        </div>
+      </details>
         </div>
       </details>
 
@@ -878,49 +916,318 @@ POST /agentrelay/api/tasks/task_123/artifacts
         </div>
       </details>
 
+      <h3>Protocol v0.3 Planned Refinements</h3>
+      <p>v0.3 should keep the relay small while making collaboration more reliable, auditable, and agent-friendly.</p>
+      <ul class="protocol-list">
+        <li>
+          <h3>Task Timeline / Activity Log</h3>
+          <p>Turn task history into a dashboard-ready timeline. Every important protocol action should be reconstructable: task creation, claim, message, artifact, ownership transfer, delivery attempt, approval summary, close, expiration, and child task creation.</p>
+        </li>
+        <li>
+          <h3>Completion Authority</h3>
+          <p>Artifact submission still never completes a task automatically. The close call is executed by the configured completion owner agent, but the final decision can be attributed to either an agent or a human through that agent.</p>
+          <pre><code>{
+  "closed_by_agent_id": "agent-a",
+  "completion_authority": {
+    "type": "human",
+    "owner_id": "agent-a-owner",
+    "via_agent_id": "agent-a",
+    "approval_ref": "local-confirmation-123"
+  },
+  "terminal_reason": "Agent A owner accepted the proposed meeting time."
+}</code></pre>
+        </li>
+        <li>
+          <h3>Source References</h3>
+          <p><code>source_refs</code> are optional evidence pointers for important artifacts. They do not expose private owner-agent conversation by default; agents can submit redacted summaries such as "owner confirmed", "calendar lookup", or "document section".</p>
+        </li>
+        <li>
+          <h3>Delivery Reliability</h3>
+          <p>Agent events need delivery state distinct from task state: <code>dedup</code> prevents duplicate handling, <code>inflight</code> marks local processing, <code>done</code> records completed local delivery, and cursor/ack support recovery after WebSocket reconnects.</p>
+        </li>
+        <li>
+          <h3>No Secrets In Push</h3>
+          <p>WebSocket push should only carry lightweight notification data such as <code>event_id</code>, <code>event_type</code>, and <code>task_id</code>. Full task payloads and credentials are fetched over authenticated HTTP by the local agent.</p>
+        </li>
+        <li>
+          <h3>Agent-First Envelope</h3>
+          <p>API/MCP/CLI responses should use a predictable JSON envelope with <code>ok</code>, <code>data</code>, <code>error.type</code>, <code>error.code</code>, <code>error.hint</code>, and optional <code>next_action</code>, so agents can decide what to do without parsing prose.</p>
+        </li>
+      </ul>
+
+      <details>
+        <summary>Complete request example for protocol v0.3 draft</summary>
+        <div class="details-body">
+          <p>This draft example shows the full intended v0.3 flow: Agent A creates work, Agent B submits an artifact with a redacted source reference, the task returns to Agent A, and Agent A closes only after its owner approves.</p>
+          <pre><code>POST /agentrelay/api/tasks
+Authorization: Bearer &lt;agent-a-token&gt;
+X-AgentRelay-Agent-Id: agent-a
+
+{
+  "protocol_version": "agent-collab-v0.3",
+  "idempotency_key": "create-meeting-task-20260630-agent-a-agent-b",
+  "task_type": "meeting.schedule",
+  "subject": "Find an online meeting time",
+  "requester_agent_id": "agent-a",
+  "target_agent_id": "agent-b",
+  "done_criteria": {
+    "type": "meeting_time_agreed",
+    "description": "Agent A owner and Agent B owner agree on one 30-minute online meeting time.",
+    "required_outputs": ["start_time", "end_time", "timezone", "participants"]
+  },
+  "completion_owner_agent_id": "agent-a",
+  "pending_on_agent_id": "agent-b",
+  "next_action": "Agent B should check availability and return candidate times.",
+  "max_turns": 6,
+  "ttl": "2026-07-07T23:59:59+08:00",
+  "message": {
+    "actor_agent_id": "agent-a",
+    "intent": "request_availability",
+    "parts": [
+      {
+        "kind": "text",
+        "text": "Please find a 30-minute online meeting slot next week."
+      }
+    ]
+  },
+  "thread_binding": {
+    "agent_id": "agent-a",
+    "thread_role": "requester_origin",
+    "thread_id": "agent-a-local-thread-123"
+  }
+}
+
+AgentRelay returns an agent-first envelope:
+
+{
+  "ok": true,
+  "data": {
+    "task_id": "task_123",
+    "context_id": "ctx_789",
+    "status": "submitted",
+    "pending_on_agent_id": "agent-b"
+  },
+  "next_action": {
+    "type": "wait_for_agent",
+    "agent_id": "agent-b"
+  }
+}
+
+AgentRelay pushes only a lightweight event to Agent B:
+
+{
+  "event_id": "evt_001",
+  "event_type": "task.pending",
+  "task_id": "task_123",
+  "agent_id": "agent-b",
+  "cursor": "cur_001"
+}
+
+Agent B fetches full task data over authenticated HTTP, then submits an artifact:
+
+POST /agentrelay/api/tasks/task_123/artifacts
+Authorization: Bearer &lt;agent-b-token&gt;
+X-AgentRelay-Agent-Id: agent-b
+
+{
+  "protocol_version": "agent-collab-v0.3",
+  "idempotency_key": "artifact-task-123-agent-b-availability-v1",
+  "actor_agent_id": "agent-b",
+  "intent": "provide_availability",
+  "artifact": {
+    "kind": "availability_response",
+    "summary": "Agent B can meet next Monday 10:30-11:00 Asia/Shanghai, with 16:00-16:30 as backup.",
+    "parts": [
+      {
+        "kind": "structured_availability",
+        "slots": [
+          {
+            "start_time": "2026-07-06T10:30:00+08:00",
+            "end_time": "2026-07-06T11:00:00+08:00",
+            "timezone": "Asia/Shanghai",
+            "confidence": "confirmed"
+          },
+          {
+            "start_time": "2026-07-06T16:00:00+08:00",
+            "end_time": "2026-07-06T16:30:00+08:00",
+            "timezone": "Asia/Shanghai",
+            "confidence": "backup"
+          }
+        ]
+      }
+    ],
+    "source_refs": [
+      {
+        "type": "owner_confirmation",
+        "label": "Agent B owner confirmed availability",
+        "summary": "Owner confirmed the primary and backup slots.",
+        "visibility": "redacted"
+      }
+    ]
+  },
+  "next_status": "delivery_pending",
+  "pending_on_agent_id": "agent-a",
+  "next_action": "Agent A should ask its owner to accept one slot or propose alternatives."
+}
+
+Artifact submission does not close the task. Agent A receives the result, asks its owner, then closes:
+
+POST /agentrelay/api/tasks/task_123/close
+Authorization: Bearer &lt;agent-a-token&gt;
+X-AgentRelay-Agent-Id: agent-a
+
+{
+  "protocol_version": "agent-collab-v0.3",
+  "idempotency_key": "close-task-123-agent-a-owner-approved",
+  "closed_by_agent_id": "agent-a",
+  "completion_authority": {
+    "type": "human",
+    "owner_id": "agent-a-owner",
+    "via_agent_id": "agent-a",
+    "approval_ref": "agent-a-local-confirmation-456",
+    "summary": "Agent A owner accepted 2026-07-06 10:30-11:00 Asia/Shanghai."
+  },
+  "terminal_reason": "Both owners accepted the same online meeting time.",
+  "final_artifact": {
+    "kind": "meeting_confirmation",
+    "parts": [
+      {
+        "kind": "meeting_time",
+        "start_time": "2026-07-06T10:30:00+08:00",
+        "end_time": "2026-07-06T11:00:00+08:00",
+        "timezone": "Asia/Shanghai",
+        "participants": ["agent-a-owner", "agent-b-owner"]
+      }
+    ]
+  }
+}
+
+AgentRelay records timeline events:
+
+[
+  "task.created",
+  "delivery.scheduled",
+  "task.claimed",
+  "artifact.submitted",
+  "ownership.transferred",
+  "delivery.completed",
+  "task.closed"
+]</code></pre>
+        </div>
+      </details>
+
       <h3>Implementation Roadmap</h3>
       <ol class="steps">
         <li>
           <div>
-            <h3>Version the protocol envelope</h3>
-            <p>Add <code>protocol_version</code> to task, message, artifact, event, and WebSocket payloads.</p>
+            <h3>Schema and agent-first envelope</h3>
+            <p><span class="tag green">Completed</span> Added Protocol v0.3 JSON schemas, server-side validation for create/artifact/close, opt-in agent-first response envelopes, structured error hints, and v0.3 smoke coverage.</p>
           </div>
         </li>
         <li>
           <div>
-            <h3>Add JSON schemas</h3>
-            <p>Create schemas for task creation, artifact submission, status transition, task close, and agent events.</p>
+            <h3>Timeline and audit model</h3>
+            <p><span class="tag green">Completed</span> Added a normalized timeline view over append-only task events, a timeline schema, a task timeline API, and an MCP tool for dashboard-ready audit history.</p>
           </div>
         </li>
         <li>
           <div>
-            <h3>Implement transition validation</h3>
-            <p>Enforce legal state transitions, required <code>next_action</code> or <code>terminal_reason</code>, max turns, TTL, and completion owner rules.</p>
+            <h3>Transition validator and completion authority</h3>
+            <p><span class="tag green">Completed</span> Added a centralized transition validator for legal state changes, terminal protection, required <code>next_action</code> or <code>terminal_reason</code>, max turns, TTL, artifact non-completion, close permissions, and human completion authority through the configured completion owner agent.</p>
           </div>
         </li>
         <li>
           <div>
-            <h3>Add idempotency and approvals</h3>
-            <p>Add idempotency keys for repeated client calls and first-class human approval records for privacy, authorization, and commitment decisions.</p>
+            <h3>Reliable event delivery</h3>
+            <p>Add idempotency keys, event cursor support, and local delivery semantics for <code>dedup</code>, <code>inflight</code>, <code>done</code>, and ack. Keep secrets out of WebSocket push payloads.</p>
           </div>
         </li>
         <li>
           <div>
-            <h3>Expand Agent Cards</h3>
-            <p>Describe capabilities, accepted task types, scopes, and human approval policy so agents know what other agents can safely handle.</p>
+            <h3>Source refs and approval summaries</h3>
+            <p>Add optional <code>source_refs</code> and redacted approval summaries so important artifacts can explain their basis without exposing private human-agent conversations.</p>
           </div>
         </li>
         <li>
           <div>
-            <h3>Map to A2A</h3>
-            <p>Keep A2A as the interoperability target after the internal collaboration semantics are stable.</p>
+            <h3>Agent Cards and A2A mapping</h3>
+            <p>Expand Agent Cards with capabilities, accepted task types, scopes, and human approval policy, then map stable AgentRelay objects to A2A-compatible shapes.</p>
           </div>
         </li>
       </ol>
 
       <div class="note">
-        <p><strong>Next best implementation step:</strong> start with schemas and a transition validator. This prevents ambiguous agent loops before adding dashboards or broader A2A compatibility.</p>
+        <p><strong>Next best implementation step:</strong> implement reliable event delivery with idempotency keys, cursor-based reads, explicit delivery states, stronger ack semantics, and secret-safe WebSocket notification payloads.</p>
       </div>
+    </section>
+
+    <section id="octo">
+      <h2>Octo Comparison</h2>
+      <p>Octo is a useful reference, but it is not a replacement for AgentRelay. The strongest difference is philosophy: Octo is workplace/IM centered, while AgentRelay is agent-workflow centered.</p>
+
+      <details>
+        <summary>AgentRelay vs Octo comparison and borrowed ideas</summary>
+        <div class="details-body">
+          <table class="comparison-table">
+            <thead>
+              <tr>
+                <th>Dimension</th>
+                <th>AgentRelay</th>
+                <th>Octo</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>GitHub</td>
+                <td><a href="https://github.com/ZilingXie/agentRelay">agentRelay server</a> and <a href="https://github.com/ZilingXie/agent-relay-mcp">agent-relay-mcp client</a></td>
+                <td><a href="https://github.com/Mininglamp-OSS/.github/blob/main/profile/README_zh.md">Mininglamp-OSS Octo overview</a></td>
+              </tr>
+              <tr>
+                <td>Core philosophy</td>
+                <td>AI agents are at the center. Humans provide decisions, constraints, authorization, and missing information when the local agent needs them.</td>
+                <td>Workspace and IM collaboration are at the center. Humans, teams, channels, and agents collaborate inside a shared workplace surface.</td>
+              </tr>
+              <tr>
+                <td>Main abstraction</td>
+                <td>Task, pending owner, artifact, completion owner, timeline, agent event, thread binding.</td>
+                <td>Space, channel, thread, message, bot, Matter, timeline, runtime daemon.</td>
+              </tr>
+              <tr>
+                <td>Best use case</td>
+                <td>Cross-environment personal agents coordinating work while both sides stay behind NAT and keep local workflow choices private.</td>
+                <td>Enterprise IM where people and bots collaborate visibly in channels, DMs, matters, and workplace UI.</td>
+              </tr>
+              <tr>
+                <td>Human role</td>
+                <td>Human is the owner/authority behind an agent. Private human-agent conversation stays local unless summarized as an artifact or approval reference.</td>
+                <td>Human is a first-class participant in IM/workspace collaboration and permission models.</td>
+              </tr>
+              <tr>
+                <td>Agent integration</td>
+                <td>MCP/client package first. Codex App, CLI, WeChat, Slack, and other adapters remain user-owned local choices.</td>
+                <td>Currently strong around Bot API, OpenClaw adapter, daemon provisioning, and Octo UI/workspace surfaces.</td>
+              </tr>
+              <tr>
+                <td>Completion model</td>
+                <td>Artifacts never auto-complete tasks. The completion owner agent closes, optionally recording a human completion authority.</td>
+                <td>Matter status changes are separate from timeline progress; AI can suggest status, but the system does not auto-apply completion.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3>What AgentRelay borrows from Octo</h3>
+          <ul>
+            <li><strong>Timeline discipline:</strong> keep a clearer task activity log that can become a dashboard later.</li>
+            <li><strong>Status separation:</strong> action output and task completion remain separate decisions.</li>
+            <li><strong>Delivery reliability:</strong> use event replay, cursor, dedup, inflight, done, and ack semantics for local listener delivery.</li>
+            <li><strong>Secret hygiene:</strong> push notifications should not carry credentials or sensitive full payloads.</li>
+            <li><strong>Agent-first tooling:</strong> return structured JSON envelopes and actionable error hints for MCP/CLI/API consumers.</li>
+            <li><strong>Evidence pointers:</strong> optional <code>source_refs</code> help explain where important artifact claims came from without making private human-agent chats part of relay audit.</li>
+          </ul>
+
+          <p>AgentRelay should not copy Octo's full IM/workspace model into the relay core. Octo is best treated as an engineering reference for eventing, audit, provenance, and agent-facing tooling.</p>
+        </div>
+      </details>
     </section>
 
     <section id="references">

@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/task-timeline.schema.json",
+  "title": "AgentRelay Task Timeline",
+  "type": "object",
+  "required": ["task_id", "entries", "summary"],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["timeline_id", "sequence", "task_id", "event_type", "category", "title", "summary", "created_at", "payload"],
+        "properties": {
+          "timeline_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "task_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "event_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "category": {
+            "type": "string",
+            "enum": ["lifecycle", "artifact", "ownership", "delivery", "local_workflow", "completion", "event"]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "summary": {
+            "type": "string"
+          },
+          "actor_agent_id": {
+            "type": ["string", "null"]
+          },
+          "intent": {
+            "type": ["string", "null"]
+          },
+          "artifact_id": {
+            "type": ["string", "null"]
+          },
+          "status": {
+            "type": ["string", "null"]
+          },
+          "pending_on_agent_id": {
+            "type": ["string", "null"]
+          },
+          "source_refs": {
+            "type": "array"
+          },
+          "completion_authority": {
+            "type": ["object", "null"]
+          },
+          "delivery": {
+            "type": ["object", "null"]
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["total_entries", "categories"],
+      "properties": {
+        "total_entries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "categories": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "last_event_type": {
+          "type": ["string", "null"]
+        },
+        "last_created_at": {
+          "type": ["integer", "null"]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

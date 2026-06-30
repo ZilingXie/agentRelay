@@ -26,6 +26,10 @@ try {
     tools.tools.some((tool) => tool.name === "agentrelay_create_task"),
     "agentrelay_create_task tool not found"
   );
+  assert(
+    tools.tools.some((tool) => tool.name === "agentrelay_get_timeline"),
+    "agentrelay_get_timeline tool not found"
+  );
 
   await callJson("agentrelay_health", {});
 
@@ -91,6 +95,14 @@ try {
   for (const expected of ["task.created", "artifact.submitted", "reply.delivered", "task.completed"]) {
     assert(eventTypes.includes(expected), `missing event ${expected}`);
   }
+  const timeline = await callJson("agentrelay_get_timeline", { taskId });
+  const timelineTypes = timeline.timeline.entries.map((entry) => entry.event_type);
+  assert(timeline.timeline.summary.total_entries === events.events.length, "timeline summary count mismatch");
+  assert(timelineTypes.includes("artifact.submitted"), "timeline missing artifact entry");
+  assert(
+    timeline.timeline.entries.some((entry) => entry.category === "completion" && entry.event_type === "task.completed"),
+    "timeline missing completion entry"
+  );
 
   console.log(JSON.stringify({ ok: true, taskId, status: closed.task.status }, null, 2));
 } finally {
