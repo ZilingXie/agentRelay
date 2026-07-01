@@ -176,7 +176,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             if not task:
                 self.respond_error(404, "task not found")
                 return
-            self.respond_json({"task": task})
+            self.respond_protocol({"task": task})
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/artifacts", path):
             if is_protocol_v03(payload):
@@ -214,7 +214,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             if not task:
                 self.respond_error(404, "task not found")
                 return
-            self.respond_json({"task": task})
+            self.respond_protocol({"task": task})
             return
         if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/tasks/([^/]+)/claim", path):
             agent_id, task_id = match.groups()
@@ -224,7 +224,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             if not task:
                 self.respond_error(404, "task not found")
                 return
-            self.respond_json({"task": task})
+            self.respond_protocol({"task": task})
             return
         if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/events/([^/]+)/ack", path):
             agent_id, event_id = match.groups()
@@ -256,7 +256,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                     payload.get("threadRole") or "agent_inbox",
                     payload.get("projectPath"),
                 )
-            self.respond_json({"event": event, "threadBinding": binding})
+            self.respond_protocol({"event": event, "threadBinding": binding})
             return
         if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/tasks/([^/]+)/thread", path):
             agent_id, task_id = match.groups()
@@ -269,7 +269,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             if not task:
                 self.respond_error(404, "task not found")
                 return
-            self.respond_json({"task": task})
+            self.respond_protocol({"task": task})
             return
         self.respond_error(404, "not found")
 

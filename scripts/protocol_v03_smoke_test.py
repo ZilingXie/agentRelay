@@ -104,10 +104,35 @@ def main() -> None:
             if task["requester_thread_id"] != "zac-thread-v03":
                 raise AssertionError("v0.3 thread_binding did not populate requester_thread_id")
 
-            claimed_env = get_json(f"{BASE_URL}/workers/frank-agent/claim", AGENT_B_HEADERS)
+            frank_events = get_json(
+                f"{BASE_URL}/workers/frank-agent/events",
+                AGENT_B_HEADERS,
+            )
+            assert_success_envelope(frank_events)
+            if frank_events["data"]["events"][0]["task_id"] != task_id:
+                raise AssertionError("frank-agent did not receive a v0.3 event for the task")
+
+            ack_env = post_json(
+                f"{BASE_URL}/workers/frank-agent/events/{frank_events['data']['events'][0]['event_id']}/ack",
+                {
+                    "taskId": task_id,
+                    "deliveryState": "done",
+                    "threadId": "frank-thread-v03",
+                },
+                AGENT_B_HEADERS,
+            )
+            assert_success_envelope(ack_env)
+            if ack_env["data"]["event"]["acked_at"] is None:
+                raise AssertionError("v0.3 ack response did not ack event")
+
+            claimed_env = post_json(
+                f"{BASE_URL}/workers/frank-agent/tasks/{task_id}/claim",
+                {},
+                AGENT_B_HEADERS,
+            )
             assert_success_envelope(claimed_env)
             if claimed_env["data"]["task"]["task_id"] != task_id:
-                raise AssertionError("frank-agent did not claim v0.3 task")
+                raise AssertionError("frank-agent did not precisely claim v0.3 task")
 
             artifact_env = post_json(
                 f"{BASE_URL}/tasks/{task_id}/artifacts",
