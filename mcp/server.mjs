@@ -269,6 +269,8 @@ function registerTools(mcpServer) {
         intent: z.string().optional().describe("Protocol v0.2 artifact intent, for example availability_response"),
         kind: z.string().optional(),
         text: z.string().min(1),
+        summary: z.string().optional(),
+        sourceRefsJson: z.string().optional().describe("Optional JSON array of Protocol v0.3 source_refs."),
         pendingOnAgentId: z.string().optional(),
         pendingOnHumanId: z.string().optional(),
         nextStatus: z.string().optional(),
@@ -291,6 +293,8 @@ function registerTools(mcpServer) {
         artifact: {
           intent: args.intent || "work_result",
           kind: args.kind || "text",
+          summary: args.summary,
+          source_refs: args.sourceRefsJson ? parseJsonArg(args.sourceRefsJson, "sourceRefsJson") : undefined,
           parts: [{ kind: "text", text: args.text }]
         }
       };
@@ -368,11 +372,25 @@ function registerTools(mcpServer) {
       inputSchema: {
         taskId: z.string().min(1),
         closedByAgentId: z.string().min(1),
-        terminalReason: z.string().min(1)
+        terminalReason: z.string().min(1),
+        completionAuthorityJson: z.string().optional().describe("Optional JSON object for completion_authority."),
+        finalArtifactJson: z.string().optional().describe("Optional JSON object for final_artifact.")
       }
     },
-    async ({ taskId, closedByAgentId, terminalReason }) =>
-      jsonResult(await relayPost(`/tasks/${encodeURIComponent(taskId)}/close`, { closedByAgentId, terminalReason }))
+    async ({ taskId, closedByAgentId, terminalReason, completionAuthorityJson, finalArtifactJson }) =>
+      jsonResult(
+        await relayPost(
+          `/tasks/${encodeURIComponent(taskId)}/close`,
+          compact({
+            closedByAgentId,
+            terminalReason,
+            completion_authority: completionAuthorityJson
+              ? parseJsonArg(completionAuthorityJson, "completionAuthorityJson")
+              : undefined,
+            final_artifact: finalArtifactJson ? parseJsonArg(finalArtifactJson, "finalArtifactJson") : undefined
+          })
+        )
+      )
   );
 }
 
@@ -427,6 +445,14 @@ function withQuery(path, params) {
   }
   const text = query.toString();
   return text ? `${path}?${text}` : path;
+}
+
+function parseJsonArg(value, name) {
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    throw new Error(`${name} must be valid JSON: ${error.message}`);
+  }
 }
 
 function compact(value) {

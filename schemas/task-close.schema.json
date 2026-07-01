@@ -41,6 +41,18 @@
         },
         "summary": {
           "type": "string"
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["public", "redacted", "private"],
+          "default": "redacted"
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "source-ref.schema.json"
+          },
+          "default": []
         }
       },
       "additionalProperties": false
@@ -63,6 +75,13 @@
           "items": {
             "$ref": "part.schema.json"
           }
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "source-ref.schema.json"
+          },
+          "default": []
         }
       },
       "additionalProperties": true

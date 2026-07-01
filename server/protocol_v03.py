@@ -5,6 +5,16 @@ from typing import Any
 
 PROTOCOL_V03 = "agent-collab-v0.3"
 ENVELOPE_V03 = "v0.3"
+SOURCE_REF_TYPES = {
+    "owner_confirmation",
+    "calendar_lookup",
+    "file",
+    "message",
+    "tool_result",
+    "external_url",
+    "other",
+}
+SOURCE_REF_VISIBILITIES = {"public", "redacted", "private"}
 
 
 class ProtocolValidationError(ValueError):
@@ -85,23 +95,7 @@ def validate_artifact_submit(payload: dict[str, Any]) -> None:
     require_str(artifact, "kind")
     require_str(artifact, "summary")
     require_non_empty_list(artifact, "parts")
-    source_refs = artifact.get("source_refs", [])
-    if not isinstance(source_refs, list):
-        raise ProtocolValidationError("artifact.source_refs must be an array", field="artifact.source_refs")
-    for index, source_ref in enumerate(source_refs):
-        if not isinstance(source_ref, dict):
-            raise ProtocolValidationError(
-                "artifact.source_refs entries must be objects",
-                field=f"artifact.source_refs[{index}]",
-            )
-        require_str(source_ref, "type", f"artifact.source_refs[{index}].type")
-        require_str(source_ref, "label", f"artifact.source_refs[{index}].label")
-        visibility = source_ref.get("visibility", "redacted")
-        if visibility not in {"public", "redacted", "private"}:
-            raise ProtocolValidationError(
-                "source ref visibility must be public, redacted, or private",
-                field=f"artifact.source_refs[{index}].visibility",
-            )
+    normalize_source_refs(artifact.get("source_refs", []), field="artifact.source_refs")
 
 
 def validate_task_close(payload: dict[str, Any]) -> None:
@@ -120,12 +114,135 @@ def validate_task_close(payload: dict[str, Any]) -> None:
         require_str(authority, "owner_id", "completion_authority.owner_id")
         require_str(authority, "via_agent_id", "completion_authority.via_agent_id")
         require_str(authority, "approval_ref", "completion_authority.approval_ref")
+    normalize_completion_authority(authority)
     final_artifact = payload.get("final_artifact")
     if final_artifact is not None:
         if not isinstance(final_artifact, dict):
             raise ProtocolValidationError("final_artifact must be an object", field="final_artifact")
         require_str(final_artifact, "kind", "final_artifact.kind")
         require_non_empty_list(final_artifact, "parts", "final_artifact.parts")
+        normalize_source_refs(final_artifact.get("source_refs", []), field="final_artifact.source_refs")
+
+
+def normalize_source_refs(source_refs: Any, *, field: str = "source_refs") -> list[dict[str, Any]]:
+    if source_refs is None:
+        return []
+    if not isinstance(source_refs, list):
+        raise ProtocolValidationError(f"{field} must be an array", field=field)
+    normalized: list[dict[str, Any]] = []
+    for index, source_ref in enumerate(source_refs):
+        item_field = f"{field}[{index}]"
+        if not isinstance(source_ref, dict):
+            raise ProtocolValidationError(
+                f"{field} entries must be objects",
+                field=item_field,
+            )
+        ref_type = require_str(source_ref, "type", f"{item_field}.type")
+        if ref_type not in SOURCE_REF_TYPES:
+            raise ProtocolValidationError(
+                f"{item_field}.type is not supported",
+                field=f"{item_field}.type",
+                hint="Use a known source ref type or 'other'.",
+            )
+        label = require_str(source_ref, "label", f"{item_field}.label")
+        visibility = source_ref.get("visibility", "redacted")
+        if visibility not in SOURCE_REF_VISIBILITIES:
+            raise ProtocolValidationError(
+                "source ref visibility must be public, redacted, or private",
+                field=f"{item_field}.visibility",
+            )
+        summary = source_ref.get("summary")
+        if summary is not None and not isinstance(summary, str):
+            raise ProtocolValidationError("source ref summary must be a string", field=f"{item_field}.summary")
+        uri = source_ref.get("uri")
+        if uri is not None and not isinstance(uri, str):
+            raise ProtocolValidationError("source ref uri must be a string", field=f"{item_field}.uri")
+        metadata = source_ref.get("metadata")
+        if metadata is not None and not isinstance(metadata, dict):
+            raise ProtocolValidationError("source ref metadata must be an object", field=f"{item_field}.metadata")
+        normalized.append(redact_source_ref(source_ref, ref_type, label, visibility, summary, uri, metadata))
+    return normalized
+
+
+def redact_source_ref(
+    source_ref: dict[str, Any],
+    ref_type: str,
+    label: str,
+    visibility: str,
+    summary: str | None,
+    uri: str | None,
+    metadata: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if visibility == "private":
+        return {
+            "type": ref_type,
+            "label": label,
+            "visibility": "private",
+            "summary": summary or "Private source retained by the local agent.",
+            "redacted": True,
+        }
+    normalized: dict[str, Any] = {
+        "type": ref_type,
+        "label": label,
+        "visibility": visibility,
+    }
+    if summary:
+        normalized["summary"] = summary
+    if visibility == "public":
+        if uri:
+            normalized["uri"] = uri
+        if metadata:
+            normalized["metadata"] = metadata
+    elif visibility == "redacted":
+        normalized["redacted"] = True
+        if source_ref.get("uri") or source_ref.get("metadata"):
+            normalized["redaction_reason"] = "uri_and_metadata_hidden"
+    return normalized
+
+
+def normalize_completion_authority(authority: Any) -> dict[str, Any] | None:
+    if authority is None:
+        return None
+    if not isinstance(authority, dict):
+        raise ProtocolValidationError("completion_authority must be an object", field="completion_authority")
+    authority_type = require_str(authority, "type", "completion_authority.type")
+    if authority_type not in {"agent", "human"}:
+        raise ProtocolValidationError(
+            "completion_authority.type must be agent or human",
+            field="completion_authority.type",
+        )
+    normalized: dict[str, Any] = {"type": authority_type}
+    for key in ("owner_id", "via_agent_id", "approval_ref"):
+        value = authority.get(key)
+        if value is not None:
+            if not isinstance(value, str) or not value.strip():
+                raise ProtocolValidationError(
+                    f"completion_authority.{key} must be a non-empty string",
+                    field=f"completion_authority.{key}",
+                )
+            normalized[key] = value.strip()
+    summary = authority.get("summary")
+    if summary is not None:
+        if not isinstance(summary, str) or not summary.strip():
+            raise ProtocolValidationError(
+                "completion_authority.summary must be a non-empty string",
+                field="completion_authority.summary",
+            )
+        normalized["summary"] = summary.strip()
+    visibility = authority.get("visibility", "redacted")
+    if visibility not in SOURCE_REF_VISIBILITIES:
+        raise ProtocolValidationError(
+            "completion_authority.visibility must be public, redacted, or private",
+            field="completion_authority.visibility",
+        )
+    normalized["visibility"] = visibility
+    if visibility == "private":
+        normalized["redacted"] = True
+        normalized["summary"] = summary.strip() if isinstance(summary, str) and summary.strip() else "Private approval retained by the local agent."
+    approval_refs = normalize_source_refs(authority.get("source_refs", []), field="completion_authority.source_refs")
+    if approval_refs:
+        normalized["source_refs"] = approval_refs
+    return normalized
 
 
 def success_envelope(

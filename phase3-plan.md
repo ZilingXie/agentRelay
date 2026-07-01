@@ -323,7 +323,7 @@ Implementation stance:
 5. [x] Timeline and audit model: refactor task events into a clearer dashboard-ready task timeline/activity log.
 6. [x] Transition validator and completion authority: enforce legal state changes, terminal rules, max turns, TTL, close permissions, and human completion authority via agent.
 7. [x] Reliable event delivery: add idempotency keys, event cursor support, local delivery states for `dedup`, `inflight`, `done`, and ack semantics; keep secrets out of push payloads.
-8. [ ] Source refs and approval summaries: add optional `source_refs` and redacted approval summaries for important artifacts and closes.
+8. [x] Source refs and approval summaries: add optional `source_refs` and redacted approval summaries for important artifacts and closes.
 9. [ ] Expand Agent Cards and A2A mapping: add capabilities, accepted task types, scopes, approval policy, and a minimal A2A compatibility map.
 10. [ ] Add admin/debug views or CLI for agents, tasks, timelines, events, and pending work.
 11. [ ] Run the two-agent meeting flow again under the validated v0.3 protocol.
@@ -423,6 +423,24 @@ Implemented outputs:
 - Reliable event checks included in `npm test`.
 
 Compatibility note: this slice preserves existing `/pending`, `/claim`, and old event ack behavior. Full task content is still available through authenticated task fetch; push notifications avoid task body fields so future adapters can safely route notifications through local or third-party channels.
+
+## 8.4 Source Refs And Approval Summaries Slice
+
+Status: completed as additive normalization for artifact and close audit payloads.
+
+Implemented outputs:
+
+- Normalized `source_refs` for artifact submission and final close artifacts.
+- Source ref visibility contract:
+  - `public`: keep safe `uri` and `metadata`.
+  - `redacted`: keep label/summary, hide `uri` and `metadata`, mark `redacted`.
+  - `private`: keep only a safe label/summary marker, hide local details, mark `redacted`.
+- Normalized `completion_authority` with optional redacted approval summary and `source_refs`.
+- Protocol v0.3 validation for completion authority visibility and source ref object shape.
+- MCP support for source refs and approval/final artifact JSON arguments.
+- Smoke tests confirming redaction behavior in task events and timeline entries.
+
+Compatibility note: this slice does not require new database columns. It sanitizes audit payloads at write time so relay history remains explainable without making private human-agent conversations part of the relay audit.
 
 The first implementation slice should be intentionally small:
 

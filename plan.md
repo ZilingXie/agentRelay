@@ -216,7 +216,7 @@ Phase 3 Progress:
 - [x] Timeline and audit model: refactor task events into dashboard-ready task timeline/activity log.
 - [x] Transition validator and completion authority: legal state transitions, terminal rules, max turns, TTL, close permissions, and human completion authority via agent.
 - [x] Reliable event delivery: idempotency keys, event cursor, `dedup`, `inflight`, `done`, ack, and no secrets in WebSocket push payloads.
-- [ ] Source refs and approval summaries: optional `source_refs` and redacted completion/approval summaries.
+- [x] Source refs and approval summaries: optional `source_refs` and redacted completion/approval summaries.
 - [ ] Expand Agent Cards and A2A mapping: capabilities, accepted task types, scopes, approval policy, and minimal A2A compatibility map.
 - [ ] Add admin/debug views or CLI for agents, tasks, timelines, events, and pending work.
 - [ ] Run the two-agent meeting flow again under the validated v0.3 protocol.
@@ -241,6 +241,14 @@ Latest reliable event delivery note:
 - WebSocket push claims events as `inflight` and sends secret-safe metadata plus `payloadRef`; agents fetch full task content separately.
 - Ack remains backward compatible: old ack calls mark events as `done`, while new clients can explicitly mark `done` or `failed`.
 - MCP exposes agent-first tools to list, claim, and ack agent events.
+
+Latest source refs and approval summaries note:
+
+- `source_refs` are normalized before audit storage.
+- `public` source refs may keep `uri` and `metadata`; `redacted` refs keep only safe label/summary; `private` refs are marked redacted and never expose local URI/metadata.
+- `completion_authority` can carry redacted approval summaries and sanitized `source_refs`.
+- `final_artifact.source_refs` is supported for close events.
+- MCP artifact/close tools can pass source refs and completion authority via JSON arguments.
 
 ## 3. 建议的消息格式
 

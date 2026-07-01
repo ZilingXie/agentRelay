@@ -80,7 +80,17 @@ try {
     target_agent_id: "zac-agent",
     intent: "availability_response",
     kind: "meeting_availability",
-    text: "Frank is available Tuesday 10:00-11:00 China time."
+    text: "Frank is available Tuesday 10:00-11:00 China time.",
+    summary: "Frank returned one confirmed availability window.",
+    sourceRefsJson: JSON.stringify([
+      {
+        type: "owner_confirmation",
+        label: "Frank local confirmation",
+        summary: "Frank confirmed the slot locally.",
+        visibility: "redacted",
+        uri: "local://frank/private-confirmation"
+      }
+    ])
   });
   assert(afterArtifact.task.status === "delivery_pending", "artifact should produce delivery_pending");
   assert(afterArtifact.task.pending_on_agent_id === "zac-agent", "artifact should return ownership to zac-agent");
@@ -101,7 +111,36 @@ try {
   const closed = await callJson("agentrelay_close_task", {
     taskId,
     closedByAgentId: "zac-agent",
-    terminalReason: "Requester confirmed the proposed meeting time."
+    terminalReason: "Requester confirmed the proposed meeting time.",
+    completionAuthorityJson: JSON.stringify({
+      type: "human",
+      owner_id: "zac",
+      via_agent_id: "zac-agent",
+      approval_ref: "zac-mcp-smoke-approval",
+      summary: "Zac accepted the proposed meeting time.",
+      visibility: "redacted",
+      source_refs: [
+        {
+          type: "owner_confirmation",
+          label: "Zac local approval",
+          summary: "Zac accepted the time.",
+          visibility: "redacted",
+          uri: "local://zac/private-approval"
+        }
+      ]
+    }),
+    finalArtifactJson: JSON.stringify({
+      kind: "meeting_confirmation",
+      parts: [{ kind: "text", text: "Meeting confirmed for Tuesday 10:00 China time." }],
+      source_refs: [
+        {
+          type: "owner_confirmation",
+          label: "Final approval",
+          summary: "Requester approved final result.",
+          visibility: "redacted"
+        }
+      ]
+    })
   });
   assert(closed.task.status === "completed", "task did not close");
 
@@ -113,6 +152,14 @@ try {
   for (const expected of ["task.created", "artifact.submitted", "reply.delivered", "task.completed"]) {
     assert(eventTypes.includes(expected), `missing event ${expected}`);
   }
+  const artifactEvent = events.events.find((event) => event.event_type === "artifact.submitted");
+  assert(artifactEvent.payload.source_refs[0].redacted === true, "MCP source refs should be redacted");
+  assert(!artifactEvent.payload.source_refs[0].uri, "MCP redacted source refs should hide uri");
+  const completedEvent = events.events.find((event) => event.event_type === "task.completed");
+  assert(
+    completedEvent.payload.completion_authority.source_refs[0].redacted === true,
+    "MCP completion authority source refs should be redacted"
+  );
   const timeline = await callJson("agentrelay_get_timeline", { taskId });
   const timelineTypes = timeline.timeline.entries.map((entry) => entry.event_type);
   assert(timeline.timeline.summary.total_entries === events.events.length, "timeline summary count mismatch");

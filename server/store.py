@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from server.protocol_v03 import normalize_completion_authority, normalize_source_refs
 from server.timeline import build_timeline_entry
 from server.transitions import (
     CLAIMABLE_STATES,
@@ -618,7 +619,7 @@ class Store:
         parts = artifact["parts"]
         artifact_id = artifact["artifact_id"]
         artifact_intent = artifact["intent"]
-        source_refs = artifact["source_refs"]
+        source_refs = normalize_source_refs(artifact["source_refs"])
         artifact_summary = artifact["summary"]
         protocol_version = normalized["protocol_version"]
         idempotency_key = normalized["idempotency_key"]
@@ -806,8 +807,8 @@ class Store:
         closed_by_agent_id = required(payload, "closedByAgentId")
         terminal_reason = payload.get("terminalReason") or "requester closed task"
         protocol_version = payload.get("protocol_version") or PROTOCOL_VERSION
-        completion_authority = payload.get("completion_authority")
-        final_artifact = payload.get("final_artifact")
+        completion_authority = normalize_completion_authority(payload.get("completion_authority"))
+        final_artifact = normalize_final_artifact(payload.get("final_artifact"))
         idempotency_key = payload.get("idempotency_key")
         with self.connect() as conn:
             task = self.get_task_conn(conn, task_id)
@@ -1298,6 +1299,19 @@ def normalize_artifact_submit(payload: dict[str, Any]) -> dict[str, Any]:
             "source_refs": artifact.get("source_refs") or [],
         },
     }
+
+
+def normalize_final_artifact(final_artifact: Any) -> dict[str, Any] | None:
+    if final_artifact is None:
+        return None
+    if not isinstance(final_artifact, dict):
+        raise ValueError("final_artifact must be an object")
+    normalized = dict(final_artifact)
+    normalized["source_refs"] = normalize_source_refs(
+        final_artifact.get("source_refs", []),
+        field="final_artifact.source_refs",
+    )
+    return normalized
 
 
 def role_to_intent(role: Any) -> str:
