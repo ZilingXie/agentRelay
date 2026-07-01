@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AgentRelay Dashboard</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>AgentRelay Dashboard</h1>
+        <p>Read-only task, agent, timeline, and delivery inspection.</p>
+      </div>
+      <form id="authForm" class="auth">
+        <label for="adminToken">Admin token</label>
+        <input id="adminToken" name="adminToken" type="password" autocomplete="current-password" placeholder="AGENTRELAY_ADMIN_TOKEN">
+        <button type="submit">Connect</button>
+        <button id="refreshButton" type="button">Refresh</button>
+      </form>
+    </header>
+
+    <main>
+      <section class="metrics" aria-label="Overview">
+        <div class="metric">
+          <span>Agents</span>
+          <strong id="metricAgents">-</strong>
+        </div>
+        <div class="metric">
+          <span>Active Tasks</span>
+          <strong id="metricActiveTasks">-</strong>
+        </div>
+        <div class="metric">
+          <span>Total Tasks</span>
+          <strong id="metricTotalTasks">-</strong>
+        </div>
+        <div class="metric">
+          <span>Unacked Events</span>
+          <strong id="metricUnackedEvents">-</strong>
+        </div>
+      </section>
+
+      <section class="toolbar" aria-label="Task filters">
+        <label>
+          Agent
+          <select id="agentFilter">
+            <option value="">All agents</option>
+          </select>
+        </label>
+        <label>
+          Status
+          <select id="statusFilter">
+            <option value="">All statuses</option>
+          </select>
+        </label>
+        <label>
+          Scope
+          <select id="activeFilter">
+            <option value="">All tasks</option>
+            <option value="true">Active only</option>
+            <option value="false">Terminal only</option>
+          </select>
+        </label>
+        <label>
+          Limit
+          <input id="limitFilter" type="number" min="1" max="500" value="100">
+        </label>
+      </section>
+
+      <section class="layout">
+        <section class="panel tasks-panel" aria-label="Tasks">
+          <div class="panel-head">
+            <h2>Tasks</h2>
+            <span id="taskCount" class="muted">-</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Subject</th>
+                  <th>Status</th>
+                  <th>Requester</th>
+                  <th>Target</th>
+                  <th>Pending</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody id="tasksBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="panel detail-panel" aria-label="Task detail">
+          <div class="panel-head">
+            <h2>Task Detail</h2>
+            <span id="selectedTaskId" class="muted">Select a task</span>
+          </div>
+          <div id="taskDetail" class="detail-empty">No task selected.</div>
+        </aside>
+      </section>
+
+      <section class="layout lower">
+        <section class="panel" aria-label="Agents">
+          <div class="panel-head">
+            <h2>Agents</h2>
+            <span id="agentCount" class="muted">-</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Agent</th>
+                  <th>Owner</th>
+                  <th>Pending</th>
+                  <th>Active</th>
+                  <th>Unacked</th>
+                </tr>
+              </thead>
+              <tbody id="agentsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel" aria-label="Recent activity">
+          <div class="panel-head">
+            <h2>Recent Activity</h2>
+            <span id="lastUpdated" class="muted">Not loaded</span>
+          </div>
+          <ol id="activityList" class="activity"></ol>
+        </section>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>

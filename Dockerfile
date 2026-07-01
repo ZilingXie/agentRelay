@@ -5,8 +5,9 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 COPY server ./server
+COPY dashboard ./dashboard
 
-RUN mkdir -p /app/data && chmod -R a+rX /app/server
+RUN mkdir -p /app/data && chmod -R a+rX /app/server /app/dashboard
 
 USER 1000:1000
 

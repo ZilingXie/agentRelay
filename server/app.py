@@ -5,10 +5,12 @@ import hmac
 import os
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from server.store import ConflictError, Store, read_alias
+from server.transitions import TERMINAL_STATES
 from server.protocol_v03 import (
     ENVELOPE_V03,
     ProtocolValidationError,
@@ -23,12 +25,14 @@ from server.protocol_v03 import (
 
 
 DEFAULT_DB_PATH = "./data/agentrelay.sqlite3"
+DASHBOARD_DIR = Path(__file__).resolve().parents[1] / "dashboard"
 
 
 class AgentRelayHandler(BaseHTTPRequestHandler):
     store: Store
     auth_identities: dict[str, dict[str, str]] = {}
     auth_required: bool = False
+    admin_token: str = ""
 
     def do_GET(self) -> None:
         self.protocol_v03_response = False
@@ -64,6 +68,17 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         if path == "/agentrelay/health":
             self.respond_json({"ok": True, "service": "agentrelay"})
+            return
+        if path in {"/agentrelay/dashboard", "/agentrelay/dashboard/"}:
+            self.serve_dashboard_asset("index.html")
+            return
+        if path.startswith("/agentrelay/dashboard/"):
+            self.serve_dashboard_asset(path.removeprefix("/agentrelay/dashboard/"))
+            return
+        if path.startswith("/agentrelay/admin/api/"):
+            if not self.require_admin_auth():
+                return
+            self.route_admin_get(path, query)
             return
         auth = self.require_auth()
         if auth is None:
@@ -151,6 +166,56 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_protocol({"task": task})
             return
         self.respond_error(404, "not found")
+
+    def route_admin_get(self, path: str, query: dict[str, list[str]]) -> None:
+        if path == "/agentrelay/admin/api/summary":
+            self.respond_json(admin_summary(self.store))
+            return
+        if path == "/agentrelay/admin/api/agents":
+            self.respond_json({"agents": admin_list_agents(self.store)})
+            return
+        if path == "/agentrelay/admin/api/tasks":
+            self.respond_json(
+                {
+                    "tasks": admin_list_tasks(
+                        self.store,
+                        agent_id=first_query_value(query, "agent_id") or first_query_value(query, "agent"),
+                        status=first_query_value(query, "status"),
+                        active=parse_optional_bool_query(query, "active"),
+                        limit=parse_int_query(query, "limit", 100, min_value=1, max_value=500),
+                    )
+                }
+            )
+            return
+        if match := re.fullmatch(r"/agentrelay/admin/api/tasks/([^/]+)", path):
+            task_id = match.group(1)
+            task = self.store.get_task(task_id)
+            if not task:
+                self.respond_error(404, "task not found")
+                return
+            self.respond_json(
+                {
+                    "task": task,
+                    "timeline": self.store.get_timeline(task_id),
+                    "events": self.store.get_events(task_id) or [],
+                    "agent_events": admin_list_agent_events(self.store, task_id=task_id, limit=500),
+                }
+            )
+            return
+        if path == "/agentrelay/admin/api/events":
+            self.respond_json(
+                {
+                    "events": admin_list_agent_events(
+                        self.store,
+                        agent_id=first_query_value(query, "agent_id") or first_query_value(query, "agent"),
+                        delivery_state=first_query_value(query, "delivery_state") or first_query_value(query, "state"),
+                        include_acked=parse_bool_query(query, "include_acked", False),
+                        limit=parse_int_query(query, "limit", 100, min_value=1, max_value=500),
+                    )
+                }
+            )
+            return
+        self.respond_error(404, "admin endpoint not found")
 
     def route_post(self) -> None:
         path = clean_path(self.path)
@@ -273,6 +338,39 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         self.respond_error(404, "not found")
 
+    def require_admin_auth(self) -> bool:
+        if not self.admin_token:
+            self.respond_error(
+                503,
+                "admin API is disabled",
+                error_type="admin_auth",
+                code="ADMIN_TOKEN_NOT_CONFIGURED",
+                hint="Set AGENTRELAY_ADMIN_TOKEN on the relay server to enable the read-only dashboard API.",
+            )
+            return False
+        authorization = self.headers.get("Authorization", "")
+        token = ""
+        if authorization.startswith("Bearer "):
+            token = authorization[len("Bearer "):]
+        token = token or self.headers.get("X-AgentRelay-Admin-Token", "")
+        if not token:
+            self.respond_error(
+                401,
+                "missing admin token",
+                error_type="admin_auth",
+                code="MISSING_ADMIN_TOKEN",
+            )
+            return False
+        if not hmac.compare_digest(token, self.admin_token):
+            self.respond_error(
+                403,
+                "invalid admin token",
+                error_type="admin_auth",
+                code="INVALID_ADMIN_TOKEN",
+            )
+            return False
+        return True
+
     def require_auth(self) -> dict[str, str] | None:
         if not self.auth_required:
             return {"username": "", "agent_id": ""}
@@ -339,6 +437,32 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
+
+    def respond_static(self, raw: bytes, content_type: str, status: int = 200) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def serve_dashboard_asset(self, relative_path: str) -> None:
+        asset = "index.html" if not relative_path else relative_path
+        if asset.endswith("/"):
+            asset += "index.html"
+        if asset not in {"index.html", "app.js", "styles.css"}:
+            self.respond_error(404, "dashboard asset not found")
+            return
+        file_path = DASHBOARD_DIR / asset
+        if not file_path.exists():
+            self.respond_error(404, "dashboard asset not found")
+            return
+        content_type = {
+            ".html": "text/html; charset=utf-8",
+            ".js": "application/javascript; charset=utf-8",
+            ".css": "text/css; charset=utf-8",
+        }.get(file_path.suffix, "application/octet-stream")
+        self.respond_static(file_path.read_bytes(), content_type)
 
     def respond_protocol(self, payload: dict[str, Any], status: int = 200) -> None:
         if self.wants_envelope():
@@ -420,6 +544,13 @@ def parse_bool_query(query: dict[str, list[str]], key: str, default: bool) -> bo
     value = first_query_value(query, key)
     if value is None:
         return default
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
+def parse_optional_bool_query(query: dict[str, list[str]], key: str) -> bool | None:
+    value = first_query_value(query, key)
+    if value is None:
+        return None
     return value.lower() in {"1", "true", "yes", "on"}
 
 
@@ -662,6 +793,199 @@ def normalize_close_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def admin_summary(store: Store) -> dict[str, Any]:
+    with store.connect() as conn:
+        return {
+            "agents": scalar(conn, "SELECT COUNT(*) FROM agents"),
+            "tasks": {
+                "total": scalar(conn, "SELECT COUNT(*) FROM tasks"),
+                "active": scalar(
+                    conn,
+                    f"SELECT COUNT(*) FROM tasks WHERE status NOT IN ({placeholders(TERMINAL_STATES)})",
+                    sorted(TERMINAL_STATES),
+                ),
+                "terminal": scalar(
+                    conn,
+                    f"SELECT COUNT(*) FROM tasks WHERE status IN ({placeholders(TERMINAL_STATES)})",
+                    sorted(TERMINAL_STATES),
+                ),
+                "by_status": grouped_counts(conn, "SELECT status, COUNT(*) FROM tasks GROUP BY status ORDER BY status"),
+                "pending_by_agent": grouped_counts(
+                    conn,
+                    """
+                    SELECT COALESCE(pending_on_agent_id, 'none'), COUNT(*)
+                    FROM tasks
+                    GROUP BY COALESCE(pending_on_agent_id, 'none')
+                    ORDER BY 1
+                    """,
+                ),
+            },
+            "agent_events": {
+                "total": scalar(conn, "SELECT COUNT(*) FROM agent_events"),
+                "unacked": scalar(conn, "SELECT COUNT(*) FROM agent_events WHERE acked_at IS NULL"),
+                "by_delivery_state": grouped_counts(
+                    conn,
+                    """
+                    SELECT delivery_state, COUNT(*)
+                    FROM agent_events
+                    GROUP BY delivery_state
+                    ORDER BY delivery_state
+                    """,
+                ),
+            },
+            "recent_task_events": admin_recent_task_events(conn, 20),
+        }
+
+
+def admin_list_agents(store: Store) -> list[dict[str, Any]]:
+    with store.connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT a.*,
+                   COALESCE(pending.pending_count, 0) AS pending_task_count,
+                   COALESCE(active.active_count, 0) AS active_task_count,
+                   COALESCE(events.unacked_count, 0) AS unacked_event_count
+            FROM agents a
+            LEFT JOIN (
+                SELECT pending_on_agent_id AS agent_id, COUNT(*) AS pending_count
+                FROM tasks
+                WHERE pending_on_agent_id IS NOT NULL
+                GROUP BY pending_on_agent_id
+            ) pending ON pending.agent_id = a.agent_id
+            LEFT JOIN (
+                SELECT agent_id, COUNT(*) AS active_count
+                FROM (
+                    SELECT requester_agent_id AS agent_id FROM tasks WHERE status NOT IN ({terminal})
+                    UNION ALL
+                    SELECT target_agent_id AS agent_id FROM tasks WHERE status NOT IN ({terminal})
+                    UNION ALL
+                    SELECT completion_owner_agent_id AS agent_id FROM tasks WHERE status NOT IN ({terminal})
+                )
+                GROUP BY agent_id
+            ) active ON active.agent_id = a.agent_id
+            LEFT JOIN (
+                SELECT agent_id, COUNT(*) AS unacked_count
+                FROM agent_events
+                WHERE acked_at IS NULL
+                GROUP BY agent_id
+            ) events ON events.agent_id = a.agent_id
+            ORDER BY a.agent_id
+            """.format(terminal=placeholders(TERMINAL_STATES)),
+            sorted(TERMINAL_STATES) * 3,
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def admin_list_tasks(
+    store: Store,
+    agent_id: str | None = None,
+    status: str | None = None,
+    active: bool | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    where: list[str] = []
+    params: list[Any] = []
+    if agent_id:
+        where.append(
+            """
+            (
+              requester_agent_id = ?
+              OR target_agent_id = ?
+              OR completion_owner_agent_id = ?
+              OR pending_on_agent_id = ?
+              OR claimed_by = ?
+            )
+            """
+        )
+        params.extend([agent_id, agent_id, agent_id, agent_id, agent_id])
+    if status:
+        where.append("status = ?")
+        params.append(status)
+    if active is True:
+        where.append(f"status NOT IN ({placeholders(TERMINAL_STATES)})")
+        params.extend(sorted(TERMINAL_STATES))
+    elif active is False:
+        where.append(f"status IN ({placeholders(TERMINAL_STATES)})")
+        params.extend(sorted(TERMINAL_STATES))
+    sql = """
+        SELECT task_id, context_id, subject, status, requester_agent_id, target_agent_id,
+               completion_owner_agent_id, pending_on_agent_id, claimed_by, next_action,
+               turn_count, max_turns, delivery_status, created_at, updated_at
+        FROM tasks
+    """
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY updated_at DESC, created_at DESC, task_id LIMIT ?"
+    params.append(limit)
+    with store.connect() as conn:
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
+
+def admin_list_agent_events(
+    store: Store,
+    agent_id: str | None = None,
+    delivery_state: str | None = None,
+    include_acked: bool = False,
+    task_id: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    where: list[str] = []
+    params: list[Any] = []
+    if agent_id:
+        where.append("ae.agent_id = ?")
+        params.append(agent_id)
+    if delivery_state:
+        where.append("ae.delivery_state = ?")
+        params.append(delivery_state)
+    if task_id:
+        where.append("ae.task_id = ?")
+        params.append(task_id)
+    if not include_acked:
+        where.append("ae.acked_at IS NULL")
+    sql = """
+        SELECT ae.event_id, ae.agent_id, ae.event_type, ae.task_id, ae.delivery_state,
+               ae.delivery_attempts, ae.inflight_until, ae.done_at, ae.failed_at,
+               ae.last_error, ae.acked_at, ae.created_at, t.subject, t.status AS task_status
+        FROM agent_events ae
+        LEFT JOIN tasks t ON t.task_id = ae.task_id
+    """
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY ae.created_at DESC, ae.event_id DESC LIMIT ?"
+    params.append(limit)
+    with store.connect() as conn:
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
+
+def admin_recent_task_events(conn: Any, limit: int) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT te.event_id, te.task_id, te.event_type, te.created_at,
+               t.subject, t.status, t.pending_on_agent_id
+        FROM task_events te
+        LEFT JOIN tasks t ON t.task_id = te.task_id
+        ORDER BY te.created_at DESC, te.event_id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def scalar(conn: Any, sql: str, params: list[Any] | None = None) -> int:
+    return int(conn.execute(sql, params or []).fetchone()[0])
+
+
+def grouped_counts(conn: Any, sql: str) -> dict[str, int]:
+    return {str(key): int(count) for key, count in conn.execute(sql).fetchall()}
+
+
+def placeholders(values: set[str]) -> str:
+    return ", ".join("?" for _ in values)
+
+
 def create_server() -> ThreadingHTTPServer:
     host = os.environ.get("AGENTRELAY_HOST", "127.0.0.1")
     port = int(os.environ.get("AGENTRELAY_PORT", "8787"))
@@ -671,6 +995,7 @@ def create_server() -> ThreadingHTTPServer:
     auth_required, identities = load_auth_identities()
     AgentRelayHandler.auth_required = auth_required
     AgentRelayHandler.auth_identities = identities
+    AgentRelayHandler.admin_token = os.environ.get("AGENTRELAY_ADMIN_TOKEN", "").strip()
     return ThreadingHTTPServer((host, port), AgentRelayHandler)
 
 
