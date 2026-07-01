@@ -217,7 +217,7 @@ Phase 3 Progress:
 - [x] Transition validator and completion authority: legal state transitions, terminal rules, max turns, TTL, close permissions, and human completion authority via agent.
 - [x] Reliable event delivery: idempotency keys, event cursor, `dedup`, `inflight`, `done`, ack, and no secrets in WebSocket push payloads.
 - [x] Source refs and approval summaries: optional `source_refs` and redacted completion/approval summaries.
-- [ ] Expand Agent Cards and A2A mapping: capabilities, accepted task types, scopes, approval policy, and minimal A2A compatibility map.
+- [x] Expand Agent Cards and A2A mapping: capabilities, accepted task types, scopes, approval policy, and minimal A2A compatibility map.
 - [ ] Add admin/debug views or CLI for agents, tasks, timelines, events, and pending work.
 - [ ] Run the two-agent meeting flow again under the validated v0.3 protocol.
 
@@ -249,6 +249,13 @@ Latest source refs and approval summaries note:
 - `completion_authority` can carry redacted approval summaries and sanitized `source_refs`.
 - `final_artifact.source_refs` is supported for close events.
 - MCP artifact/close tools can pass source refs and completion authority via JSON arguments.
+
+Latest Agent Cards and A2A mapping note:
+
+- Agent Cards now expose A2A-shaped metadata: protocol version, supported interfaces, capabilities, security schemes, input/output modes, skills, accepted task types, scopes, and human approval policy.
+- `GET /agentrelay/api/agents/cards` lists cards for all known agents.
+- `GET /agentrelay/api/agents/{agent_id}/a2a-map` documents how AgentRelay objects and HTTP endpoints map to A2A concepts and operations.
+- This is discovery/mapping support, not a full A2A JSON-RPC runtime yet.
 
 ## 3. 建议的消息格式
 

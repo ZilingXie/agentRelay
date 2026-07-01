@@ -324,7 +324,7 @@ Implementation stance:
 6. [x] Transition validator and completion authority: enforce legal state changes, terminal rules, max turns, TTL, close permissions, and human completion authority via agent.
 7. [x] Reliable event delivery: add idempotency keys, event cursor support, local delivery states for `dedup`, `inflight`, `done`, and ack semantics; keep secrets out of push payloads.
 8. [x] Source refs and approval summaries: add optional `source_refs` and redacted approval summaries for important artifacts and closes.
-9. [ ] Expand Agent Cards and A2A mapping: add capabilities, accepted task types, scopes, approval policy, and a minimal A2A compatibility map.
+9. [x] Expand Agent Cards and A2A mapping: add capabilities, accepted task types, scopes, approval policy, and a minimal A2A compatibility map.
 10. [ ] Add admin/debug views or CLI for agents, tasks, timelines, events, and pending work.
 11. [ ] Run the two-agent meeting flow again under the validated v0.3 protocol.
 
@@ -441,6 +441,29 @@ Implemented outputs:
 - Smoke tests confirming redaction behavior in task events and timeline entries.
 
 Compatibility note: this slice does not require new database columns. It sanitizes audit payloads at write time so relay history remains explainable without making private human-agent conversations part of the relay audit.
+
+## 8.5 Agent Cards And A2A Mapping Slice
+
+Status: completed as A2A-shaped discovery and compatibility mapping.
+
+Implemented outputs:
+
+- Expanded per-agent cards at `GET /agentrelay/api/agents/:agentId/card`.
+- Agent card list endpoint at `GET /agentrelay/api/agents/cards`.
+- Minimal A2A mapping endpoint at `GET /agentrelay/api/agents/:agentId/a2a-map`.
+- Agent Cards now include:
+  - A2A protocol version marker.
+  - Supported interfaces for A2A-shaped HTTP and AgentRelay HTTP.
+  - Capabilities including push notifications and state transition history.
+  - Bearer auth scheme metadata.
+  - Default input/output modes.
+  - Skills with accepted task types, intents, examples, and approval requirements.
+  - AgentRelay extension metadata for scopes, endpoints, and human approval policy.
+- `schemas/agent-card.schema.json`.
+- `scripts/agent_card_smoke_test.py`.
+- MCP smoke coverage for expanded Agent Cards.
+
+Compatibility note: this slice does not implement a full A2A JSON-RPC runtime. It intentionally documents the current HTTP relay mapping and discovery surface so future A2A gateway work can be added without overstating compatibility.
 
 The first implementation slice should be intentionally small:
 
