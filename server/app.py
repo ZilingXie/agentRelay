@@ -71,6 +71,10 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         if path == "/agentrelay/agents":
             self.respond_json({"agents": self.store.list_agents()})
             return
+        if path == "/agentrelay/agents/cards":
+            cards = [agent_card(agent) for agent in self.store.list_agents()]
+            self.respond_json({"agentCards": cards, "agent_cards": cards})
+            return
         if match := re.fullmatch(r"/agentrelay/agents/([^/]+)/card", path):
             agent_id = match.group(1)
             agent = self.store.get_agent(agent_id)
@@ -78,6 +82,14 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 self.respond_error(404, "agent not found")
                 return
             self.respond_json(agent_card(agent))
+            return
+        if match := re.fullmatch(r"/agentrelay/agents/([^/]+)/a2a-map", path):
+            agent_id = match.group(1)
+            agent = self.store.get_agent(agent_id)
+            if not agent:
+                self.respond_error(404, "agent not found")
+                return
+            self.respond_json(a2a_mapping(agent))
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)", path):
             task = self.store.get_task(match.group(1))
@@ -442,23 +454,201 @@ def agent_events_response(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 def agent_card(agent: dict[str, Any]) -> dict[str, Any]:
     agent_id = agent["agent_id"]
+    relay_base_url = os.environ.get("AGENTRELAY_PUBLIC_BASE_URL", "https://server.stellarix.space/agentrelay")
+    api_base_url = f"{relay_base_url.rstrip('/')}/api"
+    a2a_url = f"{api_base_url}/a2a/{agent_id}"
+    agentrelay_url = f"{api_base_url}/agents/{agent_id}/card"
+    skills = default_agent_skills(agent)
     return {
-        "protocolVersion": "agentrelay-phase1-a2a-shaped",
+        "protocolVersion": "agentrelay-agent-card-v0.3",
+        "a2aProtocolVersion": "0.3",
         "name": agent["name"],
         "description": agent["description"],
-        "url": f"/agentrelay/agents/{agent_id}/a2a",
-        "provider": {"organization": agent["owner"]},
+        "url": a2a_url,
+        "supportedInterfaces": [
+            {
+                "protocolBinding": "HTTP+JSON",
+                "protocolVersion": "0.3",
+                "url": a2a_url,
+                "tenant": agent_id,
+            },
+            {
+                "protocolBinding": "AGENTRELAY_HTTP",
+                "protocolVersion": "agent-collab-v0.3",
+                "url": api_base_url,
+                "tenant": agent_id,
+            },
+        ],
+        "provider": {
+            "organization": agent["owner"],
+            "url": relay_base_url.rstrip("/"),
+        },
+        "version": "agentrelay-agent-card-v0.3",
+        "documentationUrl": f"{relay_base_url.rstrip('/')}/plan.html",
         "capabilities": {
             "streaming": False,
             "pushNotifications": True,
             "stateTransitionHistory": True,
+            "extendedAgentCard": False,
+            "extensions": [
+                {
+                    "uri": "https://server.stellarix.space/agentrelay/protocol/agent-collab-v0.3",
+                    "description": "AgentRelay two-agent collaboration semantics over HTTP relay events.",
+                    "required": False,
+                    "params": {
+                        "completion_owner": "requester_agent",
+                        "artifact_auto_completes_task": False,
+                        "event_delivery": "cursor+lease+ack",
+                    },
+                }
+            ],
         },
-        "skills": [
-            {
-                "id": "meeting-coordination",
-                "name": "Meeting coordination",
-                "description": "Ask the human owner for availability and return approved candidate times.",
+        "securitySchemes": {
+            "bearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "description": "AgentRelay bearer token bound to X-AgentRelay-Agent-Id and X-AgentRelay-Username.",
             }
+        },
+        "securityRequirements": [{"bearerAuth": []}],
+        "defaultInputModes": ["application/json", "text/plain"],
+        "defaultOutputModes": ["application/json", "text/plain"],
+        "skills": skills,
+        "agentRelay": {
+            "agent_id": agent_id,
+            "owner": agent["owner"],
+            "accepted_task_types": accepted_task_types(skills),
+            "scopes": default_agent_scopes(agent_id),
+            "human_approval_policy": default_human_approval_policy(agent),
+            "endpoints": {
+                "card": agentrelay_url,
+                "a2a_map": f"{api_base_url}/agents/{agent_id}/a2a-map",
+                "events": f"{api_base_url}/workers/{agent_id}/events",
+                "websocket": f"{relay_base_url.rstrip('/')}/workers/{agent_id}/events/ws",
+            },
+        },
+    }
+
+
+def a2a_mapping(agent: dict[str, Any]) -> dict[str, Any]:
+    agent_id = agent["agent_id"]
+    return {
+        "agent_id": agent_id,
+        "a2a_protocol_version": "0.3",
+        "agent_card_url": f"/agentrelay/api/agents/{agent_id}/card",
+        "preferred_interface": {
+            "protocolBinding": "AGENTRELAY_HTTP",
+            "protocolVersion": "agent-collab-v0.3",
+            "tenant": agent_id,
+        },
+        "object_map": {
+            "AgentCard": "AgentRelay agent card with agentRelay extension metadata",
+            "Message": "Task create message.parts or artifact.parts",
+            "Task": "AgentRelay task",
+            "Artifact": "AgentRelay artifact; never completes task automatically",
+            "TaskStatus": "AgentRelay task.status plus pending_on_agent_id and next_action",
+            "PushNotification": "AgentRelay agent_events via cursor reads or WebSocket push",
+        },
+        "operation_map": {
+            "message/send": {
+                "agentrelay": "POST /agentrelay/api/tasks",
+                "notes": "Requester agent creates a task for target_agent_id; tenant maps to target agent.",
+            },
+            "tasks/get": {
+                "agentrelay": "GET /agentrelay/api/tasks/{task_id}",
+            },
+            "tasks/cancel": {
+                "agentrelay": "POST /agentrelay/api/tasks/{task_id}/status",
+                "notes": "Use terminal status with terminalReason; destructive cancellation policy is still protocol-local.",
+            },
+            "tasks/pushNotificationConfig/*": {
+                "agentrelay": "GET /agentrelay/api/workers/{agent_id}/events or /events/ws",
+                "notes": "AgentRelay uses durable event delivery instead of A2A webhook registration in this phase.",
+            },
+            "agent/getAuthenticatedExtendedCard": {
+                "agentrelay": "GET /agentrelay/api/agents/{agent_id}/card",
+                "notes": "Extended cards are not separated yet; capabilities.extendedAgentCard is false.",
+            },
+        },
+        "compatibility": {
+            "full_a2a_runtime": False,
+            "json_rpc_endpoint": False,
+            "http_json_mapping": True,
+            "agent_card_discovery": True,
+        },
+    }
+
+
+def default_agent_skills(agent: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "meeting-coordination",
+            "name": "Meeting coordination",
+            "description": "Coordinate with the represented owner to return approved meeting availability or confirmations.",
+            "tags": ["meeting", "calendar", "availability", "coordination"],
+            "examples": [
+                f"Ask {agent['owner']} whether Tuesday 10:00 works for a 30-minute online meeting.",
+                "Return candidate availability with redacted source references.",
+            ],
+            "inputModes": ["application/json", "text/plain"],
+            "outputModes": ["application/json", "text/plain"],
+            "agentRelay": {
+                "accepted_task_types": ["meeting.schedule", "meeting.availability"],
+                "intents": ["request_availability", "provide_availability", "meeting_confirmation"],
+                "requires_owner_approval_for": ["sharing_availability", "committing_to_meeting_time"],
+            },
+        },
+        {
+            "id": "agentrelay-artifact-review",
+            "name": "Artifact review and completion handoff",
+            "description": "Return work artifacts with source references and transfer task ownership without closing requester-owned tasks.",
+            "tags": ["artifact", "handoff", "source_refs", "approval"],
+            "examples": [
+                "Submit an availability_response artifact with source_refs.",
+                "Transfer pending ownership back to the requester agent for final completion review.",
+            ],
+            "inputModes": ["application/json"],
+            "outputModes": ["application/json"],
+            "agentRelay": {
+                "accepted_task_types": ["artifact.review", "approval.summary"],
+                "intents": ["work_result", "approval_summary"],
+                "artifact_auto_completes_task": False,
+            },
+        },
+    ]
+
+
+def accepted_task_types(skills: list[dict[str, Any]]) -> list[str]:
+    result: list[str] = []
+    for skill in skills:
+        task_types = skill.get("agentRelay", {}).get("accepted_task_types", [])
+        for task_type in task_types:
+            if task_type not in result:
+                result.append(task_type)
+    return result
+
+
+def default_agent_scopes(agent_id: str) -> list[str]:
+    return [
+        f"agent:{agent_id}:tasks:create",
+        f"agent:{agent_id}:tasks:claim",
+        f"agent:{agent_id}:artifacts:submit",
+        f"agent:{agent_id}:events:read",
+        f"agent:{agent_id}:events:ack",
+    ]
+
+
+def default_human_approval_policy(agent: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "owner": agent["owner"],
+        "human_is_represented_as": "agent_owner",
+        "private_owner_agent_conversation": "not_relayed_by_default",
+        "approval_recording": "redacted_summary_or_source_ref",
+        "requires_approval_for": [
+            "sharing_private_availability",
+            "making_external_commitments",
+            "disclosing_private_source_details",
+            "closing_when_human_judgment_is_required",
         ],
     }
 

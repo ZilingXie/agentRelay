@@ -36,6 +36,11 @@ try {
   );
 
   await callJson("agentrelay_health", {});
+  const frankCard = await callJson("agentrelay_get_agent_card", { agentId: "frank-agent" });
+  assert(frankCard.protocolVersion === "agentrelay-agent-card-v0.3", "agent card protocol version mismatch");
+  assert(frankCard.a2aProtocolVersion === "0.3", "agent card A2A protocol version mismatch");
+  assert(frankCard.agentRelay.accepted_task_types.includes("meeting.schedule"), "agent card missing task types");
+  assert(frankCard.agentRelay.human_approval_policy.private_owner_agent_conversation === "not_relayed_by_default", "agent card missing approval policy");
 
   const created = await callJson("agentrelay_create_task", {
     requester_agent_id: "zac-agent",
