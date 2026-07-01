@@ -20,9 +20,16 @@ cd "$(dirname "$0")/.."
 python3 scripts/upsert_agent_identity.py "${args[@]}"
 
 restarted=false
+docker_compose=()
 if command -v docker >/dev/null 2>&1 && docker compose ps --services --status running 2>/dev/null | grep -Eq '^agentrelay-(api|ws)$'; then
-  docker compose restart agentrelay-api agentrelay-ws
-  docker compose ps agentrelay-api agentrelay-ws
+  docker_compose=(docker compose)
+elif command -v sudo >/dev/null 2>&1 && command -v docker >/dev/null 2>&1 && sudo docker compose ps --services --status running 2>/dev/null | grep -Eq '^agentrelay-(api|ws)$'; then
+  docker_compose=(sudo docker compose)
+fi
+
+if [[ ${#docker_compose[@]} -gt 0 ]]; then
+  "${docker_compose[@]}" restart agentrelay-api agentrelay-ws
+  "${docker_compose[@]}" ps agentrelay-api agentrelay-ws
   restarted=true
 elif command -v sudo >/dev/null 2>&1 && systemctl list-unit-files agentrelay.service >/dev/null 2>&1; then
   sudo systemctl restart agentrelay
