@@ -1201,10 +1201,16 @@ AgentRelay records timeline events:
             <p><span class="tag green">Completed</span> Expanded Agent Cards with A2A-shaped protocol metadata, supported interfaces, capabilities, bearer auth, skills, accepted task types, scopes, endpoints, and human approval policy. Added card list and A2A mapping endpoints while keeping full A2A JSON-RPC runtime as future work.</p>
           </div>
         </li>
+        <li>
+          <div>
+            <h3>Admin/debug CLI</h3>
+            <p><span class="tag green">Completed</span> Added a read-only local SQLite CLI for summary, agents, tasks, task detail, timelines, agent events, and pending work, with table output for SSH debugging and JSON output for scripts.</p>
+          </div>
+        </li>
       </ol>
 
       <div class="note">
-        <p><strong>Next best implementation step:</strong> add admin/debug views or CLI for agents, tasks, timelines, events, and pending work.</p>
+        <p><strong>Next best implementation step:</strong> run the two-agent meeting flow again under the validated v0.3 protocol.</p>
       </div>
     </section>
 
@@ -1518,13 +1524,13 @@ AgentRelay records timeline events:
         <li>
           <div>
             <h3>Admin/debug views or CLI</h3>
-            <p>下一步：为 agents、tasks、timelines、events、pending work 增加 admin/debug view 或 CLI，方便运行和排障。</p>
+            <p><span class="tag green">Completed</span> 已增加只读本地 SQLite CLI，可查看 summary、agents、tasks、task detail、timeline、agent events 和 pending work；支持 SSH 排障用 table 输出和脚本用 JSON 输出。</p>
           </div>
         </li>
       </ol>
 
       <div class="note">
-        <p><strong>下一步实现重点：</strong>增加 admin/debug views 或 CLI，用于查看 agents、tasks、timelines、events 和 pending work。</p>
+        <p><strong>下一步实现重点：</strong>在已验证的 v0.3 协议下重新跑一次双 agent 会议协作闭环。</p>
       </div>
     </section>
 

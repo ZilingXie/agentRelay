@@ -218,7 +218,7 @@ Phase 3 Progress:
 - [x] Reliable event delivery: idempotency keys, event cursor, `dedup`, `inflight`, `done`, ack, and no secrets in WebSocket push payloads.
 - [x] Source refs and approval summaries: optional `source_refs` and redacted completion/approval summaries.
 - [x] Expand Agent Cards and A2A mapping: capabilities, accepted task types, scopes, approval policy, and minimal A2A compatibility map.
-- [ ] Add admin/debug views or CLI for agents, tasks, timelines, events, and pending work.
+- [x] Add admin/debug views or CLI for agents, tasks, timelines, events, and pending work.
 - [ ] Run the two-agent meeting flow again under the validated v0.3 protocol.
 
 详细计划见 `phase3-plan.md`。
@@ -256,6 +256,12 @@ Latest Agent Cards and A2A mapping note:
 - `GET /agentrelay/api/agents/cards` lists cards for all known agents.
 - `GET /agentrelay/api/agents/{agent_id}/a2a-map` documents how AgentRelay objects and HTTP endpoints map to A2A concepts and operations.
 - This is discovery/mapping support, not a full A2A JSON-RPC runtime yet.
+
+Latest admin/debug CLI note:
+
+- Added `scripts/agentrelay_admin.py` as a read-only local SQLite inspection tool.
+- Supports `summary`, `agents`, `tasks`, `task`, `timeline`, `events`, and `pending`.
+- Supports table output for SSH debugging and JSON output for scripts.
 
 ## 3. 建议的消息格式
 
