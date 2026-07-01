@@ -27,6 +27,12 @@
     "metadata": {
       "type": "object",
       "additionalProperties": true
+    },
+    "redacted": {
+      "type": "boolean"
+    },
+    "redaction_reason": {
+      "type": "string"
     }
   },
   "additionalProperties": false

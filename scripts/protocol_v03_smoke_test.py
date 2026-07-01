@@ -138,6 +138,23 @@ def main() -> None:
                                 "label": "Frank owner confirmed availability",
                                 "summary": "Owner confirmed the primary slot.",
                                 "visibility": "redacted",
+                                "uri": "local://frank/private-thread/123",
+                                "metadata": {"private_note": "do not relay"},
+                            },
+                            {
+                                "type": "calendar_lookup",
+                                "label": "Frank public work calendar",
+                                "summary": "Calendar showed the slot open.",
+                                "visibility": "public",
+                                "uri": "calendar://frank/work",
+                                "metadata": {"calendar_id": "work"},
+                            },
+                            {
+                                "type": "message",
+                                "label": "Private owner-agent exchange",
+                                "summary": "Frank privately confirmed.",
+                                "visibility": "private",
+                                "uri": "local://frank/private-message/999",
                             }
                         ],
                     },
@@ -166,6 +183,16 @@ def main() -> None:
                         "via_agent_id": "zac-agent",
                         "approval_ref": "zac-local-confirmation-456",
                         "summary": "Zac accepted the Monday 10:30 slot.",
+                        "visibility": "redacted",
+                        "source_refs": [
+                            {
+                                "type": "owner_confirmation",
+                                "label": "Zac local confirmation",
+                                "summary": "Zac accepted the proposed slot.",
+                                "visibility": "redacted",
+                                "uri": "local://zac/private-thread/456",
+                            }
+                        ],
                     },
                     "terminal_reason": "Both owners accepted the same online meeting time.",
                     "final_artifact": {
@@ -176,6 +203,14 @@ def main() -> None:
                                 "start_time": "2026-07-06T10:30:00+08:00",
                                 "end_time": "2026-07-06T11:00:00+08:00",
                                 "timezone": "Asia/Shanghai",
+                            }
+                        ],
+                        "source_refs": [
+                            {
+                                "type": "owner_confirmation",
+                                "label": "Both owners approved",
+                                "summary": "Requester-side agent recorded final approval.",
+                                "visibility": "redacted",
                             }
                         ],
                     },
@@ -196,9 +231,25 @@ def main() -> None:
                 raise AssertionError("task.created missing v0.3 protocol_version")
             if artifact_event["payload"].get("source_refs", [{}])[0].get("type") != "owner_confirmation":
                 raise AssertionError("artifact.submitted missing source_refs")
+            redacted_ref = artifact_event["payload"]["source_refs"][0]
+            if redacted_ref.get("uri") or redacted_ref.get("metadata"):
+                raise AssertionError("redacted source_ref should not expose uri or metadata")
+            if not redacted_ref.get("redacted"):
+                raise AssertionError("redacted source_ref should be marked redacted")
+            public_ref = artifact_event["payload"]["source_refs"][1]
+            if public_ref.get("uri") != "calendar://frank/work" or public_ref.get("metadata", {}).get("calendar_id") != "work":
+                raise AssertionError("public source_ref should preserve uri and metadata")
+            private_ref = artifact_event["payload"]["source_refs"][2]
+            if private_ref.get("uri") or private_ref.get("metadata") or not private_ref.get("redacted"):
+                raise AssertionError("private source_ref should hide uri and metadata")
             authority = closed_event["payload"].get("completion_authority") or {}
             if authority.get("type") != "human":
                 raise AssertionError("task.completed missing human completion authority")
+            if authority.get("source_refs", [{}])[0].get("uri"):
+                raise AssertionError("completion authority source_refs should be redacted")
+            final_artifact = closed_event["payload"].get("final_artifact") or {}
+            if final_artifact.get("source_refs", [{}])[0].get("type") != "owner_confirmation":
+                raise AssertionError("final artifact missing source refs")
 
             timeline = get_json(f"{BASE_URL}/tasks/{task_id}/timeline", AGENT_A_HEADERS)["data"]["timeline"]
             if timeline["summary"]["total_entries"] != len(events):
@@ -208,11 +259,15 @@ def main() -> None:
                 raise AssertionError("artifact timeline entry should use artifact category")
             if artifact_entry["source_refs"][0]["type"] != "owner_confirmation":
                 raise AssertionError("timeline artifact entry missing source_refs")
+            if artifact_entry["source_refs"][0].get("uri"):
+                raise AssertionError("timeline should use sanitized source_refs")
             close_entry = find_timeline_entry(timeline["entries"], "task.completed")
             if close_entry["category"] != "completion":
                 raise AssertionError("completed timeline entry should use completion category")
             if close_entry["completion_authority"]["type"] != "human":
                 raise AssertionError("timeline close entry missing human completion authority")
+            if close_entry["completion_authority"]["source_refs"][0].get("uri"):
+                raise AssertionError("timeline completion authority should use sanitized source_refs")
 
             print(json.dumps({"ok": True, "taskId": task_id, "status": close_env["data"]["task"]["status"]}, indent=2))
         finally:
