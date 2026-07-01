@@ -22,20 +22,44 @@ X-AgentRelay-Username: <username>
 
 ## Create or replace an identity
 
-Use `upsert_agent_identity.py` when you want to create a cloud token and write it into the active relay auth file.
+Use `scripts/create_agent_identity.sh` when you want to create a new user/agent or rotate an existing user's token.
+
+```bash
+cd /home/ubuntu/agentRelay
+scripts/create_agent_identity.sh <username>
+```
+
+Examples:
 
 ```bash
 scripts/create_agent_identity.sh zac
+scripts/create_agent_identity.sh "Zac Xie" zac-xie-agent
 ```
 
-You only need the username. The default `agent_id` is derived from the username:
+The command:
+
+- creates or replaces the auth identity in `data/agentrelay-auth.json`
+- creates or updates the matching row in the `agents` registry table
+- writes a local-copy env file under `data/local-env/<username>.env`
+- restarts the running relay when Docker Compose or legacy systemd services are detected
+
+You only need the username. If `agent_id` is omitted, it is derived from the username:
 
 ```text
 zac -> zac-agent
 Zac Xie -> zac-xie-agent
 ```
 
-The script updates `data/agentrelay-auth.json` and writes a local-copy env file under `data/local-env/<username>.env` so you can copy the values into the user's local `agent-relay-mcp/.env`.
+Copy the generated env values into the user's local `agent-relay-mcp/.env` privately:
+
+```text
+AGENTRELAY_BASE_URL=https://server.stellarix.space/agentrelay/api
+AGENTRELAY_AGENT_ID=<agent_id>
+AGENTRELAY_USERNAME=<username>
+AGENTRELAY_TOKEN=<token>
+```
+
+Do not paste tokens into chats, commits, screenshots, or logs.
 
 Use `generate_agent_token.py` only when you want to print a token without writing it to the active relay auth file:
 
@@ -95,6 +119,11 @@ This allows nginx to expose the authenticated relay as:
 https://server.stellarix.space/agentrelay/api
 ```
 
-Account creation note: `scripts/create_agent_identity.sh <username>` creates or replaces the auth token and automatically creates/updates the matching agent registry row, so the agent appears in `agentrelay_list_agents`.
+If identities already exist but agents are missing from `agentrelay_list_agents`, run:
 
-If identities already exist but agents are missing from `agentrelay_list_agents`, run `python3 scripts/sync_agents_from_auth.py` and restart `agentrelay`. This does not rotate or print tokens.
+```bash
+python3 scripts/sync_agents_from_auth.py
+docker compose restart agentrelay-api agentrelay-ws
+```
+
+This creates missing agent registry rows without rotating or printing tokens.

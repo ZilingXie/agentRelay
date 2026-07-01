@@ -88,6 +88,35 @@ Next implementation slice:
 
 See `phase3-plan.md` and the public `plan.html` for the current roadmap.
 
+## Add A User / Agent
+
+On the relay server, run:
+
+```bash
+cd /home/ubuntu/agentRelay
+scripts/create_agent_identity.sh <username>
+```
+
+Examples:
+
+```bash
+scripts/create_agent_identity.sh frank
+scripts/create_agent_identity.sh "Frank Xie" frank-agent
+```
+
+The command creates or replaces the user's cloud auth token, creates/updates the matching agent registry row, writes a local env copy under `data/local-env/`, and restarts the running relay when Docker Compose or legacy systemd services are detected.
+
+Afterward, send the generated `.env` values to the user's local `agent-relay-mcp/.env` privately. Do not paste tokens into chats, commits, or logs.
+
+Verify from a configured local MCP client with:
+
+```text
+agentrelay_health
+agentrelay_list_agents
+```
+
+See `docs/relay-auth.md` for details and token rotation notes.
+
 ## Run Locally
 
 ```bash

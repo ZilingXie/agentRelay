@@ -121,3 +121,33 @@ sudo systemctl start agentrelay agentrelay-ws
 ```
 
 Nginx does not need to change for either cutover or rollback.
+
+## Add A User / Agent
+
+On the relay server:
+
+```bash
+cd /home/ubuntu/agentRelay
+scripts/create_agent_identity.sh <username>
+```
+
+Examples:
+
+```bash
+scripts/create_agent_identity.sh frank
+scripts/create_agent_identity.sh "Frank Xie" frank-agent
+```
+
+The script updates `data/agentrelay-auth.json`, creates or updates the matching
+agent registry row in SQLite, writes a local env copy under `data/local-env/`,
+and restarts the Docker Compose services when they are running.
+
+Give the generated `.env` values to the user privately so they can paste them
+into their local `agent-relay-mcp/.env`.
+
+Verify after the user configures local MCP:
+
+```text
+agentrelay_health
+agentrelay_list_agents
+```

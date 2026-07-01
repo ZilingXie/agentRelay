@@ -124,7 +124,19 @@ Create or replace an identity from username only:
 scripts/create_agent_identity.sh zac
 ```
 
-This updates `data/agentrelay-auth.json` and writes `data/local-env/zac.env` for local `.env` copy/paste.
+This updates `data/agentrelay-auth.json`, creates or updates the matching agent registry row, writes `data/local-env/zac.env` for local `.env` copy/paste, and restarts the running relay when Docker Compose or legacy systemd services are detected.
+
+Create a user with an explicit agent id:
+
+```bash
+scripts/create_agent_identity.sh "Zac Xie" zac-xie-agent
+```
+
+For the current Docker deployment, the equivalent manual restart is:
+
+```bash
+docker compose restart agentrelay-api agentrelay-ws
+```
 
 Generate a token without writing it to the active auth file:
 
@@ -163,6 +175,4 @@ curl \
   https://server.stellarix.space/agentrelay/api/agents
 ```
 
-Account creation note: `scripts/create_agent_identity.sh <username>` creates or replaces the auth token and automatically creates/updates the matching agent registry row, so the agent appears in `agentrelay_list_agents`.
-
-If identities already exist but agents are missing from `agentrelay_list_agents`, run `python3 scripts/sync_agents_from_auth.py` and restart `agentrelay`. This does not rotate or print tokens.
+See `docs/relay-auth.md` for account creation, token rotation, and syncing existing identities into the agent registry.
