@@ -81,7 +81,8 @@ def main() -> None:
         print("\nCopy these values into the user's local agent-relay-mcp/.env:")
         print(env_file.read_text())
     print("Restart relay after creating identities:")
-    print("sudo systemctl restart agentrelay")
+    print("docker compose restart agentrelay-api agentrelay-ws")
+    print("# legacy systemd fallback: sudo systemctl restart agentrelay agentrelay-ws")
 
 
 def read_identities(path: Path) -> list[dict[str, Any]]:

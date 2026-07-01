@@ -18,9 +18,25 @@ fi
 
 cd "$(dirname "$0")/.."
 python3 scripts/upsert_agent_identity.py "${args[@]}"
-sudo systemctl restart agentrelay
-sudo systemctl is-active --quiet agentrelay
+
+restarted=false
+if command -v docker >/dev/null 2>&1 && docker compose ps --services --status running 2>/dev/null | grep -Eq '^agentrelay-(api|ws)$'; then
+  docker compose restart agentrelay-api agentrelay-ws
+  docker compose ps agentrelay-api agentrelay-ws
+  restarted=true
+elif command -v sudo >/dev/null 2>&1 && systemctl list-unit-files agentrelay.service >/dev/null 2>&1; then
+  sudo systemctl restart agentrelay
+  if systemctl list-unit-files agentrelay-ws.service >/dev/null 2>&1; then
+    sudo systemctl restart agentrelay-ws
+  fi
+  sudo systemctl is-active --quiet agentrelay
+  restarted=true
+else
+  echo "Could not auto-restart AgentRelay. Restart Docker Compose or systemd manually." >&2
+fi
 
 echo ""
-echo "AgentRelay restarted successfully."
+if [[ "${restarted}" == "true" ]]; then
+  echo "AgentRelay restarted successfully."
+fi
 echo "Copy the generated local env file into the user's local agent-relay-mcp/.env."
