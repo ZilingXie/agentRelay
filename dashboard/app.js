@@ -189,7 +189,7 @@ function renderTaskDetail(payload) {
       <dt>Completion Owner</dt><dd class="mono">${escapeHtml(task.completion_owner_agent_id || "")}</dd>
       <dt>Pending</dt><dd class="mono">${escapeHtml(task.pending_on_agent_id || "none")}</dd>
       <dt>Next Action</dt><dd>${escapeHtml(task.next_action || "none")}</dd>
-      <dt>Turns</dt><dd>${task.turn_count ?? 0} / ${task.max_turns ?? "-"}</dd>
+      <dt>Agent Handoffs</dt><dd>${task.turn_count ?? 0} / ${task.max_turns ?? "-"}</dd>
     </dl>
     <section>
       <h2>Timeline</h2>
