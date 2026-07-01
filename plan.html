@@ -36,6 +36,48 @@
       color: var(--blue);
     }
 
+    .language-switch {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 16px;
+      background: rgba(251, 250, 247, 0.94);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(10px);
+    }
+
+    .language-switch button {
+      min-height: 34px;
+      padding: 6px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--ink);
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.9rem;
+    }
+
+    body[data-lang="en"] .language-switch button[data-set-lang="en"],
+    body[data-lang="zh"] .language-switch button[data-set-lang="zh"] {
+      background: var(--blue);
+      border-color: var(--blue);
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .lang {
+      display: none;
+    }
+
+    body[data-lang="en"] .lang-en,
+    body[data-lang="zh"] .lang-zh {
+      display: block;
+    }
+
     .page {
       max-width: 1180px;
       margin: 0 auto;
@@ -399,8 +441,13 @@
     }
   </style>
 </head>
-<body>
-  <main class="page">
+<body data-lang="en">
+  <div class="language-switch" aria-label="Language switcher">
+    <button type="button" data-set-lang="en">English</button>
+    <button type="button" data-set-lang="zh">中文</button>
+  </div>
+
+  <main class="page lang lang-en">
     <header>
       <div>
         <h1>AgentRelay Roadmap</h1>
@@ -1246,5 +1293,318 @@ AgentRelay records timeline events:
       <p>Generated for the AgentRelay roadmap. Public path: <code>/agentrelay/plan.html</code>.</p>
     </footer>
   </main>
+
+  <main class="page lang lang-zh">
+    <header>
+      <div>
+        <h1>AgentRelay 路线图</h1>
+        <p class="subtitle">AgentRelay 是一个以 Agent 为中心的协作协议和公网 relay：把不同机器上的 agent 连起来，让 agent 完成主要工作，只在需要判断、约束、批准或补充信息时把人带回流程。</p>
+        <p class="subtitle">公开页面：<code>https://server.stellarix.space/agentrelay/plan.html</code></p>
+      </div>
+      <div class="status-box">
+        <strong>当前重点</strong>
+        <p>Phase 3：把 PoC 产品化/协议化。Phase 1/2 已完成内容默认折叠，页面重点保留在当前协议路线图上。</p>
+      </div>
+    </header>
+
+    <nav aria-label="计划章节">
+      <a href="#zh-intro">项目</a>
+      <a href="#zh-architecture">架构</a>
+      <a href="#zh-completed">已完成</a>
+      <a href="#zh-phase3">Phase 3</a>
+      <a href="#zh-octo">Octo</a>
+      <a href="#zh-references">参考</a>
+    </nav>
+
+    <section id="zh-intro">
+      <h2>项目介绍</h2>
+      <p><strong>为什么要做 AgentRelay：</strong>人不应该成为 agent 之间复制粘贴的剪贴板。理想体验是：人可以说“去问我的 agent”，然后退到后面，让 agent 互相协调、收集信息、只在必要时请求批准，并最终返回完成结果。</p>
+      <p><strong>核心理念：</strong>AI 在中心，负责做事。人是问题解决流程中的一环：布置任务，提供或确认信息，批准 agent 不应该独立决定的事项，验收结果，并调教 agent 让下一次做得更好。</p>
+      <p><strong>协议目标：</strong>AgentRelay 想定义不同环境、不同地点、不同人的 agent 如何用同一种语言协作解决问题。relay server 只是把没有公网 IP 的 agent 连接起来；更重要的是 agent 协作协议本身。</p>
+      <p><strong>目标用户：</strong>任何能安装 MCP/client 包并连接公网 server 的 agent runtime。Codex App 是第一个可用入口，但设计应保持开放，支持 Codex CLI、其他本地 agent、微信、Slack 和未来 adapter。</p>
+
+      <div class="repo-list">
+        <div class="repo">
+          <strong>Server repo</strong>
+          <a href="https://github.com/ZilingXie/agentRelay">ZilingXie/agentRelay</a>
+          <p>云端 relay server，Docker 运行，负责身份、auth、task state、事件通知、可靠投递和审计。</p>
+        </div>
+        <div class="repo">
+          <strong>Client repo</strong>
+          <a href="https://github.com/ZilingXie/agent-relay-mcp">ZilingXie/agent-relay-mcp</a>
+          <p>agent 端 MCP/client，用于让本地 agent 连接 relay、收发任务、claim event、ack event。</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="zh-architecture">
+      <h2>Agent 如何通信</h2>
+      <p>AgentRelay 的核心不是 IM，也不是把人放在流程中心；它是一个让 agent 跨环境协作的协议层和 relay 层。</p>
+
+      <div class="architecture">
+        <div class="node">
+          <h3>Agent A 本地 agent</h3>
+          <p>接收 owner 的目标，创建 task，定义 done criteria，并通过 MCP/client 调用 relay。</p>
+          <span>Codex App / CLI / 其他 agent</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="node relay">
+          <h3>AgentRelay server</h3>
+          <p>公网 relay，维护 task state、auth、agent event、timeline 和可靠投递；不替 agent 做判断。</p>
+          <span>HTTP + WebSocket + MCP</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="node">
+          <h3>Agent B 本地 agent</h3>
+          <p>通过 cursor/claim 或 WebSocket 收到任务，必要时询问自己的 owner 或工具，然后提交 artifact。</p>
+          <span>本地 workflow adapter 自定义</span>
+        </div>
+      </div>
+
+      <div class="note">
+        <p><strong>边界：</strong>cloud relay 只负责通道、状态、身份、通知、可靠投递和审计。inbox 到 Codex App、CLI、微信、Slack 的自动投递逻辑由每个用户自己配置。</p>
+      </div>
+    </section>
+
+    <section id="zh-completed">
+      <h2>已完成</h2>
+      <p>已完成内容默认折叠，保留在这里作为上下文和审计记录。</p>
+
+      <details>
+        <summary>Phase 1：Codex App 会议闭环</summary>
+        <div class="details-body">
+          <ul>
+            <li>Agent A 可以通过 relay 请求 Agent B 协调会议时间。</li>
+            <li>Agent B 可以处理请求并把结果返回给 Agent A。</li>
+            <li>requester side 负责依据 done criteria 判断 task 是否完成。</li>
+            <li>artifact 只是 action result，不自动完成 task。</li>
+          </ul>
+        </div>
+      </details>
+
+      <details>
+        <summary>Phase 2：WebSocket 通知推送</summary>
+        <div class="details-body">
+          <ul>
+            <li>保留 HTTP manual fetch 作为 fallback。</li>
+            <li>新增 WebSocket push，让本地 listener 能实时收到 task.pending 通知。</li>
+            <li>本地 thread adapter 由用户自定义，不强绑定在 cloud relay。</li>
+          </ul>
+        </div>
+      </details>
+
+      <details>
+        <summary>Docker 生产运行</summary>
+        <div class="details-body">
+          <ul>
+            <li>relay 已切换为 Docker 运行。</li>
+            <li>server repo 和 public MCP/client repo 的安装路径已明确。</li>
+            <li>auth token 和 agent identity 已有脚本支持。</li>
+          </ul>
+        </div>
+      </details>
+
+      <details>
+        <summary>任务完成策略</summary>
+        <div class="details-body">
+          <ul>
+            <li>task complete 由 requester side 的 done criteria 定义。</li>
+            <li>close 必须由 completion owner 执行。</li>
+            <li>human 可以作为 completion authority 被记录，但 human-agent 私聊默认不进入 relay 审计。</li>
+            <li>terminal task 不重新打开；后续变更创建同 context 的 child task。</li>
+          </ul>
+        </div>
+      </details>
+    </section>
+
+    <section id="zh-phase3">
+      <h2>Phase 3：Agent Collaboration Protocol</h2>
+      <p>Phase 1/2 证明 relay 能跑。Phase 3 的目标是定义一个能长期演进的 agent 协作协议：任务归属、完成标准、人类批准、action result、终态完成、重试和 child task。</p>
+
+      <div class="grid three">
+        <div class="card">
+          <span class="tag green">原则</span>
+          <h3>小而稳定</h3>
+          <p>relay 只做通道、状态、身份、通知、可靠投递和审计，不成为 agent brain。</p>
+        </div>
+        <div class="card">
+          <span class="tag blue">协议</span>
+          <h3>共享契约</h3>
+          <p>agent 用 task、artifact、event、done criteria、pending owner 和 completion authority 协作。</p>
+        </div>
+        <div class="card">
+          <span class="tag amber">边界</span>
+          <h3>用户拥有入口</h3>
+          <p>Codex App、CLI、微信、Slack 等本地入口由用户自己的 adapter 决定。</p>
+        </div>
+      </div>
+
+      <h3>当前协议形状</h3>
+      <div class="grid">
+        <div class="card">
+          <h3>Agent</h3>
+          <ul>
+            <li><strong>identity:</strong> agent id 和 auth token。</li>
+            <li><strong>owner:</strong> agent 代表的人或组织。</li>
+            <li><strong>capabilities:</strong> agent 能处理的 task type / skill。</li>
+            <li><strong>Agent Card:</strong> 可机器读取的能力、endpoint、approval policy 和 A2A mapping。</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Task</h3>
+          <ul>
+            <li><strong>requester_agent_id:</strong> 发起请求的 agent。</li>
+            <li><strong>target_agent_id:</strong> 被请求协作的 agent。</li>
+            <li><strong>done_criteria:</strong> requester side 定义的完成标准。</li>
+            <li><strong>completion_owner_agent_id:</strong> 有权 close task 的 agent。</li>
+            <li><strong>pending_on_agent_id:</strong> 下一步责任归属。</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Artifact</h3>
+          <p>artifact 是 action result，不自动完成 task。它可以包含 <code>source_refs</code>，解释结果依据，同时隐藏私密 human-agent 对话。</p>
+        </div>
+        <div class="card">
+          <h3>Events</h3>
+          <p>task event 是 append-only audit history；agent event 是 durable task.pending 通知，支持 cursor、lease、inflight、done、failed 和 ack。</p>
+        </div>
+      </div>
+
+      <details>
+        <summary>Protocol v0.2 / v0.1 历史形状和完整请求样例</summary>
+        <div class="details-body">
+          <p>英文版保留了完整 JSON 样例。中文页重点记录当前协议决策：Human 不是 relay 的一等参与者；human 的输入/批准作为 agent 本地 workflow 或 redacted approval summary 进入审计。</p>
+        </div>
+      </details>
+
+      <h3>Implementation Roadmap</h3>
+      <ol class="steps">
+        <li>
+          <div>
+            <h3>Schema and agent-first envelope</h3>
+            <p><span class="tag green">Completed</span> 已加入 Protocol v0.3 JSON schemas、create/artifact/close 校验、agent-first response envelope、结构化错误提示和 v0.3 smoke test。</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Timeline and audit model</h3>
+            <p><span class="tag green">Completed</span> 已把 append-only task events 规整为 dashboard-ready timeline，并提供 API、schema 和 MCP tool。</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Transition validator and completion authority</h3>
+            <p><span class="tag green">Completed</span> 已集中校验合法状态流转、terminal 保护、next_action/terminal_reason、max turns、TTL、artifact 不自动完成 task，以及 human completion authority。</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Reliable event delivery</h3>
+            <p><span class="tag green">Completed</span> 已支持 idempotency key、cursor event read、pending/inflight/done/failed、lease claim、ack 和 secret-safe WebSocket push。</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Source refs and approval summaries</h3>
+            <p><span class="tag green">Completed</span> 已支持 normalized source_refs、redacted approval summary、completion authority source refs、final artifact source refs，以及 public/redacted/private visibility。</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Agent Cards and A2A mapping</h3>
+            <p><span class="tag green">Completed</span> 已扩展 Agent Card，加入 A2A-shaped metadata、capabilities、auth、skills、accepted task types、scopes、endpoints 和 human approval policy；完整 A2A JSON-RPC runtime 仍是未来工作。</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Admin/debug views or CLI</h3>
+            <p>下一步：为 agents、tasks、timelines、events、pending work 增加 admin/debug view 或 CLI，方便运行和排障。</p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="note">
+        <p><strong>下一步实现重点：</strong>增加 admin/debug views 或 CLI，用于查看 agents、tasks、timelines、events 和 pending work。</p>
+      </div>
+    </section>
+
+    <section id="zh-octo">
+      <h2>Octo 对比</h2>
+      <p>Octo 是很有价值的参考，但它不能替代 AgentRelay。核心区别是：Octo 更偏人和 workspace/IM；AgentRelay 更偏 agent workflow 和跨环境 agent 协议。</p>
+
+      <details>
+        <summary>AgentRelay vs Octo 对比和可借鉴点</summary>
+        <div class="details-body">
+          <table>
+            <thead>
+              <tr>
+                <th>维度</th>
+                <th>AgentRelay</th>
+                <th>Octo</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>核心理念</td>
+                <td>AI 在中心，do all the work；人负责目标、确认、批准和验收。</td>
+                <td>人和 workspace/IM 在中心，强调人与人、人与 agent、agent 与 agent 协作。</td>
+              </tr>
+              <tr>
+                <td>主要场景</td>
+                <td>跨机器、跨 owner、跨环境 agent 协作解决问题。</td>
+                <td>企业协作、IM、workspace 和多参与方沟通。</td>
+              </tr>
+              <tr>
+                <td>relay 职责</td>
+                <td>身份、状态、通知、可靠投递、审计。</td>
+                <td>更完整的协作产品和 UI。</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3>AgentRelay 借鉴 Octo 的点</h3>
+          <ul>
+            <li>更清晰的 timeline / activity log。</li>
+            <li>artifact 输出和 task completion 分离。</li>
+            <li>事件投递的 cursor、dedup、inflight、done、ack。</li>
+            <li>push 流不传 secret 或敏感正文。</li>
+            <li>面向 agent 的结构化 JSON 输出和错误提示。</li>
+            <li>source_refs 作为结果依据，而不是把私密对话放进 relay。</li>
+          </ul>
+        </div>
+      </details>
+    </section>
+
+    <section id="zh-references">
+      <h2>参考</h2>
+      <ul>
+        <li><a href="https://github.com/ZilingXie/agentRelay">Server repo: ZilingXie/agentRelay</a></li>
+        <li><a href="https://github.com/ZilingXie/agent-relay-mcp">Client repo: ZilingXie/agent-relay-mcp</a></li>
+        <li><a href="https://a2a-protocol.org/latest/specification/">A2A Protocol specification</a></li>
+        <li><a href="https://a2a-protocol.org/latest/topics/a2a-and-mcp/">A2A and MCP comparison</a></li>
+        <li><a href="https://modelcontextprotocol.io/docs/getting-started/intro">Model Context Protocol introduction</a></li>
+        <li><a href="https://developers.openai.com/codex/mcp">Codex MCP configuration</a></li>
+      </ul>
+    </section>
+
+    <footer>
+      <p>AgentRelay 路线图。公开路径：<code>/agentrelay/plan.html</code>。</p>
+    </footer>
+  </main>
+
+  <script>
+    const savedLanguage = localStorage.getItem("agentrelay-plan-lang");
+    const browserLanguage = navigator.language && navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+    const initialLanguage = savedLanguage || browserLanguage;
+    document.body.dataset.lang = initialLanguage === "zh" ? "zh" : "en";
+
+    for (const button of document.querySelectorAll("[data-set-lang]")) {
+      button.addEventListener("click", () => {
+        const lang = button.dataset.setLang === "zh" ? "zh" : "en";
+        document.body.dataset.lang = lang;
+        localStorage.setItem("agentrelay-plan-lang", lang);
+      });
+    }
+  </script>
 </body>
 </html>
