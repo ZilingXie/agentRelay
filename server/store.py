@@ -189,19 +189,6 @@ class Store:
         for column, sql in migrations.items():
             if column not in columns:
                 conn.execute(sql)
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_agent_events_agent_delivery
-                ON agent_events (agent_id, delivery_state, created_at, event_id)
-            """
-        )
-        conn.execute(
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_events_idempotency
-                ON agent_events (agent_id, idempotency_key)
-                WHERE idempotency_key IS NOT NULL
-            """
-        )
 
     def ensure_agent_event_columns(self, conn: sqlite3.Connection) -> None:
         columns = {
@@ -220,6 +207,19 @@ class Store:
         for column, sql in migrations.items():
             if column not in columns:
                 conn.execute(sql)
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_agent_events_agent_delivery
+                ON agent_events (agent_id, delivery_state, created_at, event_id)
+            """
+        )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_events_idempotency
+                ON agent_events (agent_id, idempotency_key)
+                WHERE idempotency_key IS NOT NULL
+            """
+        )
 
     def ensure_seed_agents(self, conn: sqlite3.Connection) -> None:
         now = int(time.time())

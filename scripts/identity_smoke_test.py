@@ -63,6 +63,76 @@ def main() -> None:
         print(json.dumps({"ok": True, "agent_id": identity["agent_id"]}, indent=2))
         if "Created/updated agent registry row" not in result.stdout:
             raise AssertionError("script did not report agent registry update")
+        assert_identity_script_migrates_legacy_agent_events(tmpdir)
+
+
+def assert_identity_script_migrates_legacy_agent_events(tmpdir: Path) -> None:
+    auth_file = tmpdir / "legacy-auth.json"
+    db_path = tmpdir / "legacy-agentrelay.sqlite3"
+    env_dir = tmpdir / "legacy-env"
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE agents (
+                agent_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                owner TEXT NOT NULL,
+                description TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE tasks (
+                task_id TEXT PRIMARY KEY,
+                context_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                requester_agent_id TEXT NOT NULL,
+                target_agent_id TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                ttl INTEGER,
+                max_turns INTEGER NOT NULL DEFAULT 12,
+                turn_count INTEGER NOT NULL DEFAULT 0,
+                claimed_by TEXT,
+                claimed_at INTEGER,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE agent_events (
+                event_id TEXT PRIMARY KEY,
+                agent_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                acked_at INTEGER,
+                created_at INTEGER NOT NULL
+            );
+            """
+        )
+
+    subprocess.run(
+        [
+            "python3",
+            "scripts/upsert_agent_identity.py",
+            "Legacy User",
+            "--auth-file",
+            str(auth_file),
+            "--db-path",
+            str(db_path),
+            "--env-dir",
+            str(env_dir),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    with sqlite3.connect(db_path) as conn:
+        columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(agent_events)").fetchall()
+        }
+        for expected in ["idempotency_key", "delivery_state", "delivery_attempts"]:
+            if expected not in columns:
+                raise AssertionError(f"legacy agent_events migration missed {expected}")
 
 
 if __name__ == "__main__":
