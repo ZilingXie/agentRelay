@@ -325,7 +325,7 @@ Implementation stance:
 7. [x] Reliable event delivery: add idempotency keys, event cursor support, local delivery states for `dedup`, `inflight`, `done`, and ack semantics; keep secrets out of push payloads.
 8. [x] Source refs and approval summaries: add optional `source_refs` and redacted approval summaries for important artifacts and closes.
 9. [x] Expand Agent Cards and A2A mapping: add capabilities, accepted task types, scopes, approval policy, and a minimal A2A compatibility map.
-10. [ ] Add admin/debug views or CLI for agents, tasks, timelines, events, and pending work.
+10. [x] Add admin/debug views or CLI for agents, tasks, timelines, events, and pending work.
 11. [ ] Run the two-agent meeting flow again under the validated v0.3 protocol.
 
 ## 8. First Implementation Slice
@@ -464,6 +464,28 @@ Implemented outputs:
 - MCP smoke coverage for expanded Agent Cards.
 
 Compatibility note: this slice does not implement a full A2A JSON-RPC runtime. It intentionally documents the current HTTP relay mapping and discovery surface so future A2A gateway work can be added without overstating compatibility.
+
+## 8.6 Admin Debug CLI Slice
+
+Status: completed as a read-only local SQLite inspection CLI.
+
+Implemented outputs:
+
+- `scripts/agentrelay_admin.py`
+- `docs/admin-cli.md`
+- Commands:
+  - `summary`: high-level counts for agents, tasks, pending owners, and events.
+  - `agents`: list known agent registry rows.
+  - `tasks`: list recent tasks with optional agent/status filters.
+  - `task`: show one full task with messages, artifacts, and thread bindings.
+  - `timeline`: show normalized task timeline.
+  - `events`: list durable agent events with agent/state filters.
+  - `pending`: list task work currently pending on one agent.
+- Table output for quick SSH debugging.
+- JSON output for scripts and future dashboard tooling.
+- `scripts/admin_cli_smoke_test.py`.
+
+Compatibility note: this is intentionally read-only and local to trusted machines with SQLite DB access. It does not add a public admin API or dashboard surface yet.
 
 The first implementation slice should be intentionally small:
 

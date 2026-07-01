@@ -39,6 +39,7 @@ The important Phase 1 requirement is thread reuse:
 - `docs/relay-auth.md`: Phase 1 relay username/token auth
 - `docs/relay-deployment.md`: relay deployment notes
 - `docs/docker-deployment.md`: Docker Compose deployment and rollback notes
+- `docs/admin-cli.md`: local admin/debug CLI for inspecting agents, tasks, timelines, events, and pending work
 - Public MCP installer repo: https://github.com/ZilingXie/agent-relay-mcp
 - `docs/local-mcp-install.md`: pointer to the public MCP install repo
 - `bridge/`: bridge contracts and prompt templates
@@ -80,9 +81,12 @@ Next implementation slice:
 
 - [x] Create Phase 3 plan.
 - [x] Document the current Phase 1/2 agent communication protocol.
-- [ ] Add JSON schemas for protocol payloads.
-- [ ] Implement and test an explicit task state transition validator.
-- [ ] Add idempotency keys and first-class human approval records.
+- [x] Add JSON schemas and agent-first response envelopes.
+- [x] Implement and test an explicit task state transition validator.
+- [x] Add reliable event delivery, source refs, approval summaries, Agent Cards, and A2A mapping.
+- [x] Add admin/debug CLI for agents, tasks, timelines, events, and pending work.
+
+See `phase3-plan.md` and the public `plan.html` for the current roadmap.
 
 ## Run Locally
 
@@ -100,6 +104,14 @@ MCP smoke test:
 
 ```bash
 npm test
+```
+
+Admin/debug CLI:
+
+```bash
+python3 scripts/agentrelay_admin.py --db-path data/agentrelay.sqlite3 summary
+python3 scripts/agentrelay_admin.py --db-path data/agentrelay.sqlite3 pending frank-agent
+python3 scripts/agentrelay_admin.py --format json --db-path data/agentrelay.sqlite3 events --state failed
 ```
 
 The smoke test verifies:

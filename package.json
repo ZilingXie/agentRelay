@@ -13,10 +13,10 @@
   "scripts": {
     "mcp:server": "node mcp/server.mjs",
     "test:mcp": "node scripts/mcp_smoke_test.mjs",
-    "test:python": "python3 -m py_compile server/app.py server/store.py server/protocol_v03.py server/timeline.py server/transitions.py scripts/smoke_test.py scripts/auth_smoke_test.py scripts/generate_agent_token.py scripts/upsert_agent_identity.py scripts/identity_smoke_test.py scripts/sync_agents_from_auth.py scripts/phase2_store_smoke_test.py scripts/phase2_api_smoke_test.py scripts/protocol_v02_smoke_test.py scripts/protocol_v03_smoke_test.py scripts/transition_smoke_test.py scripts/reliable_event_smoke_test.py scripts/agent_card_smoke_test.py server/ws_app.py scripts/phase2_ws_smoke_test.py",
+    "test:python": "python3 -m py_compile server/app.py server/store.py server/protocol_v03.py server/timeline.py server/transitions.py scripts/smoke_test.py scripts/auth_smoke_test.py scripts/generate_agent_token.py scripts/upsert_agent_identity.py scripts/identity_smoke_test.py scripts/sync_agents_from_auth.py scripts/phase2_store_smoke_test.py scripts/phase2_api_smoke_test.py scripts/protocol_v02_smoke_test.py scripts/protocol_v03_smoke_test.py scripts/transition_smoke_test.py scripts/reliable_event_smoke_test.py scripts/agent_card_smoke_test.py scripts/agentrelay_admin.py scripts/admin_cli_smoke_test.py server/ws_app.py scripts/phase2_ws_smoke_test.py",
     "test:auth": "python3 scripts/auth_smoke_test.py",
     "test:identity": "python3 scripts/identity_smoke_test.py",
-    "test": "npm run test:python && npm run test:auth && npm run test:identity && npm run test:phase2 && npm run test:phase2:api && npm run test:protocol:v02 && npm run test:protocol:v03 && npm run test:transitions && npm run test:reliable-events && npm run test:agent-card && npm run test:phase2:ws && npm run test:mcp",
+    "test": "npm run test:python && npm run test:auth && npm run test:identity && npm run test:phase2 && npm run test:phase2:api && npm run test:protocol:v02 && npm run test:protocol:v03 && npm run test:transitions && npm run test:reliable-events && npm run test:agent-card && npm run test:admin-cli && npm run test:phase2:ws && npm run test:mcp",
     "test:phase2": "python3 scripts/phase2_store_smoke_test.py",
     "test:phase2:api": "python3 scripts/phase2_api_smoke_test.py",
     "test:protocol:v02": "python3 scripts/protocol_v02_smoke_test.py",
@@ -24,6 +24,7 @@
     "test:transitions": "python3 scripts/transition_smoke_test.py",
     "test:reliable-events": "python3 scripts/reliable_event_smoke_test.py",
     "test:agent-card": "python3 scripts/agent_card_smoke_test.py",
+    "test:admin-cli": "python3 scripts/admin_cli_smoke_test.py",
     "test:phase2:ws": "python3 scripts/phase2_ws_smoke_test.py"
   },
   "keywords": [],
