@@ -151,3 +151,31 @@ Verify after the user configures local MCP:
 agentrelay_health
 agentrelay_list_agents
 ```
+
+## Read-Only Admin Dashboard
+
+Set a relay-wide admin token before starting Docker:
+
+```bash
+export AGENTRELAY_ADMIN_TOKEN="$(openssl rand -base64 32)"
+docker compose up -d --build
+```
+
+Open:
+
+```text
+https://server.stellarix.space/agentrelay/dashboard/
+```
+
+Paste the admin token into the dashboard. The dashboard is read-only and uses:
+
+```text
+GET /agentrelay/admin/api/summary
+GET /agentrelay/admin/api/agents
+GET /agentrelay/admin/api/tasks
+GET /agentrelay/admin/api/tasks/{task_id}
+GET /agentrelay/admin/api/events
+```
+
+Nginx must proxy `/agentrelay/dashboard/` and `/agentrelay/admin/api/`; see
+`deploy/nginx-agentrelay-locations.conf`.

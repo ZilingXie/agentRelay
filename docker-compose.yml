@@ -10,6 +10,7 @@ services:
       AGENTRELAY_PORT: "8787"
       AGENTRELAY_DB_PATH: "/app/data/agentrelay.sqlite3"
       AGENTRELAY_AUTH_FILE: "/app/data/agentrelay-auth.json"
+      AGENTRELAY_ADMIN_TOKEN: "${AGENTRELAY_ADMIN_TOKEN:-}"
     ports:
       - "${AGENTRELAY_API_BIND:-127.0.0.1:8787}:8787"
     volumes:
