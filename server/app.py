@@ -711,6 +711,59 @@ def a2a_mapping(agent: dict[str, Any]) -> dict[str, Any]:
 
 
 def default_agent_skills(agent: dict[str, Any]) -> list[dict[str, Any]]:
+    if agent["agent_id"] == "project-hermes":
+        return [
+            {
+                "id": "collab-workspace-governance",
+                "name": "Collab workspace governance",
+                "description": "Receive Project Hermes relay tasks, record governed workspace notes, and maintain collab_workspace project state within L0/L1/L2 policy.",
+                "tags": ["project-hermes", "collab_workspace", "workspace", "governance"],
+                "examples": [
+                    "Record an AgentRelay request as a governed Project Hermes workspace note.",
+                    "Summarize a workspace state update with source references.",
+                ],
+                "inputModes": ["application/json", "text/plain"],
+                "outputModes": ["application/json", "text/plain"],
+                "agentRelay": {
+                    "accepted_task_types": ["workspace.note", "project.state_update", "artifact.review"],
+                    "intents": ["workspace_change_request", "project_state_update", "review_result_ingestion"],
+                    "l3_actions": "forbidden",
+                },
+            },
+            {
+                "id": "bounded-dashboard-edit",
+                "name": "Bounded dashboard edit",
+                "description": "Execute narrow approved edits to the Project Hermes dashboard, including known title font-size adjustments in dashboard.html.",
+                "tags": ["dashboard", "html", "font-size", "bounded-edit"],
+                "examples": [
+                    "Increase the dashboard title text font size by 2px and report the file location and verification result.",
+                ],
+                "inputModes": ["application/json", "text/plain"],
+                "outputModes": ["application/json", "text/plain"],
+                "agentRelay": {
+                    "accepted_task_types": ["workspace.dashboard_title_font_size"],
+                    "intents": ["dashboard_title_font_size_updated"],
+                    "scope": "/home/ubuntu/collab_workspace/dashboard.html",
+                },
+            },
+            {
+                "id": "human-agent-dispatch",
+                "name": "Human agent dispatch",
+                "description": "Dispatch Project Hermes tasks to zac-agent or vivi-agent when the target human agent can be inferred.",
+                "tags": ["dispatch", "zac-agent", "vivi-agent", "task-routing"],
+                "examples": [
+                    "Dispatch a review task to vivi-agent and return the child task id.",
+                ],
+                "inputModes": ["application/json", "text/plain"],
+                "outputModes": ["application/json", "text/plain"],
+                "agentRelay": {
+                    "accepted_task_types": ["project.dispatch"],
+                    "intents": ["dispatch_to_human_agent"],
+                    "targets": ["zac-agent", "vivi-agent"],
+                },
+            },
+        ]
+
     return [
         {
             "id": "meeting-coordination",
