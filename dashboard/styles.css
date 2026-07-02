@@ -316,7 +316,11 @@ tbody tr.selected {
 pre {
   margin: 8px 0 0;
   max-height: 220px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 6px;
