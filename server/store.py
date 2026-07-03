@@ -637,6 +637,12 @@ class Store:
                 pending_on_agent_id = task["completion_owner_agent_id"]
             if not next_status:
                 next_status = "delivery_pending" if pending_on_agent_id else "working"
+            pending_on_agent_id = normalize_artifact_handoff(
+                task,
+                actor_agent_id,
+                next_status,
+                pending_on_agent_id,
+            )
             if not next_action and pending_on_agent_id:
                 next_action = "Requester agent should evaluate the artifact against done_criteria."
             assert_artifact_allowed(task, actor_agent_id, next_status, pending_on_agent_id, next_action)
@@ -1229,6 +1235,14 @@ def normalize_task_create(payload: dict[str, Any]) -> dict[str, Any]:
         )
     )
 
+    completion_owner_agent_id = (
+        payload.get("completionOwnerAgentId")
+        or payload.get("completion_owner_agent_id")
+        or requester_agent_id
+    )
+    if requester_agent_id != target_agent_id and completion_owner_agent_id == target_agent_id:
+        completion_owner_agent_id = requester_agent_id
+
     return {
         "protocol_version": payload.get("protocol_version") or PROTOCOL_VERSION,
         "idempotency_key": payload.get("idempotency_key"),
@@ -1249,11 +1263,7 @@ def normalize_task_create(payload: dict[str, Any]) -> dict[str, Any]:
         "max_turns": int(payload.get("maxTurns") or payload.get("max_turns") or 12),
         "done_criteria": done_criteria_storage,
         "done_criteria_payload": done_criteria_payload,
-        "completion_owner_agent_id": (
-            payload.get("completionOwnerAgentId")
-            or payload.get("completion_owner_agent_id")
-            or requester_agent_id
-        ),
+        "completion_owner_agent_id": completion_owner_agent_id,
         "pending_on_agent_id": (
             payload.get("pendingOnAgentId")
             or payload.get("pending_on_agent_id")
@@ -1299,6 +1309,21 @@ def normalize_artifact_submit(payload: dict[str, Any]) -> dict[str, Any]:
             "source_refs": artifact.get("source_refs") or [],
         },
     }
+
+
+def normalize_artifact_handoff(
+    task: dict[str, Any],
+    actor_agent_id: str,
+    next_status: str | None,
+    pending_on_agent_id: str | None,
+) -> str | None:
+    if (
+        next_status == "delivery_pending"
+        and pending_on_agent_id == actor_agent_id
+        and actor_agent_id != task.get("requester_agent_id")
+    ):
+        return task.get("requester_agent_id")
+    return pending_on_agent_id
 
 
 def normalize_final_artifact(final_artifact: Any) -> dict[str, Any] | None:
