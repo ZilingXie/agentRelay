@@ -103,6 +103,7 @@ def main() -> None:
                 "POST",
                 f"{BASE_URL}/tasks/{task_id}/artifacts",
                 {
+                    "protocol_version": "agent-collab-v0.2",
                     "actor_agent_id": "frank-agent",
                     "artifact": {
                         "intent": "availability_response",
@@ -116,6 +117,7 @@ def main() -> None:
             after_artifact = post_json(
                 f"{BASE_URL}/tasks/{task_id}/artifacts",
                 {
+                    "protocol_version": "agent-collab-v0.2",
                     "actor_agent_id": "frank-agent",
                     "artifact": {
                         "intent": "availability_response",
@@ -135,13 +137,18 @@ def main() -> None:
                 400,
                 "POST",
                 f"{BASE_URL}/tasks/{task_id}/close",
-                {"closedByAgentId": "frank-agent", "terminalReason": "wrong owner"},
+                {
+                    "protocol_version": "agent-collab-v0.2",
+                    "closedByAgentId": "frank-agent",
+                    "terminalReason": "wrong owner",
+                },
                 AGENT_B_HEADERS,
             )
 
             closed = post_json(
                 f"{BASE_URL}/tasks/{task_id}/close",
                 {
+                    "protocol_version": "agent-collab-v0.2",
                     "closedByAgentId": "zac-agent",
                     "terminalReason": "Zac agent confirmed the same meeting time.",
                 },

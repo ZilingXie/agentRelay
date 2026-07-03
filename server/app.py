@@ -264,7 +264,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             if is_protocol_v03(payload):
                 validate_task_close(payload)
                 payload = normalize_close_payload(payload)
-            if not self.require_agent(auth, payload.get("closedByAgentId")):
+            closed_by_agent_id = read_alias(payload, "closed_by_agent_id", "closedByAgentId")
+            if not self.require_agent(auth, closed_by_agent_id):
                 return
             task = self.store.close_task(match.group(1), payload)
             if not task:

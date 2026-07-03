@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from server.protocol_v03 import normalize_completion_authority, normalize_source_refs
+from server.protocol_v03 import PROTOCOL_V03, normalize_completion_authority, normalize_source_refs
 from server.timeline import build_timeline_entry
 from server.transitions import (
     CLAIMABLE_STATES,
@@ -24,7 +24,7 @@ from server.transitions import (
 )
 
 
-PROTOCOL_VERSION = "agent-collab-v0.2"
+PROTOCOL_VERSION = PROTOCOL_V03
 AGENT_EVENT_DELIVERY_STATES = {"pending", "inflight", "done", "failed"}
 
 
@@ -810,7 +810,9 @@ class Store:
 
     def close_task(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         now = int(time.time())
-        closed_by_agent_id = required(payload, "closedByAgentId")
+        closed_by_agent_id = read_alias(payload, "closed_by_agent_id", "closedByAgentId")
+        if not closed_by_agent_id:
+            raise ValueError("missing required field: closedByAgentId")
         terminal_reason = payload.get("terminalReason") or "requester closed task"
         protocol_version = payload.get("protocol_version") or PROTOCOL_VERSION
         completion_authority = normalize_completion_authority(payload.get("completion_authority"))
