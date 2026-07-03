@@ -294,6 +294,50 @@ def main() -> None:
             if close_entry["completion_authority"]["source_refs"][0].get("uri"):
                 raise AssertionError("timeline completion authority should use sanitized source_refs")
 
+            defaulted_env = post_json(
+                f"{BASE_URL}/tasks",
+                {
+                    "idempotency_key": "create-defaults-to-v03",
+                    "task_type": "meeting.schedule",
+                    "subject": "Default protocol version smoke",
+                    "requester_agent_id": "zac-agent",
+                    "target_agent_id": "frank-agent",
+                    "done_criteria": "Requester validates the default protocol version.",
+                    "completion_owner_agent_id": "zac-agent",
+                    "pending_on_agent_id": "frank-agent",
+                    "next_action": "Frank should acknowledge.",
+                    "message": {
+                        "actor_agent_id": "zac-agent",
+                        "intent": "request",
+                        "parts": [{"kind": "text", "text": "Confirm default protocol version."}],
+                    },
+                },
+                AGENT_A_HEADERS,
+                expected_status=201,
+            )
+            assert_success_envelope(defaulted_env)
+            defaulted_task_id = defaulted_env["data"]["task"]["task_id"]
+            defaulted_close_env = post_json(
+                f"{BASE_URL}/tasks/{defaulted_task_id}/close",
+                {
+                    "idempotency_key": "close-defaults-to-v03",
+                    "closed_by_agent_id": "zac-agent",
+                    "terminal_reason": "Default protocol version verified.",
+                },
+                AGENT_A_HEADERS,
+            )
+            assert_success_envelope(defaulted_close_env)
+            defaulted_events = get_json(
+                f"{BASE_URL}/tasks/{defaulted_task_id}/events",
+                AGENT_A_HEADERS,
+            )["data"]["events"]
+            defaulted_created = find_event(defaulted_events, "task.created")
+            defaulted_closed = find_event(defaulted_events, "task.completed")
+            if defaulted_created["payload"].get("protocol_version") != "agent-collab-v0.3":
+                raise AssertionError("default task.created should use v0.3 protocol_version")
+            if defaulted_closed["payload"].get("protocol_version") != "agent-collab-v0.3":
+                raise AssertionError("default task.completed should use v0.3 protocol_version")
+
             print(json.dumps({"ok": True, "taskId": task_id, "status": close_env["data"]["task"]["status"]}, indent=2))
         finally:
             proc.terminate()
