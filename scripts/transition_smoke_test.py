@@ -82,6 +82,24 @@ def main() -> None:
             )
             assert_error_contains(err, "terminal")
 
+            self_loop = create_task("transition-self-loop-handoff", max_turns=3)
+            claim_task(self_loop)
+            after_self_loop_guard = submit_artifact(
+                self_loop,
+                {
+                    "protocol_version": "agent-collab-v0.3",
+                    "idempotency_key": "artifact-self-loop-handoff",
+                    "actor_agent_id": "frank-agent",
+                    "intent": "provide_availability",
+                    "artifact": artifact_body(),
+                    "next_status": "delivery_pending",
+                    "pending_on_agent_id": "frank-agent",
+                    "next_action": "Requester should evaluate this result.",
+                },
+            )["data"]["task"]
+            if after_self_loop_guard["pending_on_agent_id"] != "zac-agent":
+                raise AssertionError("artifact handoff should not keep delivery_pending on the actor agent")
+
             bad_authority = create_task("transition-bad-authority", max_turns=3)
             claim_task(bad_authority)
             submit_valid_artifact(bad_authority)
@@ -158,7 +176,7 @@ def main() -> None:
             )
             assert_error_contains(err, "terminal")
 
-            print(json.dumps({"ok": True, "checked": 5}, indent=2))
+            print(json.dumps({"ok": True, "checked": 6}, indent=2))
         finally:
             proc.terminate()
             try:

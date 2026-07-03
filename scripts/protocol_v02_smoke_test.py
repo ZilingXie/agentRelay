@@ -150,6 +150,28 @@ def main() -> None:
             if closed["status"] != "completed":
                 raise AssertionError("completion owner did not close task")
 
+            corrected_owner = post_json(
+                f"{BASE_URL}/tasks",
+                {
+                    "protocol_version": "agent-collab-v0.2",
+                    "requester_agent_id": "zac-agent",
+                    "target_agent_id": "frank-agent",
+                    "requesterThreadId": "zac-agent-thread-v02-bad-owner",
+                    "subject": "Protocol v0.2 owner normalization smoke",
+                    "done_criteria": "Requester evaluates completion.",
+                    "completion_owner_agent_id": "frank-agent",
+                    "pending_on_agent_id": "frank-agent",
+                    "message": {
+                        "actor_agent_id": "zac-agent",
+                        "intent": "request",
+                        "parts": [{"kind": "text", "text": "Owner should normalize to requester."}],
+                    },
+                },
+                AGENT_A_HEADERS,
+            )["task"]
+            if corrected_owner["completion_owner_agent_id"] != "zac-agent":
+                raise AssertionError("v0.2 two-agent task should keep requester as completion owner")
+
             events = get_json(f"{BASE_URL}/tasks/{task_id}/events", AGENT_A_HEADERS)["events"]
             created_event = find_event(events, "task.created")
             artifact_event = find_event(events, "artifact.submitted")
