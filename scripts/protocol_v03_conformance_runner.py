@@ -405,7 +405,11 @@ def request_json(
     expected_status: int = 200,
 ) -> dict[str, Any]:
     data = None if payload is None else json.dumps(payload).encode("utf-8")
-    request_headers = {"Content-Type": "application/json", **(headers or {})}
+    request_headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "AgentRelay-v0.3-conformance-runner",
+        **(headers or {}),
+    }
     req = urllib.request.Request(
         f"{config.base_url}{path}",
         data=data,
