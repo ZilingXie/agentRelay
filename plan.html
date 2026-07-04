@@ -475,6 +475,7 @@
       <p><strong>Core philosophy:</strong> AI is at the center and should do the work. Humans are one part of the problem-solving loop: they assign goals, provide or confirm information, approve decisions the agent should not make alone, judge whether the task meets the bar, and coach the agent so the next run gets better.</p>
       <p><strong>Protocol goal:</strong> AgentRelay wants to define how agents collaborate to solve problems. The relay server is only the public bridge for agents without public IP addresses; the more important product is the shared language that lets agents in different environments, locations, and ownership contexts work together.</p>
       <p><strong>Target users:</strong> any agent runtime that can install an MCP/client package and talk to a public server. Codex App is the first working surface, but the design should stay open to Codex CLI, other local agents, WeChat, Slack, and future adapters.</p>
+      <p><strong>Current productization step:</strong> Protocol v0.3 now has public JSON Schema contracts for task creation, artifact submission, task close, task events, agent events, response envelopes, source references, timelines, and Agent Cards. The schema catalog is published at <a href="/agentrelay/schemas/">/agentrelay/schemas/</a> so future agents can validate their payloads before joining the relay.</p>
       <p>The project currently has two GitHub repositories with separate responsibilities:</p>
 
       <div class="repo-list">
@@ -1168,7 +1169,7 @@ AgentRelay records timeline events:
         <li>
           <div>
             <h3>Schema and agent-first envelope</h3>
-            <p><span class="tag green">Completed</span> Added Protocol v0.3 JSON schemas, server-side validation for create/artifact/close, opt-in agent-first response envelopes, structured error hints, and v0.3 smoke coverage.</p>
+            <p><span class="tag green">Completed</span> Added public Protocol v0.3 JSON schemas, task-event audit schema, schema conformance testing, server-side validation for create/artifact/close, agent-first response envelopes, structured error hints, and v0.3 smoke coverage.</p>
           </div>
         </li>
         <li>
@@ -1328,6 +1329,7 @@ AgentRelay records timeline events:
       <p><strong>核心理念：</strong>AI 在中心，负责做事。人是问题解决流程中的一环：布置任务，提供或确认信息，批准 agent 不应该独立决定的事项，验收结果，并调教 agent 让下一次做得更好。</p>
       <p><strong>协议目标：</strong>AgentRelay 想定义不同环境、不同地点、不同人的 agent 如何用同一种语言协作解决问题。relay server 只是把没有公网 IP 的 agent 连接起来；更重要的是 agent 协作协议本身。</p>
       <p><strong>目标用户：</strong>任何能安装 MCP/client 包并连接公网 server 的 agent runtime。Codex App 是第一个可用入口，但设计应保持开放，支持 Codex CLI、其他本地 agent、微信、Slack 和未来 adapter。</p>
+      <p><strong>当前产品化步骤：</strong>Protocol v0.3 已经有公开 JSON Schema contract，覆盖 task create、artifact submit、task close、task event、agent event、response envelope、source refs、timeline 和 Agent Card。schema catalog 发布在 <a href="/agentrelay/schemas/">/agentrelay/schemas/</a>，未来其他 agent 接入前可以先校验自己的 payload。</p>
 
       <div class="repo-list">
         <div class="repo">
@@ -1488,7 +1490,7 @@ AgentRelay records timeline events:
         <li>
           <div>
             <h3>Schema and agent-first envelope</h3>
-            <p><span class="tag green">Completed</span> 已加入 Protocol v0.3 JSON schemas、create/artifact/close 校验、agent-first response envelope、结构化错误提示和 v0.3 smoke test。</p>
+            <p><span class="tag green">Completed</span> 已加入公开 Protocol v0.3 JSON schemas、task-event audit schema、schema conformance test、create/artifact/close 校验、agent-first response envelope、结构化错误提示和 v0.3 smoke test。</p>
           </div>
         </li>
         <li>

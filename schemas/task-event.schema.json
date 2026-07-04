@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/task-event.schema.json",
+  "title": "AgentRelay Protocol v0.3 Task Event",
+  "description": "Append-only audit event for cross-agent task state. Private human-agent deliberation stays local unless an agent deliberately summarizes it into an artifact or completion authority.",
+  "type": "object",
+  "required": ["event_id", "task_id", "event_type", "payload", "created_at"],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "task.created",
+        "task.claimed",
+        "task.status_updated",
+        "artifact.submitted",
+        "ownership.transferred",
+        "reply.delivered",
+        "reply.delivery_failed",
+        "thread.created",
+        "thread.reused",
+        "task.completed"
+      ]
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "agent-collab-v0.3"
+        },
+        "idempotency_key": {
+          "type": ["string", "null"]
+        },
+        "actor_agent_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requester_agent_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_agent_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pending_on_agent_id": {
+          "type": ["string", "null"]
+        },
+        "next_action": {
+          "type": ["string", "null"]
+        },
+        "artifactId": {
+          "type": "string"
+        },
+        "artifact_id": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "source-ref.schema.json"
+          },
+          "default": []
+        },
+        "completion_authority": {
+          "type": ["object", "null"],
+          "additionalProperties": true
+        },
+        "terminal_reason": {
+          "type": "string"
+        },
+        "closed_by_agent_id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "created_at": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cursor": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": true
+}
