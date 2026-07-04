@@ -88,6 +88,9 @@ def main() -> None:
             protocol_doc = get_text("http://127.0.0.1:8797/agentrelay/docs/protocol-v03.md")
             if "AgentRelay Protocol v0.3" not in protocol_doc:
                 raise AssertionError("protocol doc endpoint did not serve protocol-v03.md")
+            conformance_doc = get_text("http://127.0.0.1:8797/agentrelay/docs/protocol-v03-conformance.md")
+            if "Conformance Runner" not in conformance_doc:
+                raise AssertionError("conformance doc endpoint did not serve protocol-v03-conformance.md")
             meeting_example = get_json(
                 "http://127.0.0.1:8797/agentrelay/examples/protocol-v03/meeting-task-create.json"
             )

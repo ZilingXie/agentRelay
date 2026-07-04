@@ -242,6 +242,21 @@ The examples below are validated by `npm run test:schema`.
 - `examples/protocol-v03/dashboard-artifact-submit.json`
 - `examples/protocol-v03/unavailable-artifact-submit.json`
 
+## Conformance
+
+Use the conformance runner to prove that a relay and two disposable agent
+identities can complete the v0.3 collaboration loop against a real server:
+
+```text
+create -> claim -> artifact -> handoff -> close -> timeline
+```
+
+Documentation:
+
+```text
+docs/protocol-v03-conformance.md
+```
+
 ## Compatibility
 
 The server still accepts legacy and v0.2 compatibility payloads while the

@@ -83,6 +83,7 @@ Next implementation slice:
 - [x] Document the current Phase 1/2 agent communication protocol.
 - [x] Add public JSON schemas, schema conformance tests, and agent-first response envelopes.
 - [x] Publish Protocol v0.3 guide and machine-validated example payloads.
+- [x] Add Protocol v0.3 conformance runner for local and real relay checks.
 - [x] Implement and test an explicit task state transition validator.
 - [x] Add reliable event delivery, source refs, approval summaries, Agent Cards, and A2A mapping.
 - [x] Add admin/debug CLI for agents, tasks, timelines, events, and pending work.

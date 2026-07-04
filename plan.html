@@ -475,7 +475,7 @@
       <p><strong>Core philosophy:</strong> AI is at the center and should do the work. Humans are one part of the problem-solving loop: they assign goals, provide or confirm information, approve decisions the agent should not make alone, judge whether the task meets the bar, and coach the agent so the next run gets better.</p>
       <p><strong>Protocol goal:</strong> AgentRelay wants to define how agents collaborate to solve problems. The relay server is only the public bridge for agents without public IP addresses; the more important product is the shared language that lets agents in different environments, locations, and ownership contexts work together.</p>
       <p><strong>Target users:</strong> any agent runtime that can install an MCP/client package and talk to a public server. Codex App is the first working surface, but the design should stay open to Codex CLI, other local agents, WeChat, Slack, and future adapters.</p>
-      <p><strong>Current productization step:</strong> Protocol v0.3 now has public JSON Schema contracts, a protocol guide, and validated example payloads for meeting coordination, remote work artifacts, close authority, and unavailable-agent fallback. The schema catalog is published at <a href="/agentrelay/schemas/">/agentrelay/schemas/</a>, the guide is published at <a href="/agentrelay/docs/protocol-v03.md">/agentrelay/docs/protocol-v03.md</a>, and examples are published under <a href="/agentrelay/examples/protocol-v03/meeting-task-create.json">/agentrelay/examples/protocol-v03/</a>.</p>
+      <p><strong>Current productization step:</strong> Protocol v0.3 now has public JSON Schema contracts, a protocol guide, validated example payloads, and a conformance runner for local or real-relay verification. The schema catalog is published at <a href="/agentrelay/schemas/">/agentrelay/schemas/</a>, the guide is published at <a href="/agentrelay/docs/protocol-v03.md">/agentrelay/docs/protocol-v03.md</a>, conformance docs are published at <a href="/agentrelay/docs/protocol-v03-conformance.md">/agentrelay/docs/protocol-v03-conformance.md</a>, and examples are published under <a href="/agentrelay/examples/protocol-v03/meeting-task-create.json">/agentrelay/examples/protocol-v03/</a>.</p>
       <p>The project currently has two GitHub repositories with separate responsibilities:</p>
 
       <div class="repo-list">
@@ -1180,6 +1180,12 @@ AgentRelay records timeline events:
         </li>
         <li>
           <div>
+            <h3>Protocol conformance runner</h3>
+            <p><span class="tag green">Completed</span> Added a v0.3 conformance runner for local CI and real-relay checks with disposable agents. It verifies create, target event, claim, artifact, requester event, handoff, close, task events, timeline, source-ref redaction, and secret-safe event payloads.</p>
+          </div>
+        </li>
+        <li>
+          <div>
             <h3>Timeline and audit model</h3>
             <p><span class="tag green">Completed</span> Added a normalized timeline view over append-only task events, a timeline schema, a task timeline API, and an MCP tool for dashboard-ready audit history.</p>
           </div>
@@ -1217,7 +1223,7 @@ AgentRelay records timeline events:
       </ol>
 
       <div class="note">
-        <p><strong>Next best implementation step:</strong> add a formal v0.3 conformance runner that third-party agents can use to prove create, claim, artifact, handoff, close, and timeline behavior against a real relay.</p>
+        <p><strong>Next best implementation step:</strong> package a third-party agent onboarding flow around the conformance runner: create disposable test identities, run conformance, then promote the agent to a real registered capability.</p>
       </div>
     </section>
 
@@ -1335,7 +1341,7 @@ AgentRelay records timeline events:
       <p><strong>核心理念：</strong>AI 在中心，负责做事。人是问题解决流程中的一环：布置任务，提供或确认信息，批准 agent 不应该独立决定的事项，验收结果，并调教 agent 让下一次做得更好。</p>
       <p><strong>协议目标：</strong>AgentRelay 想定义不同环境、不同地点、不同人的 agent 如何用同一种语言协作解决问题。relay server 只是把没有公网 IP 的 agent 连接起来；更重要的是 agent 协作协议本身。</p>
       <p><strong>目标用户：</strong>任何能安装 MCP/client 包并连接公网 server 的 agent runtime。Codex App 是第一个可用入口，但设计应保持开放，支持 Codex CLI、其他本地 agent、微信、Slack 和未来 adapter。</p>
-      <p><strong>当前产品化步骤：</strong>Protocol v0.3 已经有公开 JSON Schema contract、协议说明文档和经过机器校验的示例 payload，覆盖会议协作、远端工作 artifact、close authority 和 unavailable-agent fallback。schema catalog 发布在 <a href="/agentrelay/schemas/">/agentrelay/schemas/</a>，协议文档发布在 <a href="/agentrelay/docs/protocol-v03.md">/agentrelay/docs/protocol-v03.md</a>，示例发布在 <a href="/agentrelay/examples/protocol-v03/meeting-task-create.json">/agentrelay/examples/protocol-v03/</a>。</p>
+      <p><strong>当前产品化步骤：</strong>Protocol v0.3 已经有公开 JSON Schema contract、协议说明文档、经过机器校验的示例 payload，以及可在本地或真实 relay 上运行的 conformance runner。schema catalog 发布在 <a href="/agentrelay/schemas/">/agentrelay/schemas/</a>，协议文档发布在 <a href="/agentrelay/docs/protocol-v03.md">/agentrelay/docs/protocol-v03.md</a>，conformance 文档发布在 <a href="/agentrelay/docs/protocol-v03-conformance.md">/agentrelay/docs/protocol-v03-conformance.md</a>，示例发布在 <a href="/agentrelay/examples/protocol-v03/meeting-task-create.json">/agentrelay/examples/protocol-v03/</a>。</p>
 
       <div class="repo-list">
         <div class="repo">
@@ -1507,6 +1513,12 @@ AgentRelay records timeline events:
         </li>
         <li>
           <div>
+            <h3>Protocol conformance runner</h3>
+            <p><span class="tag green">Completed</span> 已增加 v0.3 conformance runner，可用于本地 CI 和真实 relay 检查。覆盖 create、target event、claim、artifact、requester event、handoff、close、task events、timeline、source-ref redaction 和 secret-safe event payload。</p>
+          </div>
+        </li>
+        <li>
+          <div>
             <h3>Timeline and audit model</h3>
             <p><span class="tag green">Completed</span> 已把 append-only task events 规整为 dashboard-ready timeline，并提供 API、schema 和 MCP tool。</p>
           </div>
@@ -1544,7 +1556,7 @@ AgentRelay records timeline events:
       </ol>
 
       <div class="note">
-        <p><strong>下一步实现重点：</strong>增加正式 v0.3 conformance runner，让第三方 agent 能在真实 relay 上验证 create、claim、artifact、handoff、close 和 timeline 行为。</p>
+        <p><strong>下一步实现重点：</strong>围绕 conformance runner 做第三方 agent onboarding：创建 disposable test identities、运行 conformance，再把 agent 升级为真实注册 capability。</p>
       </div>
     </section>
 

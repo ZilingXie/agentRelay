@@ -352,8 +352,11 @@ Implemented outputs:
 - `scripts/protocol_v03_smoke_test.py`.
 - `scripts/schema_conformance_test.mjs`.
 - `docs/protocol-v03.md`.
+- `docs/protocol-v03-conformance.md`.
 - `examples/protocol-v03/*.json`.
+- `scripts/protocol_v03_conformance_runner.py`.
 - `npm run test:protocol:v03`.
+- `npm run test:protocol:v03:conformance`.
 - `npm run test:schema`.
 
 Compatibility note: legacy/v0.2 clients still receive the existing response shape unless they explicitly request the v0.3 envelope.
@@ -375,7 +378,22 @@ Implemented outputs:
   the public schemas.
 - Published docs and examples through the relay under:
   - `/agentrelay/docs/protocol-v03.md`
+  - `/agentrelay/docs/protocol-v03-conformance.md`
   - `/agentrelay/examples/protocol-v03/*.json`
+
+## 8.0.2 Protocol Conformance Runner
+
+Status: completed.
+
+Implemented outputs:
+
+- Added `scripts/protocol_v03_conformance_runner.py`.
+- Runner supports a temporary local relay for CI/development.
+- Runner supports real relay verification with two disposable agent identities.
+- Checks health, create, target event, precise claim, artifact, requester event,
+  requester claim, close, task events, timeline, redacted source refs, and
+  secret-safe event payloads.
+- Added `npm run test:protocol:v03:conformance`.
 
 ## 8.1 Timeline And Audit Slice
 
