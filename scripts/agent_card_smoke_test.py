@@ -79,6 +79,13 @@ def main() -> None:
             if mapping["operation_map"]["message/send"]["agentrelay"] != "POST /agentrelay/api/tasks":
                 raise AssertionError("A2A message/send should map to task create")
 
+            task_event_schema = get_json("http://127.0.0.1:8797/agentrelay/schemas/task-event.schema.json")
+            if task_event_schema["title"] != "AgentRelay Protocol v0.3 Task Event":
+                raise AssertionError("task-event schema endpoint did not serve the public schema")
+            schema_index = get_text("http://127.0.0.1:8797/agentrelay/schemas/")
+            if "AgentRelay Protocol v0.3 Schemas" not in schema_index:
+                raise AssertionError("schema catalog endpoint did not serve README.md")
+
             print(json.dumps({"ok": True, "agentId": relay["agent_id"], "skills": len(card["skills"])}, indent=2))
         finally:
             proc.terminate()
@@ -104,6 +111,12 @@ def get_json(url: str, headers: dict[str, str] | None = None) -> dict:
     req = urllib.request.Request(url, method="GET", headers=headers or {})
     with urllib.request.urlopen(req, timeout=5) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def get_text(url: str, headers: dict[str, str] | None = None) -> str:
+    req = urllib.request.Request(url, method="GET", headers=headers or {})
+    with urllib.request.urlopen(req, timeout=5) as response:
+        return response.read().decode("utf-8")
 
 
 if __name__ == "__main__":

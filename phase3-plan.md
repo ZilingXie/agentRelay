@@ -337,16 +337,22 @@ Implemented outputs:
 - `schemas/task-create.schema.json`
 - `schemas/artifact-submit.schema.json`
 - `schemas/task-close.schema.json`
+- `schemas/task-event.schema.json`
 - `schemas/agent-event.schema.json`
+- `schemas/task-timeline.schema.json`
+- `schemas/agent-card.schema.json`
 - `schemas/response-envelope.schema.json`
 - `schemas/part.schema.json`
 - `schemas/source-ref.schema.json`
+- `schemas/README.md`
 - `server/protocol_v03.py`
 - Protocol v0.3 request validation for create/artifact/close.
 - Agent-first response envelopes for v0.3 requests and `X-AgentRelay-Envelope: v0.3` clients.
 - Structured error envelopes with `type`, `code`, `message`, `hint`, and `detail.field`.
 - `scripts/protocol_v03_smoke_test.py`.
+- `scripts/schema_conformance_test.mjs`.
 - `npm run test:protocol:v03`.
+- `npm run test:schema`.
 
 Compatibility note: legacy/v0.2 clients still receive the existing response shape unless they explicitly request the v0.3 envelope.
 

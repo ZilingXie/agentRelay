@@ -26,6 +26,7 @@ from server.protocol_v03 import (
 
 DEFAULT_DB_PATH = "./data/agentrelay.sqlite3"
 DASHBOARD_DIR = Path(__file__).resolve().parents[1] / "dashboard"
+SCHEMA_DIR = Path(__file__).resolve().parents[1] / "schemas"
 
 
 class AgentRelayHandler(BaseHTTPRequestHandler):
@@ -74,6 +75,12 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         if path.startswith("/agentrelay/dashboard/"):
             self.serve_dashboard_asset(path.removeprefix("/agentrelay/dashboard/"))
+            return
+        if path in {"/agentrelay/schemas", "/agentrelay/schemas/"}:
+            self.serve_schema_asset("README.md")
+            return
+        if path.startswith("/agentrelay/schemas/"):
+            self.serve_schema_asset(path.removeprefix("/agentrelay/schemas/"))
             return
         if path.startswith("/agentrelay/admin/api/"):
             if not self.require_admin_auth():
@@ -462,6 +469,24 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             ".html": "text/html; charset=utf-8",
             ".js": "application/javascript; charset=utf-8",
             ".css": "text/css; charset=utf-8",
+        }.get(file_path.suffix, "application/octet-stream")
+        self.respond_static(file_path.read_bytes(), content_type)
+
+    def serve_schema_asset(self, relative_path: str) -> None:
+        asset = "README.md" if not relative_path else relative_path
+        if "/" in asset or "\\" in asset or asset.startswith("."):
+            self.respond_error(404, "schema asset not found")
+            return
+        if not (asset.endswith(".schema.json") or asset == "README.md"):
+            self.respond_error(404, "schema asset not found")
+            return
+        file_path = SCHEMA_DIR / asset
+        if not file_path.exists():
+            self.respond_error(404, "schema asset not found")
+            return
+        content_type = {
+            ".json": "application/schema+json; charset=utf-8",
+            ".md": "text/markdown; charset=utf-8",
         }.get(file_path.suffix, "application/octet-stream")
         self.respond_static(file_path.read_bytes(), content_type)
 
