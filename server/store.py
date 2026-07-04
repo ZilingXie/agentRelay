@@ -578,8 +578,29 @@ class Store:
             pending_on_agent_id = read_alias(payload, "pending_on_agent_id", "pendingOnAgentId")
             pending_on_human_id = payload.get("pendingOnHumanId")
             conn.execute(
-                "UPDATE tasks SET status = ?, updated_at = ? WHERE task_id = ?",
-                (status, now, task_id),
+                """
+                UPDATE tasks
+                SET status = ?,
+                    delivery_status = CASE
+                        WHEN ? IN ('completed', 'failed', 'cancelled', 'expired', 'rejected')
+                         AND delivery_status = 'pending'
+                        THEN 'delivered'
+                        ELSE delivery_status
+                    END,
+                    claimed_by = CASE
+                        WHEN ? IN ('completed', 'failed', 'cancelled', 'expired', 'rejected')
+                        THEN NULL
+                        ELSE claimed_by
+                    END,
+                    claimed_at = CASE
+                        WHEN ? IN ('completed', 'failed', 'cancelled', 'expired', 'rejected')
+                        THEN NULL
+                        ELSE claimed_at
+                    END,
+                    updated_at = ?
+                WHERE task_id = ?
+                """,
+                (status, status, status, status, now, task_id),
             )
             update_fields = {"status": status, **payload}
             if terminal_reason is not None:
@@ -608,6 +629,8 @@ class Store:
                 )
             self.add_event_conn(conn, task_id, "task.status_updated", update_fields, now)
             self.create_pending_agent_event_conn(conn, task_id, "task.status_updated", now)
+            if status in TERMINAL_STATES:
+                self.cleanup_terminal_task_delivery_conn(conn, task_id, now)
             return self.get_task_conn(conn, task_id)
 
     def submit_artifact(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -830,6 +853,12 @@ class Store:
                     pending_on_agent_id = NULL,
                     pending_on_human_id = NULL,
                     next_action = NULL,
+                    delivery_status = CASE
+                        WHEN delivery_status = 'pending' THEN 'delivered'
+                        ELSE delivery_status
+                    END,
+                    claimed_by = NULL,
+                    claimed_at = NULL,
                     terminal_reason = ?,
                     updated_at = ?
                 WHERE task_id = ?
@@ -852,7 +881,30 @@ class Store:
                 },
                 now,
             )
+            self.cleanup_terminal_task_delivery_conn(conn, task_id, now)
             return self.get_task_conn(conn, task_id)
+
+    def cleanup_terminal_task_delivery_conn(
+        self,
+        conn: sqlite3.Connection,
+        task_id: str,
+        closed_at: int,
+    ) -> None:
+        conn.execute(
+            """
+            UPDATE agent_events
+            SET delivery_state = 'done',
+                acked_at = COALESCE(acked_at, ?),
+                done_at = COALESCE(done_at, ?),
+                failed_at = NULL,
+                inflight_until = NULL,
+                last_error = NULL
+            WHERE task_id = ?
+              AND acked_at IS NULL
+              AND delivery_state IN ('pending', 'inflight', 'failed')
+            """,
+            (closed_at, closed_at, task_id),
+        )
 
     def create_agent_event(
         self,

@@ -136,13 +136,89 @@ def main() -> None:
             if [row["event_id"] for row in done_list] != [event["event_id"]]:
                 raise AssertionError("done event should be visible when explicitly requested")
 
-            print(json.dumps({"ok": True, "taskId": task_id, "eventId": event["event_id"]}, indent=2))
+            cleanup = assert_terminal_task_cleans_stale_events(store)
+
+            print(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "taskId": task_id,
+                        "eventId": event["event_id"],
+                        "terminalCleanupEventId": cleanup["event_id"],
+                    },
+                    indent=2,
+                )
+            )
         finally:
             proc.terminate()
             try:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
+
+
+def assert_terminal_task_cleans_stale_events(store: Store) -> dict:
+    task = store.create_task(
+        {
+            "from": "zac-agent",
+            "to": "frank-agent",
+            "requesterThreadId": "zac-thread-terminal-cleanup",
+            "subject": "Terminal cleanup",
+            "doneCriteria": "Requester closes after receiving artifact.",
+            "message": {
+                "role": "user",
+                "parts": [{"kind": "text", "text": "Return a result, then requester will close."}],
+            },
+        }
+    )
+    task_id = task["task_id"]
+    frank_event = store.list_agent_events("frank-agent")[-1]
+    store.ack_agent_event("frank-agent", frank_event["event_id"])
+    store.submit_artifact(
+        task_id,
+        {
+            "from": "frank-agent",
+            "to": "zac-agent",
+            "nextStatus": "delivery_pending",
+            "pendingOnAgentId": "zac-agent",
+            "nextAction": "Requester should evaluate and close.",
+            "artifact": {
+                "kind": "result",
+                "parts": [{"kind": "text", "text": "The requested work is done."}],
+            },
+        },
+    )
+    zac_events = store.claim_agent_events("zac-agent", lease_seconds=30)
+    cleanup_event = next(row for row in zac_events if row["task_id"] == task_id)
+    if cleanup_event["delivery_state"] != "inflight":
+        raise AssertionError("test setup should leave requester event inflight before close")
+    before_close = store.get_task(task_id)
+    if not before_close or before_close["delivery_status"] != "pending":
+        raise AssertionError("test setup should leave delivery_status pending before close")
+
+    closed = store.close_task(
+        task_id,
+        {
+            "closedByAgentId": "zac-agent",
+            "terminalReason": "Requester validated artifact and closed task.",
+        },
+    )
+    if not closed or closed["status"] != "completed":
+        raise AssertionError("terminal cleanup task did not close")
+    if closed["delivery_status"] != "delivered":
+        raise AssertionError("close should clear pending delivery_status")
+    if store.list_agent_events("zac-agent"):
+        raise AssertionError("terminal close should hide stale requester events from default list")
+    done_events = [
+        row
+        for row in store.list_agent_events("zac-agent", include_acked=True, delivery_state="done")
+        if row["task_id"] == task_id
+    ]
+    if [row["event_id"] for row in done_events] != [cleanup_event["event_id"]]:
+        raise AssertionError("terminal close should ack stale requester event as done")
+    if not done_events[0]["acked_at"] or not done_events[0]["done_at"]:
+        raise AssertionError("terminal cleanup should set acked_at and done_at")
+    return cleanup_event
 
 
 def wait_for_health() -> None:
