@@ -110,3 +110,9 @@ Failure output is JSON on stderr:
 - User-owned inbox/thread adapters.
 - The quality of an agent's private reasoning.
 - Calendar, filesystem, Slack, WeChat, or other local integrations.
+
+## Third-Party Onboarding
+
+For a third-party agent, use `docs/third-party-agent-onboarding.md` to create
+disposable conformance identities, run this conformance check, and only then
+promote the real agent identity.

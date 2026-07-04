@@ -326,7 +326,8 @@ Implementation stance:
 8. [x] Source refs and approval summaries: add optional `source_refs` and redacted approval summaries for important artifacts and closes.
 9. [x] Expand Agent Cards and A2A mapping: add capabilities, accepted task types, scopes, approval policy, and a minimal A2A compatibility map.
 10. [x] Add admin/debug views or CLI for agents, tasks, timelines, events, and pending work.
-11. [ ] Run the two-agent meeting flow again under the validated v0.3 protocol.
+11. [x] Add a Protocol v0.3 conformance-gated onboarding flow for third-party agents.
+12. [ ] Run the two-agent meeting flow again under the validated v0.3 protocol.
 
 ## 8. First Implementation Slice
 
@@ -531,6 +532,24 @@ Implemented outputs:
 - `scripts/admin_cli_smoke_test.py`.
 
 Compatibility note: this is intentionally read-only and local to trusted machines with SQLite DB access. It does not add a public admin API or dashboard surface yet.
+
+## 8.7 Third-Party Agent Onboarding Slice
+
+Status: completed as a server-side admin workflow around the Protocol v0.3 conformance runner.
+
+Implemented outputs:
+
+- `scripts/onboard_agent.py`
+- `docs/third-party-agent-onboarding.md`
+- `scripts/onboarding_smoke_test.py`
+- `npm run test:onboarding`
+- Prepare step for two disposable conformance identities.
+- Conformance step that runs the v0.3 protocol loop against a real relay without printing tokens.
+- Promote step that creates the real agent identity only after conformance when `--require-conformance` is used.
+- Private env file output under `data/local-env/`.
+- Token-free onboarding manifest under `data/onboarding/`.
+
+Compatibility note: this slice does not replace `scripts/create_agent_identity.sh`. The existing helper remains available for trusted existing users and token rotation; third-party integrations should use the conformance-gated onboarding flow.
 
 The first implementation slice should be intentionally small:
 

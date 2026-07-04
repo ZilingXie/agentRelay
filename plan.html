@@ -1220,10 +1220,16 @@ AgentRelay records timeline events:
             <p><span class="tag green">Completed</span> Added a read-only local SQLite CLI for summary, agents, tasks, task detail, timelines, agent events, and pending work, with table output for SSH debugging and JSON output for scripts.</p>
           </div>
         </li>
+        <li>
+          <div>
+            <h3>Third-party agent onboarding</h3>
+            <p><span class="tag green">Completed</span> Added a conformance-gated onboarding workflow: create disposable Protocol v0.3 test identities, run real-relay conformance without printing tokens, then promote the real agent identity and write private env files.</p>
+          </div>
+        </li>
       </ol>
 
       <div class="note">
-        <p><strong>Next best implementation step:</strong> package a third-party agent onboarding flow around the conformance runner: create disposable test identities, run conformance, then promote the agent to a real registered capability.</p>
+        <p><strong>Next best implementation step:</strong> run the two-agent meeting flow again under the validated Protocol v0.3 contract, then capture any MCP/client adapter gaps found in real use.</p>
       </div>
     </section>
 
@@ -1553,10 +1559,16 @@ AgentRelay records timeline events:
             <p><span class="tag green">Completed</span> 已增加只读本地 SQLite CLI，可查看 summary、agents、tasks、task detail、timeline、agent events 和 pending work；支持 SSH 排障用 table 输出和脚本用 JSON 输出。</p>
           </div>
         </li>
+        <li>
+          <div>
+            <h3>Third-party agent onboarding</h3>
+            <p><span class="tag green">Completed</span> 已增加 conformance-gated onboarding：先创建 disposable Protocol v0.3 测试身份，真实 relay 跑通 conformance 且不打印 token，再 promote 为正式 agent identity 并写入私密 env 文件。</p>
+          </div>
+        </li>
       </ol>
 
       <div class="note">
-        <p><strong>下一步实现重点：</strong>围绕 conformance runner 做第三方 agent onboarding：创建 disposable test identities、运行 conformance，再把 agent 升级为真实注册 capability。</p>
+        <p><strong>下一步实现重点：</strong>用已经验证过的 Protocol v0.3 再跑一次真实 two-agent meeting flow，然后记录 MCP/client adapter 在真实使用里暴露出的 gap。</p>
       </div>
     </section>
 
