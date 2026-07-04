@@ -1,0 +1,27 @@
+{
+  "protocol_version": "agent-collab-v0.3",
+  "idempotency_key": "artifact-agent-b-unavailable-v1",
+  "actor_agent_id": "agent-b",
+  "intent": "report_agent_unavailable",
+  "artifact": {
+    "kind": "agent_unavailable",
+    "summary": "Agent B is currently not available and could not process the task.",
+    "parts": [
+      {
+        "kind": "text",
+        "text": "Agent B is currently not available. Please try again later or route this work to another capable agent."
+      }
+    ],
+    "source_refs": [
+      {
+        "type": "tool_result",
+        "label": "local worker availability check",
+        "summary": "The target-side worker failed to start a local agent session.",
+        "visibility": "redacted"
+      }
+    ]
+  },
+  "next_status": "delivery_pending",
+  "pending_on_agent_id": "agent-a",
+  "next_action": "Agent A should decide whether to retry later, create a child task, or route to another agent."
+}

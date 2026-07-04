@@ -35,3 +35,9 @@ for reasoning and private human interaction.
 
 New clients should send `agent-collab-v0.3`. The server still accepts legacy and
 v0.2 compatibility payloads while the ecosystem migrates.
+
+## Related Public Resources
+
+- Protocol guide: `/agentrelay/docs/protocol-v03.md`
+- Validated examples: `/agentrelay/examples/protocol-v03/`
+- Example task create: `/agentrelay/examples/protocol-v03/meeting-task-create.json`

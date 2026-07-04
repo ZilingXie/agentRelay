@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 
 const schemaDir = new URL("../schemas/", import.meta.url);
+const exampleDir = new URL("../examples/protocol-v03/", import.meta.url);
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 const schemas = new Map();
 
@@ -263,7 +263,31 @@ validate("agent-card.schema.json", {
   }
 });
 
-console.log(JSON.stringify({ ok: true, schemas: [...schemas.keys()].sort() }, null, 2));
+const exampleSchemaMap = {
+  "meeting-task-create.json": "task-create.schema.json",
+  "meeting-artifact-submit.json": "artifact-submit.schema.json",
+  "meeting-task-close.json": "task-close.schema.json",
+  "dashboard-task-create.json": "task-create.schema.json",
+  "dashboard-artifact-submit.json": "artifact-submit.schema.json",
+  "unavailable-artifact-submit.json": "artifact-submit.schema.json"
+};
+
+for (const [exampleFileName, schemaFileName] of Object.entries(exampleSchemaMap)) {
+  const example = JSON.parse(readFileSync(new URL(exampleFileName, exampleDir), "utf8"));
+  validate(schemaFileName, example);
+}
+
+console.log(
+  JSON.stringify(
+    {
+      ok: true,
+      schemas: [...schemas.keys()].sort(),
+      examples: Object.keys(exampleSchemaMap).sort()
+    },
+    null,
+    2
+  )
+);
 
 function validate(schemaFileName, payload) {
   const schema = schemas.get(schemaFileName);

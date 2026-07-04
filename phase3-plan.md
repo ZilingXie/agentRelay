@@ -351,10 +351,31 @@ Implemented outputs:
 - Structured error envelopes with `type`, `code`, `message`, `hint`, and `detail.field`.
 - `scripts/protocol_v03_smoke_test.py`.
 - `scripts/schema_conformance_test.mjs`.
+- `docs/protocol-v03.md`.
+- `examples/protocol-v03/*.json`.
 - `npm run test:protocol:v03`.
 - `npm run test:schema`.
 
 Compatibility note: legacy/v0.2 clients still receive the existing response shape unless they explicitly request the v0.3 envelope.
+
+## 8.0.1 Protocol Guide And Examples
+
+Status: completed.
+
+Implemented outputs:
+
+- Published `docs/protocol-v03.md` as the agent-facing v0.3 guide.
+- Added validated examples for:
+  - meeting task create
+  - meeting artifact submit
+  - meeting task close
+  - dashboard/work artifact flow
+  - unavailable-agent fallback
+- Extended schema conformance testing so example payloads are validated against
+  the public schemas.
+- Published docs and examples through the relay under:
+  - `/agentrelay/docs/protocol-v03.md`
+  - `/agentrelay/examples/protocol-v03/*.json`
 
 ## 8.1 Timeline And Audit Slice
 

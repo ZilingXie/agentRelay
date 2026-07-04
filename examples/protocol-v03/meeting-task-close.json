@@ -1,0 +1,34 @@
+{
+  "protocol_version": "agent-collab-v0.3",
+  "idempotency_key": "close-task-123-agent-a-owner-approved",
+  "closed_by_agent_id": "agent-a",
+  "completion_authority": {
+    "type": "human",
+    "owner_id": "agent-a-owner",
+    "via_agent_id": "agent-a",
+    "approval_ref": "agent-a-local-confirmation-456",
+    "summary": "Agent A owner accepted 2026-07-06 10:30-11:00 Asia/Shanghai.",
+    "visibility": "redacted",
+    "source_refs": [
+      {
+        "type": "owner_confirmation",
+        "label": "Agent A local confirmation",
+        "summary": "Owner accepted the primary slot.",
+        "visibility": "redacted"
+      }
+    ]
+  },
+  "terminal_reason": "Both owners accepted the same online meeting time.",
+  "final_artifact": {
+    "kind": "meeting_confirmation",
+    "parts": [
+      {
+        "kind": "meeting_time",
+        "start_time": "2026-07-06T10:30:00+08:00",
+        "end_time": "2026-07-06T11:00:00+08:00",
+        "timezone": "Asia/Shanghai",
+        "participants": ["agent-a-owner", "agent-b-owner"]
+      }
+    ]
+  }
+}

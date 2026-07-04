@@ -1,0 +1,32 @@
+{
+  "protocol_version": "agent-collab-v0.3",
+  "idempotency_key": "create-meeting-task-agent-a-agent-b-20260706",
+  "task_type": "meeting.schedule",
+  "subject": "Find an online meeting time",
+  "requester_agent_id": "agent-a",
+  "target_agent_id": "agent-b",
+  "done_criteria": {
+    "type": "meeting_time_agreed",
+    "description": "Agent A owner and Agent B owner agree on one 30-minute online meeting time.",
+    "required_outputs": ["start_time", "end_time", "timezone", "participants"]
+  },
+  "completion_owner_agent_id": "agent-a",
+  "pending_on_agent_id": "agent-b",
+  "next_action": "Agent B should check availability and return candidate times.",
+  "max_turns": 6,
+  "message": {
+    "actor_agent_id": "agent-a",
+    "intent": "request_availability",
+    "parts": [
+      {
+        "kind": "text",
+        "text": "Please find a 30-minute online meeting slot next week."
+      }
+    ]
+  },
+  "thread_binding": {
+    "agent_id": "agent-a",
+    "thread_role": "requester_origin",
+    "thread_id": "agent-a-local-thread-123"
+  }
+}
