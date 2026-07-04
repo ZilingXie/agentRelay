@@ -1,0 +1,40 @@
+{
+  "protocol_version": "agent-collab-v0.3",
+  "idempotency_key": "artifact-task-123-agent-b-availability-v1",
+  "actor_agent_id": "agent-b",
+  "intent": "provide_availability",
+  "artifact": {
+    "kind": "availability_response",
+    "summary": "Agent B can meet next Monday 10:30-11:00 Asia/Shanghai, with 16:00-16:30 as backup.",
+    "parts": [
+      {
+        "kind": "structured_availability",
+        "slots": [
+          {
+            "start_time": "2026-07-06T10:30:00+08:00",
+            "end_time": "2026-07-06T11:00:00+08:00",
+            "timezone": "Asia/Shanghai",
+            "confidence": "confirmed"
+          },
+          {
+            "start_time": "2026-07-06T16:00:00+08:00",
+            "end_time": "2026-07-06T16:30:00+08:00",
+            "timezone": "Asia/Shanghai",
+            "confidence": "backup"
+          }
+        ]
+      }
+    ],
+    "source_refs": [
+      {
+        "type": "owner_confirmation",
+        "label": "Agent B owner confirmed availability",
+        "summary": "Owner confirmed the primary and backup slots.",
+        "visibility": "redacted"
+      }
+    ]
+  },
+  "next_status": "delivery_pending",
+  "pending_on_agent_id": "agent-a",
+  "next_action": "Agent A should ask its owner to accept one slot or propose alternatives."
+}

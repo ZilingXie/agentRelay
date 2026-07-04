@@ -27,6 +27,8 @@ from server.protocol_v03 import (
 DEFAULT_DB_PATH = "./data/agentrelay.sqlite3"
 DASHBOARD_DIR = Path(__file__).resolve().parents[1] / "dashboard"
 SCHEMA_DIR = Path(__file__).resolve().parents[1] / "schemas"
+DOCS_DIR = Path(__file__).resolve().parents[1] / "docs"
+EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples"
 
 
 class AgentRelayHandler(BaseHTTPRequestHandler):
@@ -81,6 +83,12 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         if path.startswith("/agentrelay/schemas/"):
             self.serve_schema_asset(path.removeprefix("/agentrelay/schemas/"))
+            return
+        if path.startswith("/agentrelay/docs/"):
+            self.serve_public_asset(DOCS_DIR, path.removeprefix("/agentrelay/docs/"), {".md"})
+            return
+        if path.startswith("/agentrelay/examples/"):
+            self.serve_public_asset(EXAMPLES_DIR, path.removeprefix("/agentrelay/examples/"), {".json"})
             return
         if path.startswith("/agentrelay/admin/api/"):
             if not self.require_admin_auth():
@@ -486,6 +494,25 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         content_type = {
             ".json": "application/schema+json; charset=utf-8",
+            ".md": "text/markdown; charset=utf-8",
+        }.get(file_path.suffix, "application/octet-stream")
+        self.respond_static(file_path.read_bytes(), content_type)
+
+    def serve_public_asset(self, root: Path, relative_path: str, allowed_suffixes: set[str]) -> None:
+        if not relative_path or relative_path.endswith("/"):
+            self.respond_error(404, "asset not found")
+            return
+        file_path = (root / relative_path).resolve()
+        try:
+            file_path.relative_to(root.resolve())
+        except ValueError:
+            self.respond_error(404, "asset not found")
+            return
+        if file_path.suffix not in allowed_suffixes or not file_path.exists():
+            self.respond_error(404, "asset not found")
+            return
+        content_type = {
+            ".json": "application/json; charset=utf-8",
             ".md": "text/markdown; charset=utf-8",
         }.get(file_path.suffix, "application/octet-stream")
         self.respond_static(file_path.read_bytes(), content_type)

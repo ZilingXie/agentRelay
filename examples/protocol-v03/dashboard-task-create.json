@@ -1,0 +1,23 @@
+{
+  "protocol_version": "agent-collab-v0.3",
+  "idempotency_key": "create-dashboard-title-task-agent-a-agent-b-v1",
+  "task_type": "workspace.dashboard_title_update",
+  "subject": "Update dashboard page title",
+  "requester_agent_id": "agent-a",
+  "target_agent_id": "agent-b",
+  "done_criteria": "Agent B updates the requested dashboard title, reports the file changed, and provides a verification method. Agent A evaluates and closes.",
+  "completion_owner_agent_id": "agent-a",
+  "pending_on_agent_id": "agent-b",
+  "next_action": "Agent B should inspect the dashboard file, make the bounded title update if needed, and return verification evidence.",
+  "max_turns": 4,
+  "message": {
+    "actor_agent_id": "agent-a",
+    "intent": "request_bounded_workspace_edit",
+    "parts": [
+      {
+        "kind": "text",
+        "text": "Please set the dashboard HTML title to 'Mature AI evolves itself 9' and verify the live page title."
+      }
+    ]
+  }
+}

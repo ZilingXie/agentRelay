@@ -7,8 +7,10 @@ WORKDIR /app
 COPY server ./server
 COPY dashboard ./dashboard
 COPY schemas ./schemas
+COPY docs ./docs
+COPY examples ./examples
 
-RUN mkdir -p /app/data && chmod -R a+rX /app/server /app/dashboard /app/schemas
+RUN mkdir -p /app/data && chmod -R a+rX /app/server /app/dashboard /app/schemas /app/docs /app/examples
 
 USER 1000:1000
 

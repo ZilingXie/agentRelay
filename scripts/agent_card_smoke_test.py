@@ -85,6 +85,14 @@ def main() -> None:
             schema_index = get_text("http://127.0.0.1:8797/agentrelay/schemas/")
             if "AgentRelay Protocol v0.3 Schemas" not in schema_index:
                 raise AssertionError("schema catalog endpoint did not serve README.md")
+            protocol_doc = get_text("http://127.0.0.1:8797/agentrelay/docs/protocol-v03.md")
+            if "AgentRelay Protocol v0.3" not in protocol_doc:
+                raise AssertionError("protocol doc endpoint did not serve protocol-v03.md")
+            meeting_example = get_json(
+                "http://127.0.0.1:8797/agentrelay/examples/protocol-v03/meeting-task-create.json"
+            )
+            if meeting_example["protocol_version"] != "agent-collab-v0.3":
+                raise AssertionError("example endpoint did not serve a v0.3 example")
 
             print(json.dumps({"ok": True, "agentId": relay["agent_id"], "skills": len(card["skills"])}, indent=2))
         finally:

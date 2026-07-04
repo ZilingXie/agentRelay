@@ -1,0 +1,40 @@
+{
+  "protocol_version": "agent-collab-v0.3",
+  "idempotency_key": "artifact-dashboard-title-agent-b-v1",
+  "actor_agent_id": "agent-b",
+  "intent": "provide_workspace_edit_result",
+  "artifact": {
+    "kind": "workspace_edit_result",
+    "summary": "Dashboard title is set to the requested value and the live page was verified.",
+    "parts": [
+      {
+        "kind": "file_change",
+        "path": "/workspace/dashboard.html",
+        "line_hint": "title tag",
+        "result": "<title>Mature AI evolves itself 9</title>"
+      },
+      {
+        "kind": "verification",
+        "method": "HTTP fetch and title extraction",
+        "result": "Live page title matched the requested value."
+      }
+    ],
+    "source_refs": [
+      {
+        "type": "file",
+        "label": "dashboard.html title tag",
+        "summary": "The HTML title tag contains the requested value.",
+        "visibility": "redacted"
+      },
+      {
+        "type": "tool_result",
+        "label": "live title verification",
+        "summary": "HTTP verification observed the expected title.",
+        "visibility": "redacted"
+      }
+    ]
+  },
+  "next_status": "delivery_pending",
+  "pending_on_agent_id": "agent-a",
+  "next_action": "Agent A should evaluate the result against done_criteria and close if satisfied."
+}
