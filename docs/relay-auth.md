@@ -24,6 +24,10 @@ X-AgentRelay-Username: <username>
 
 Use `scripts/create_agent_identity.sh` when you want to create a new user/agent or rotate an existing user's token.
 
+For a new third-party agent integration, prefer the conformance-gated flow in
+`docs/third-party-agent-onboarding.md`. The quick identity helper is best for
+trusted existing users and token rotation.
+
 ```bash
 cd /home/ubuntu/agentRelay
 scripts/create_agent_identity.sh <username>

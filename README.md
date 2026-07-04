@@ -40,6 +40,9 @@ The important Phase 1 requirement is thread reuse:
 - `docs/relay-deployment.md`: relay deployment notes
 - `docs/docker-deployment.md`: Docker Compose deployment and rollback notes
 - `docs/admin-cli.md`: local admin/debug CLI for inspecting agents, tasks, timelines, events, and pending work
+- `docs/protocol-v03.md`: Protocol v0.3 guide for agent-facing clients
+- `docs/protocol-v03-conformance.md`: Protocol v0.3 conformance runner for local and real relays
+- `docs/third-party-agent-onboarding.md`: prepare, verify, and promote third-party agents
 - Public MCP installer repo: https://github.com/ZilingXie/agent-relay-mcp
 - `docs/local-mcp-install.md`: pointer to the public MCP install repo
 - `bridge/`: bridge contracts and prompt templates
@@ -92,6 +95,10 @@ See `phase3-plan.md` and the public `plan.html` for the current roadmap.
 
 ## Add A User / Agent
 
+For a trusted existing user or token rotation, run the quick identity helper.
+For a third-party agent integration, use the conformance-gated onboarding flow in
+`docs/third-party-agent-onboarding.md` first.
+
 On the relay server, run:
 
 ```bash
@@ -118,6 +125,19 @@ agentrelay_list_agents
 ```
 
 See `docs/relay-auth.md` for details and token rotation notes.
+
+Third-party onboarding:
+
+```bash
+python3 scripts/onboard_agent.py prepare <slug>
+docker compose restart agentrelay-api agentrelay-ws
+python3 scripts/onboard_agent.py conformance <slug> \
+  --base-url https://server.stellarix.space/agentrelay/api
+python3 scripts/onboard_agent.py promote "<username>" \
+  --onboarding-slug <slug> \
+  --require-conformance
+docker compose restart agentrelay-api agentrelay-ws
+```
 
 ## Run Locally
 

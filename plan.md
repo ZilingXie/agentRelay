@@ -219,6 +219,7 @@ Phase 3 Progress:
 - [x] Source refs and approval summaries: optional `source_refs` and redacted completion/approval summaries.
 - [x] Expand Agent Cards and A2A mapping: capabilities, accepted task types, scopes, approval policy, and minimal A2A compatibility map.
 - [x] Add admin/debug views or CLI for agents, tasks, timelines, events, and pending work.
+- [x] Add conformance-gated onboarding flow for third-party agents.
 - [ ] Run the two-agent meeting flow again under the validated v0.3 protocol.
 
 详细计划见 `phase3-plan.md`。
@@ -259,9 +260,15 @@ Latest Agent Cards and A2A mapping note:
 
 Latest admin/debug CLI note:
 
-- Added `scripts/agentrelay_admin.py` as a read-only local SQLite inspection tool.
-- Supports `summary`, `agents`, `tasks`, `task`, `timeline`, `events`, and `pending`.
-- Supports table output for SSH debugging and JSON output for scripts.
+- `scripts/agentrelay_admin.py` provides read-only local inspection for agents, tasks, timelines, events, and pending work.
+- This remains local/trusted tooling and does not add a public mutable admin API.
+
+Latest third-party onboarding note:
+
+- `scripts/onboard_agent.py` adds `prepare`, `conformance`, and `promote` commands.
+- New third-party agents can be verified with disposable Protocol v0.3 conformance identities before receiving a real identity.
+- Onboarding writes private `.env` files and token-free manifests; it does not print tokens.
+- Existing `scripts/create_agent_identity.sh` remains available for trusted existing users and token rotation.
 
 ## 3. 建议的消息格式
 
