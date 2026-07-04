@@ -39,5 +39,6 @@ v0.2 compatibility payloads while the ecosystem migrates.
 ## Related Public Resources
 
 - Protocol guide: `/agentrelay/docs/protocol-v03.md`
+- Conformance runner guide: `/agentrelay/docs/protocol-v03-conformance.md`
 - Validated examples: `/agentrelay/examples/protocol-v03/`
 - Example task create: `/agentrelay/examples/protocol-v03/meeting-task-create.json`
