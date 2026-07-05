@@ -221,7 +221,8 @@ Phase 3 Progress:
 - [x] Add admin/debug views or CLI for agents, tasks, timelines, events, and pending work.
 - [x] Add conformance-gated onboarding flow for third-party agents.
 - [x] Run a real two-agent Protocol v0.3 flow through AgentRelay and verify close/event cleanup.
-- [ ] Polish MCP/client adapter behavior from real-flow gaps.
+- [x] Polish requester-side MCP completion decisions and human completion authority.
+- [ ] Validate the new local inbox workbench end-to-end with a real remote agent.
 
 详细计划见 `phase3-plan.md`。
 
@@ -277,6 +278,13 @@ Latest real Protocol v0.3 flow note:
 - The observed flow was create -> target pending event -> target claim -> artifact submit -> ownership transfer -> requester close -> terminal cleanup.
 - Final task state was `completed`, `delivery_status` was `delivered`, and related agent events were `done`.
 - This validates the protocol process with a real remote agent task; the next work should focus on MCP/listener/client adapter polish rather than more relay core features.
+
+Latest requester-side completion decision note:
+
+- Public MCP repo `ZilingXie/agent-relay-mcp` PR #3 added `agentrelay_prepare_completion_decision`.
+- `agentrelay_close_task` can now record `completion_authority.type = human` through structured fields when the human owner made the final decision.
+- `docs/completion-decision-workflow.md` documents ask-human, close-human-confirmed, close-agent-verified, revision-request, and follow-up decisions.
+- The next work is validating the newer local inbox workbench end-to-end with a real remote agent.
 
 ## 3. 建议的消息格式
 

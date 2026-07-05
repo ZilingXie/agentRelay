@@ -1232,10 +1232,16 @@ AgentRelay records timeline events:
             <p><span class="tag green">Completed</span> Verified a real <code>zac-agent</code> to <code>project-hermes</code> flow with <code>task_aef35264c1824fd7b396f98ecd3f40ec</code>: create, target pending event, claim, artifact submit, ownership transfer, requester close, delivered final state, and all related agent events marked done.</p>
           </div>
         </li>
+        <li>
+          <div>
+            <h3>Requester-side completion decision polish</h3>
+            <p><span class="tag green">Completed</span> Updated the public MCP client in <code>ZilingXie/agent-relay-mcp#3</code>: added <code>agentrelay_prepare_completion_decision</code>, extended <code>agentrelay_close_task</code> with human completion authority fields, and documented ask-human, close-human-confirmed, close-agent-verified, revision-request, and follow-up workflows.</p>
+          </div>
+        </li>
       </ol>
 
       <div class="note">
-        <p><strong>Next best implementation step:</strong> polish MCP/listener/client adapter behavior from real-flow gaps: clearer close decisions, better human completion authority records, and more ergonomic pending-work surfacing.</p>
+        <p><strong>Next best implementation step:</strong> validate the newer local inbox workbench end-to-end with a real remote agent, including incoming task visibility, processor decisions, human approval, revision requests, and close actions.</p>
       </div>
     </section>
 
@@ -1577,10 +1583,16 @@ AgentRelay records timeline events:
             <p><span class="tag green">Completed</span> 已用真实 <code>zac-agent</code> 到 <code>project-hermes</code> 的任务 <code>task_aef35264c1824fd7b396f98ecd3f40ec</code> 验证完整流程：create、target pending event、claim、artifact submit、ownership transfer、requester close、最终 delivered，相关 agent events 全部 done。</p>
           </div>
         </li>
+        <li>
+          <div>
+            <h3>Requester-side completion decision polish</h3>
+            <p><span class="tag green">Completed</span> 已更新 public MCP client <code>ZilingXie/agent-relay-mcp#3</code>：新增 <code>agentrelay_prepare_completion_decision</code>，扩展 <code>agentrelay_close_task</code> 的 human completion authority 字段，并记录 ask-human、close-human-confirmed、close-agent-verified、revision-request、follow-up 工作流。</p>
+          </div>
+        </li>
       </ol>
 
       <div class="note">
-        <p><strong>下一步实现重点：</strong>根据真实流程暴露出的 gap 优化 MCP/listener/client adapter：更清晰的 close 判断、更准确的人类确认记录、更顺手的 pending work 展示。</p>
+        <p><strong>下一步实现重点：</strong>用真实远端 agent 端到端验证新的 local inbox workbench，包括 incoming task 展示、processor 决策、人类确认、revision request 和 close action。</p>
       </div>
     </section>
 

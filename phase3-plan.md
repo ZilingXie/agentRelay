@@ -328,7 +328,8 @@ Implementation stance:
 10. [x] Add admin/debug views or CLI for agents, tasks, timelines, events, and pending work.
 11. [x] Add a Protocol v0.3 conformance-gated onboarding flow for third-party agents.
 12. [x] Run a real two-agent Protocol v0.3 flow through AgentRelay and verify the full close/cleanup loop.
-13. [ ] Polish MCP/client adapter behavior from real-flow gaps.
+13. [x] Polish requester-side MCP completion decisions and human completion authority.
+14. [ ] Validate the new local inbox workbench end-to-end with a real remote agent.
 
 ## 8. First Implementation Slice
 
@@ -576,6 +577,28 @@ and terminal cleanup.
 Next focus: improve local MCP/listener/client adapters based on real-flow gaps,
 especially how local agents decide whether to close, how human confirmation is
 recorded as `completion_authority`, and how pending work is surfaced to users.
+
+## 8.9 Requester-Side Completion Decision Polish
+
+Status: completed in the public MCP/client repo.
+
+Implemented outputs in `ZilingXie/agent-relay-mcp`:
+
+- PR: `agent-relay-mcp#3`
+- MCP tool: `agentrelay_prepare_completion_decision`
+- `agentrelay_close_task` now supports structured human completion authority fields.
+- New doc: `docs/completion-decision-workflow.md`
+- Tool reference updated for requester-side close, human authority, and revision request workflow.
+- Codex App inbox example rules now require the decision helper before requester-owned close.
+
+This keeps the relay small. The relay still records state and enforces close
+permissions; the local requester-side agent decides whether `done_criteria` is
+satisfied, asks its human owner when needed, and records human approval as
+redacted `completion_authority`.
+
+Next focus: validate the newer local inbox workbench with a real remote agent so
+incoming tasks, processor decisions, human approvals, revision requests, and
+close actions are visible and ergonomic in the default local client experience.
 
 The first implementation slice should be intentionally small:
 
