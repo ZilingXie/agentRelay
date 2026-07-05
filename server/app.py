@@ -239,6 +239,27 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         payload = self.read_json()
         self.protocol_v03_response = is_protocol_v03(payload)
+        if path == "/agentrelay/healthchecks/install":
+            requester_agent_id = auth.get("agent_id")
+            if not requester_agent_id:
+                self.respond_error(
+                    401,
+                    "install health check requires an authenticated agent token",
+                    error_type="auth_error",
+                    code="AUTHENTICATED_AGENT_REQUIRED",
+                )
+                return
+            requested_agent_id = read_alias(payload, "requester_agent_id", "requesterAgentId", payload.get("from"))
+            if requested_agent_id and not self.require_agent(auth, requested_agent_id):
+                return
+            result = self.store.create_install_healthcheck(
+                requester_agent_id,
+                requester_owner=auth.get("username") or requester_agent_id,
+                requester_thread_id=payload.get("requesterThreadId") or payload.get("requester_thread_id"),
+                idempotency_key=payload.get("idempotency_key"),
+            )
+            self.respond_protocol(result, status=201)
+            return
         if path == "/agentrelay/tasks":
             if is_protocol_v03(payload):
                 validate_task_create(payload)

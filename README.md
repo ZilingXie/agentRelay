@@ -75,6 +75,7 @@ The important Phase 1 requirement is thread reuse:
 - [x] Document user-owned local inbox hook/adapter contract in `ZilingXie/agent-relay-mcp`.
 - [x] Migrate production runtime to Docker Compose.
 - [x] Verify Zac/Frank two-agent local-listener message and reply loop.
+- [x] Add server-hosted install loopback health check for MCP/local inbox validation without depending on Project Hermes.
 
 ## Phase 3 Direction
 

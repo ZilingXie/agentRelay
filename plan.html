@@ -1238,10 +1238,16 @@ AgentRelay records timeline events:
             <p><span class="tag green">Completed</span> Updated the public MCP client in <code>ZilingXie/agent-relay-mcp#3</code>: added <code>agentrelay_prepare_completion_decision</code>, extended <code>agentrelay_close_task</code> with human completion authority fields, and documented ask-human, close-human-confirmed, close-agent-verified, revision-request, and follow-up workflows.</p>
           </div>
         </li>
+        <li>
+          <div>
+            <h3>Install loopback health check</h3>
+            <p><span class="tag green">Completed</span> Added server-hosted <code>POST /agentrelay/api/healthchecks/install</code> and public MCP <code>npm run health:install</code> verification. The check creates a synthetic <code>agentrelay-healthcheck</code> ACK task, verifies local inbox delivery, and closes the task without depending on Project Hermes.</p>
+          </div>
+        </li>
       </ol>
 
       <div class="note">
-        <p><strong>Next best implementation step:</strong> validate the newer local inbox workbench end-to-end with a real remote agent, including incoming task visibility, processor decisions, human approval, revision requests, and close actions.</p>
+        <p><strong>Next best implementation step:</strong> validate the newer local inbox workbench end-to-end with real remote-agent tasks after install health passes, including incoming task visibility, processor decisions, human approval, revision requests, and close actions.</p>
       </div>
     </section>
 
@@ -1589,10 +1595,16 @@ AgentRelay records timeline events:
             <p><span class="tag green">Completed</span> 已更新 public MCP client <code>ZilingXie/agent-relay-mcp#3</code>：新增 <code>agentrelay_prepare_completion_decision</code>，扩展 <code>agentrelay_close_task</code> 的 human completion authority 字段，并记录 ask-human、close-human-confirmed、close-agent-verified、revision-request、follow-up 工作流。</p>
           </div>
         </li>
+        <li>
+          <div>
+            <h3>Install loopback health check</h3>
+            <p><span class="tag green">Completed</span> 已新增 server-hosted <code>POST /agentrelay/api/healthchecks/install</code> 和 public MCP <code>npm run health:install</code> 验证。该检查会创建 synthetic <code>agentrelay-healthcheck</code> ACK task，验证本地 inbox delivery，并关闭 task，不依赖 Project Hermes。</p>
+          </div>
+        </li>
       </ol>
 
       <div class="note">
-        <p><strong>下一步实现重点：</strong>用真实远端 agent 端到端验证新的 local inbox workbench，包括 incoming task 展示、processor 决策、人类确认、revision request 和 close action。</p>
+        <p><strong>下一步实现重点：</strong>在 install health 通过后，用真实远端 agent 任务端到端验证新的 local inbox workbench，包括 incoming task 展示、processor 决策、人类确认、revision request 和 close action。</p>
       </div>
     </section>
 
