@@ -50,9 +50,13 @@ After the user fills `.env` with the token and restarts Codex, the local agent m
 
 ```bash
 npm run doctor
+npm run health:install
 ```
 
 `doctor` checks HTTP health, authenticated `/agents`, and WebSocket `hello`.
+`health:install` calls the server-hosted install loopback endpoint, waits for
+the synthetic `agentrelay-healthcheck` ACK to arrive in the local inbox, and
+closes the health check task.
 
 Then keep the Phase 2 listener running:
 
@@ -73,6 +77,25 @@ Incoming `task.pending` notifications are written to:
 ```
 
 Restart Codex App or open a new session after installing.
+
+## Server-hosted install loopback
+
+The relay exposes:
+
+```text
+POST /agentrelay/api/healthchecks/install
+```
+
+This authenticated endpoint creates a synthetic task from the authenticated
+requester agent to the built-in `agentrelay-healthcheck` actor, writes an ACK
+artifact immediately, and emits `task.pending` back to the requester. It is for
+validating MCP auth, server reachability, WebSocket/local listener delivery,
+local inbox state, and close permissions. It does not call Project Hermes or
+any remote agent adapter.
+
+Real `project-hermes` tasks remain optional E2E collaboration tests. If a real
+Hermes task fails after `health:install` passes, debug Hermes or its adapter
+rather than the MCP install.
 
 ## Security note
 

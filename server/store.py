@@ -26,6 +26,7 @@ from server.transitions import (
 
 PROTOCOL_VERSION = PROTOCOL_V03
 AGENT_EVENT_DELIVERY_STATES = {"pending", "inflight", "done", "failed"}
+HEALTHCHECK_AGENT_ID = "agentrelay-healthcheck"
 
 
 class ConflictError(Exception):
@@ -279,6 +280,168 @@ class Store:
                 (agent_id,),
             ).fetchone()
             return dict(row)
+
+    def create_install_healthcheck(
+        self,
+        requester_agent_id: str,
+        requester_owner: str | None = None,
+        requester_thread_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        now = int(time.time())
+        task_id = f"task_{uuid.uuid4().hex}"
+        context_id = f"ctx_install_health_{uuid.uuid4().hex}"
+        message_id = f"msg_{uuid.uuid4().hex}"
+        artifact_id = f"art_{uuid.uuid4().hex}"
+        subject = "AgentRelay install loopback health check"
+        done_criteria = (
+            "AgentRelay server creates a synthetic ACK artifact, sends a task.pending "
+            "event to the requester agent, and the local inbox records the task."
+        )
+        request_text = (
+            "Run an AgentRelay install loopback health check. This task is synthetic "
+            "and must not call a remote agent adapter."
+        )
+        ack_text = "\n".join(
+            [
+                f"ACK from {HEALTHCHECK_AGENT_ID}",
+                f"requester={requester_agent_id}",
+                f"task={task_id}",
+                "scope=agentrelay-install-loopback",
+            ]
+        )
+
+        with self.connect() as conn:
+            ensure_agent_conn(conn, requester_agent_id, requester_owner or requester_agent_id, now)
+            ensure_healthcheck_agent_conn(conn, now)
+            conn.execute(
+                """
+                INSERT INTO tasks (
+                    task_id, context_id, status, requester_agent_id, target_agent_id,
+                    requester_thread_id, requester_thread_policy, target_thread_policy,
+                    done_criteria, completion_owner_agent_id,
+                    pending_on_agent_id, pending_on_human_id, next_action, parent_task_id,
+                    delivery_status, subject, ttl, max_turns, turn_count,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, 'delivery_pending', ?, ?, ?, 'reuse-origin-thread',
+                    'reuse-task-thread', ?, ?, ?, NULL, ?, NULL, 'pending', ?, NULL, 2, 1, ?, ?)
+                """,
+                (
+                    task_id,
+                    context_id,
+                    requester_agent_id,
+                    HEALTHCHECK_AGENT_ID,
+                    requester_thread_id,
+                    done_criteria,
+                    requester_agent_id,
+                    requester_agent_id,
+                    "Requester agent should verify the synthetic ACK reached the local inbox, then close this health check task.",
+                    subject,
+                    now,
+                    now,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO messages (
+                    message_id, task_id, context_id, from_agent_id, to_agent_id,
+                    role, parts_json, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, 'user', ?, ?)
+                """,
+                (
+                    message_id,
+                    task_id,
+                    context_id,
+                    requester_agent_id,
+                    HEALTHCHECK_AGENT_ID,
+                    json.dumps([{"kind": "text", "text": request_text}]),
+                    now,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO artifacts (
+                    artifact_id, task_id, from_agent_id, to_agent_id,
+                    kind, parts_json, created_at
+                )
+                VALUES (?, ?, ?, ?, 'install_health_ack', ?, ?)
+                """,
+                (
+                    artifact_id,
+                    task_id,
+                    HEALTHCHECK_AGENT_ID,
+                    requester_agent_id,
+                    json.dumps([{"kind": "text", "text": ack_text}]),
+                    now,
+                ),
+            )
+            self.add_event_conn(
+                conn,
+                task_id,
+                "task.created",
+                {
+                    "protocol_version": PROTOCOL_VERSION,
+                    "idempotency_key": idempotency_key,
+                    "requester_agent_id": requester_agent_id,
+                    "target_agent_id": HEALTHCHECK_AGENT_ID,
+                    "actor_agent_id": requester_agent_id,
+                    "intent": "install_health_check",
+                    "requesterThreadId": requester_thread_id,
+                    "doneCriteria": done_criteria,
+                    "done_criteria": done_criteria,
+                    "completionOwnerAgentId": requester_agent_id,
+                    "pendingOnAgentId": requester_agent_id,
+                    "pending_on_agent_id": requester_agent_id,
+                    "next_action": "Requester agent should verify the synthetic ACK reached the local inbox, then close this health check task.",
+                },
+                now,
+            )
+            self.add_event_conn(
+                conn,
+                task_id,
+                "artifact.submitted",
+                {
+                    "protocol_version": PROTOCOL_VERSION,
+                    "idempotency_key": idempotency_key,
+                    "artifactId": artifact_id,
+                    "actor_agent_id": HEALTHCHECK_AGENT_ID,
+                    "intent": "install_health_ack",
+                    "kind": "install_health_ack",
+                    "summary": f"ACK from {HEALTHCHECK_AGENT_ID}",
+                    "target_agent_id": requester_agent_id,
+                    "requester_agent_id": requester_agent_id,
+                    "nextStatus": "delivery_pending",
+                    "pendingOnAgentId": requester_agent_id,
+                    "pending_on_agent_id": requester_agent_id,
+                    "nextAction": "Requester agent should verify the synthetic ACK reached the local inbox, then close this health check task.",
+                },
+                now,
+            )
+            self.add_event_conn(
+                conn,
+                task_id,
+                "ownership.transferred",
+                {
+                    "protocol_version": PROTOCOL_VERSION,
+                    "actor_agent_id": HEALTHCHECK_AGENT_ID,
+                    "pendingOnAgentId": requester_agent_id,
+                    "pending_on_agent_id": requester_agent_id,
+                },
+                now,
+            )
+            event = self.create_pending_agent_event_conn(conn, task_id, "install.healthcheck", now)
+            task = self.get_task_conn(conn, task_id)
+            return {
+                "task": task,
+                "event": event,
+                "ack": {
+                    "actor_agent_id": HEALTHCHECK_AGENT_ID,
+                    "intent": "install_health_ack",
+                    "text": ack_text,
+                },
+            }
 
     def create_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = int(time.time())
@@ -1411,6 +1574,36 @@ def assert_agent_exists(conn: sqlite3.Connection, agent_id: str) -> None:
     row = conn.execute("SELECT agent_id FROM agents WHERE agent_id = ?", (agent_id,)).fetchone()
     if not row:
         raise ValueError(f"unknown agent: {agent_id}")
+
+
+def ensure_agent_conn(conn: sqlite3.Connection, agent_id: str, owner: str, created_at: int) -> None:
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO agents (agent_id, name, owner, description, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            agent_id,
+            f"{owner} Agent",
+            owner,
+            f"Personal coordinator agent for {owner}.",
+            created_at,
+        ),
+    )
+
+
+def ensure_healthcheck_agent_conn(conn: sqlite3.Connection, created_at: int) -> None:
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO agents (agent_id, name, owner, description, created_at)
+        VALUES (?, 'AgentRelay Healthcheck', 'AgentRelay', ?, ?)
+        """,
+        (
+            HEALTHCHECK_AGENT_ID,
+            "Built-in synthetic actor for install loopback health checks. It has no login token and does not run a remote agent.",
+            created_at,
+        ),
+    )
 
 
 def summarize_task(row: sqlite3.Row) -> dict[str, Any]:

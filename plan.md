@@ -284,7 +284,8 @@ Latest requester-side completion decision note:
 - Public MCP repo `ZilingXie/agent-relay-mcp` PR #3 added `agentrelay_prepare_completion_decision`.
 - `agentrelay_close_task` can now record `completion_authority.type = human` through structured fields when the human owner made the final decision.
 - `docs/completion-decision-workflow.md` documents ask-human, close-human-confirmed, close-agent-verified, revision-request, and follow-up decisions.
-- The next work is validating the newer local inbox workbench end-to-end with a real remote agent.
+- Server-hosted install loopback health check now validates MCP auth, relay HTTP, WebSocket/local listener delivery, local inbox state, and close permissions without depending on Project Hermes.
+- The next work is validating the newer local inbox workbench end-to-end with real remote-agent tasks after install health passes.
 
 ## 3. 建议的消息格式
 
