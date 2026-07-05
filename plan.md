@@ -223,6 +223,7 @@ Phase 3 Progress:
 - [x] Run a real two-agent Protocol v0.3 flow through AgentRelay and verify close/event cleanup.
 - [x] Polish requester-side MCP completion decisions and human completion authority.
 - [x] Close flow reliability polish: stable task event ordering, idempotent install loopback checks, healthcheck TTL cleanup, local inbox workflow binding, and latest-artifact close evidence refs.
+- [x] Lightweight task TTL expiry: requester-controlled reply timeout with 24-hour default, requester notification on expiry, and late artifact rejection.
 - [ ] Continue validating the new local inbox workbench end-to-end with more real remote agents.
 
 详细计划见 `phase3-plan.md`。
@@ -252,6 +253,12 @@ Latest close flow reliability note:
 - Install loopback health checks accept idempotency keys, reuse the same synthetic task/event on retry, and expire stale non-terminal healthcheck tasks after a short TTL.
 - Closing a task can automatically attach a sanitized `source_refs` pointer to the latest artifact when the close authority/final artifact did not provide one.
 - The public MCP local inbox records a `localWorkflowBinding` in `state/issues.json`; this binds a Relay task to the local inbox without forcing Codex App, CLI, Slack, WeChat, or any other adapter.
+
+Latest task TTL note:
+
+- New tasks default to a 24-hour reply TTL unless the requester sets `ttl_seconds`, `ttl`, or `expires_at`.
+- TTL expiry is intentionally lightweight: if the target agent has not submitted an artifact by the deadline, Relay marks the task `expired`, clears pending ownership, rejects late artifacts, and sends a listener-compatible `task.pending` event back to the requester with `reason=task.ttl_expired`.
+- If the target agent has already submitted an artifact, the task does not auto-expire while the requester side is evaluating or closing it.
 
 Latest source refs and approval summaries note:
 

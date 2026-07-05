@@ -67,6 +67,7 @@ def title_for_event(event_type: str) -> str:
         "thread.created": "Local thread created",
         "thread.reused": "Local thread reused",
         "task.completed": "Task completed",
+        "task.expired": "Task expired",
     }
     return titles.get(event_type, event_type.replace(".", " ").title())
 
@@ -104,6 +105,9 @@ def summarize_event(event_type: str, payload: dict[str, Any]) -> str:
     if event_type == "task.completed":
         reason = payload.get("terminal_reason") or payload.get("terminalReason") or "no reason provided"
         return f"Task completed: {reason}"
+    if event_type == "task.expired":
+        reason = payload.get("terminal_reason") or payload.get("terminalReason") or "TTL expired"
+        return f"Task expired: {reason}"
     if event_type.startswith("thread."):
         agent = payload.get("agentId") or "agent"
         thread = payload.get("threadId") or "local thread"
