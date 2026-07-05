@@ -1244,10 +1244,16 @@ AgentRelay records timeline events:
             <p><span class="tag green">Completed</span> Added server-hosted <code>POST /agentrelay/api/healthchecks/install</code> and public MCP <code>npm run health:install</code> verification. The check creates a synthetic <code>agentrelay-healthcheck</code> ACK task, verifies local inbox delivery, and closes the task without depending on Project Hermes.</p>
           </div>
         </li>
+        <li>
+          <div>
+            <h3>Close flow reliability polish</h3>
+            <p><span class="tag green">Completed</span> Added stable per-task event sequencing for timelines, idempotent install loopback retries, short TTL cleanup for stale healthcheck tasks, latest-artifact evidence refs on close, and public MCP <code>localWorkflowBinding</code> metadata in <code>state/issues.json</code> so local adapters can bind Relay tasks without forcing one UI.</p>
+          </div>
+        </li>
       </ol>
 
       <div class="note">
-        <p><strong>Next best implementation step:</strong> validate the newer local inbox workbench end-to-end with real remote-agent tasks after install health passes, including incoming task visibility, processor decisions, human approval, revision requests, and close actions.</p>
+        <p><strong>Next best implementation step:</strong> keep hardening the local inbox workbench with more real remote-agent tasks, especially revision requests, failed adapter recovery, and dashboard views over event delivery state.</p>
       </div>
     </section>
 
@@ -1601,10 +1607,16 @@ AgentRelay records timeline events:
             <p><span class="tag green">Completed</span> 已新增 server-hosted <code>POST /agentrelay/api/healthchecks/install</code> 和 public MCP <code>npm run health:install</code> 验证。该检查会创建 synthetic <code>agentrelay-healthcheck</code> ACK task，验证本地 inbox delivery，并关闭 task，不依赖 Project Hermes。</p>
           </div>
         </li>
+        <li>
+          <div>
+            <h3>Close flow reliability polish</h3>
+            <p><span class="tag green">Completed</span> 已增加 task timeline 的稳定 event sequence、install loopback 的幂等 retry、healthcheck stale task 的短 TTL cleanup、close 时自动引用 latest artifact evidence，以及 public MCP 在 <code>state/issues.json</code> 中记录 <code>localWorkflowBinding</code>，让本地 adapter 可以绑定 Relay task，但不强制绑定某一种 UI。</p>
+          </div>
+        </li>
       </ol>
 
       <div class="note">
-        <p><strong>下一步实现重点：</strong>在 install health 通过后，用真实远端 agent 任务端到端验证新的 local inbox workbench，包括 incoming task 展示、processor 决策、人类确认、revision request 和 close action。</p>
+        <p><strong>下一步实现重点：</strong>继续用更多真实远端 agent 任务打磨 local inbox workbench，重点覆盖 revision request、adapter 失败恢复，以及 dashboard 对 event delivery state 的可视化。</p>
       </div>
     </section>
 

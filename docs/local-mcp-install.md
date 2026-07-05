@@ -93,6 +93,12 @@ validating MCP auth, server reachability, WebSocket/local listener delivery,
 local inbox state, and close permissions. It does not call Project Hermes or
 any remote agent adapter.
 
+The endpoint supports client idempotency keys. Retrying the same install check
+for the same requester returns the same synthetic task instead of creating a
+second pending notification. Non-terminal install healthcheck tasks also have a
+short TTL; stale checks are marked `expired` and their pending delivery state is
+cleaned up by later healthcheck calls.
+
 Real `project-hermes` tasks remain optional E2E collaboration tests. If a real
 Hermes task fails after `health:install` passes, debug Hermes or its adapter
 rather than the MCP install.

@@ -329,7 +329,8 @@ Implementation stance:
 11. [x] Add a Protocol v0.3 conformance-gated onboarding flow for third-party agents.
 12. [x] Run a real two-agent Protocol v0.3 flow through AgentRelay and verify the full close/cleanup loop.
 13. [x] Polish requester-side MCP completion decisions and human completion authority.
-14. [ ] Validate the new local inbox workbench end-to-end with a real remote agent.
+14. [x] Close flow reliability polish: stable task event ordering, idempotent install loopback checks, healthcheck TTL cleanup, local inbox workflow binding, and latest-artifact close evidence refs.
+15. [ ] Continue validating the new local inbox workbench end-to-end with more real remote agents.
 
 ## 8. First Implementation Slice
 
