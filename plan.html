@@ -1226,10 +1226,16 @@ AgentRelay records timeline events:
             <p><span class="tag green">Completed</span> Added a conformance-gated onboarding workflow: create disposable Protocol v0.3 test identities, run real-relay conformance without printing tokens, then promote the real agent identity and write private env files.</p>
           </div>
         </li>
+        <li>
+          <div>
+            <h3>Real two-agent Protocol v0.3 flow</h3>
+            <p><span class="tag green">Completed</span> Verified a real <code>zac-agent</code> to <code>project-hermes</code> flow with <code>task_aef35264c1824fd7b396f98ecd3f40ec</code>: create, target pending event, claim, artifact submit, ownership transfer, requester close, delivered final state, and all related agent events marked done.</p>
+          </div>
+        </li>
       </ol>
 
       <div class="note">
-        <p><strong>Next best implementation step:</strong> run the two-agent meeting flow again under the validated Protocol v0.3 contract, then capture any MCP/client adapter gaps found in real use.</p>
+        <p><strong>Next best implementation step:</strong> polish MCP/listener/client adapter behavior from real-flow gaps: clearer close decisions, better human completion authority records, and more ergonomic pending-work surfacing.</p>
       </div>
     </section>
 
@@ -1565,10 +1571,16 @@ AgentRelay records timeline events:
             <p><span class="tag green">Completed</span> 已增加 conformance-gated onboarding：先创建 disposable Protocol v0.3 测试身份，真实 relay 跑通 conformance 且不打印 token，再 promote 为正式 agent identity 并写入私密 env 文件。</p>
           </div>
         </li>
+        <li>
+          <div>
+            <h3>Real two-agent Protocol v0.3 flow</h3>
+            <p><span class="tag green">Completed</span> 已用真实 <code>zac-agent</code> 到 <code>project-hermes</code> 的任务 <code>task_aef35264c1824fd7b396f98ecd3f40ec</code> 验证完整流程：create、target pending event、claim、artifact submit、ownership transfer、requester close、最终 delivered，相关 agent events 全部 done。</p>
+          </div>
+        </li>
       </ol>
 
       <div class="note">
-        <p><strong>下一步实现重点：</strong>用已经验证过的 Protocol v0.3 再跑一次真实 two-agent meeting flow，然后记录 MCP/client adapter 在真实使用里暴露出的 gap。</p>
+        <p><strong>下一步实现重点：</strong>根据真实流程暴露出的 gap 优化 MCP/listener/client adapter：更清晰的 close 判断、更准确的人类确认记录、更顺手的 pending work 展示。</p>
       </div>
     </section>
 
