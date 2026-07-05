@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
 import time
 import uuid
@@ -27,6 +28,7 @@ from server.transitions import (
 PROTOCOL_VERSION = PROTOCOL_V03
 AGENT_EVENT_DELIVERY_STATES = {"pending", "inflight", "done", "failed"}
 HEALTHCHECK_AGENT_ID = "agentrelay-healthcheck"
+HEALTHCHECK_TTL_SECONDS = 30 * 60
 
 
 class ConflictError(Exception):
@@ -119,6 +121,7 @@ class Store:
                     task_id TEXT NOT NULL,
                     event_type TEXT NOT NULL,
                     payload_json TEXT NOT NULL,
+                    event_sequence INTEGER,
                     created_at INTEGER NOT NULL,
                     FOREIGN KEY (task_id) REFERENCES tasks(task_id)
                 );
@@ -166,6 +169,7 @@ class Store:
                 """
             )
             self.ensure_task_columns(conn)
+            self.ensure_task_event_columns(conn)
             self.ensure_agent_event_columns(conn)
             self.ensure_seed_agents(conn)
 
@@ -190,6 +194,20 @@ class Store:
         for column, sql in migrations.items():
             if column not in columns:
                 conn.execute(sql)
+
+    def ensure_task_event_columns(self, conn: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(task_events)").fetchall()
+        }
+        if "event_sequence" not in columns:
+            conn.execute("ALTER TABLE task_events ADD COLUMN event_sequence INTEGER")
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_task_events_task_sequence
+                ON task_events (task_id, event_sequence, created_at, event_id)
+            """
+        )
 
     def ensure_agent_event_columns(self, conn: sqlite3.Connection) -> None:
         columns = {
@@ -289,10 +307,11 @@ class Store:
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         now = int(time.time())
-        task_id = f"task_{uuid.uuid4().hex}"
+        task_id = install_healthcheck_task_id(requester_agent_id, idempotency_key)
         context_id = f"ctx_install_health_{uuid.uuid4().hex}"
         message_id = f"msg_{uuid.uuid4().hex}"
         artifact_id = f"art_{uuid.uuid4().hex}"
+        ttl = now + HEALTHCHECK_TTL_SECONDS
         subject = "AgentRelay install loopback health check"
         done_criteria = (
             "AgentRelay server creates a synthetic ACK artifact, sends a task.pending "
@@ -302,18 +321,25 @@ class Store:
             "Run an AgentRelay install loopback health check. This task is synthetic "
             "and must not call a remote agent adapter."
         )
-        ack_text = "\n".join(
-            [
-                f"ACK from {HEALTHCHECK_AGENT_ID}",
-                f"requester={requester_agent_id}",
-                f"task={task_id}",
-                "scope=agentrelay-install-loopback",
-            ]
-        )
+        ack_text = install_healthcheck_ack_text(requester_agent_id, task_id)
 
         with self.connect() as conn:
             ensure_agent_conn(conn, requester_agent_id, requester_owner or requester_agent_id, now)
             ensure_healthcheck_agent_conn(conn, now)
+            self.expire_stale_install_healthchecks_conn(conn, now)
+            existing = self.get_task_conn(conn, task_id) if idempotency_key else None
+            if existing:
+                event = latest_agent_event_conn(conn, requester_agent_id, task_id)
+                return {
+                    "task": existing,
+                    "event": event,
+                    "ack": {
+                        "actor_agent_id": HEALTHCHECK_AGENT_ID,
+                        "intent": "install_health_ack",
+                        "text": install_healthcheck_ack_text(requester_agent_id, task_id),
+                    },
+                    "idempotent": True,
+                }
             conn.execute(
                 """
                 INSERT INTO tasks (
@@ -325,7 +351,7 @@ class Store:
                     created_at, updated_at
                 )
                 VALUES (?, ?, 'delivery_pending', ?, ?, ?, 'reuse-origin-thread',
-                    'reuse-task-thread', ?, ?, ?, NULL, ?, NULL, 'pending', ?, NULL, 2, 1, ?, ?)
+                    'reuse-task-thread', ?, ?, ?, NULL, ?, NULL, 'pending', ?, ?, 2, 1, ?, ?)
                 """,
                 (
                     task_id,
@@ -338,6 +364,7 @@ class Store:
                     requester_agent_id,
                     "Requester agent should verify the synthetic ACK reached the local inbox, then close this health check task.",
                     subject,
+                    ttl,
                     now,
                     now,
                 ),
@@ -398,6 +425,15 @@ class Store:
                 },
                 now,
             )
+            artifact_source_refs = [
+                {
+                    "type": "tool_result",
+                    "label": "AgentRelay install loopback ACK",
+                    "summary": "Synthetic ACK generated by AgentRelay server healthcheck endpoint.",
+                    "visibility": "public",
+                    "uri": f"agentrelay://tasks/{task_id}/artifacts/{artifact_id}",
+                }
+            ]
             self.add_event_conn(
                 conn,
                 task_id,
@@ -410,6 +446,7 @@ class Store:
                     "intent": "install_health_ack",
                     "kind": "install_health_ack",
                     "summary": f"ACK from {HEALTHCHECK_AGENT_ID}",
+                    "source_refs": artifact_source_refs,
                     "target_agent_id": requester_agent_id,
                     "requester_agent_id": requester_agent_id,
                     "nextStatus": "delivery_pending",
@@ -442,6 +479,49 @@ class Store:
                     "text": ack_text,
                 },
             }
+
+    def expire_stale_install_healthchecks_conn(self, conn: sqlite3.Connection, now: int) -> None:
+        rows = conn.execute(
+            """
+            SELECT task_id FROM tasks
+            WHERE target_agent_id = ?
+              AND status NOT IN ('completed', 'failed', 'cancelled', 'expired', 'rejected')
+              AND ttl IS NOT NULL
+              AND ttl <= ?
+            """,
+            (HEALTHCHECK_AGENT_ID, now),
+        ).fetchall()
+        for row in rows:
+            task_id = row["task_id"]
+            conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'expired',
+                    pending_on_agent_id = NULL,
+                    pending_on_human_id = NULL,
+                    next_action = NULL,
+                    claimed_by = NULL,
+                    claimed_at = NULL,
+                    terminal_reason = 'Install loopback health check expired before local completion.',
+                    updated_at = ?
+                WHERE task_id = ?
+                """,
+                (now, task_id),
+            )
+            self.add_event_conn(
+                conn,
+                task_id,
+                "task.expired",
+                {
+                    "protocol_version": PROTOCOL_VERSION,
+                    "actor_agent_id": HEALTHCHECK_AGENT_ID,
+                    "reason": "install.healthcheck.ttl_expired",
+                    "terminalReason": "Install loopback health check expired before local completion.",
+                    "terminal_reason": "Install loopback health check expired before local completion.",
+                },
+                now,
+            )
+            self.cleanup_terminal_task_delivery_conn(conn, task_id, now)
 
     def create_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = int(time.time())
@@ -580,7 +660,12 @@ class Store:
             if not self.get_task_conn(conn, task_id):
                 return None
             rows = conn.execute(
-                "SELECT * FROM task_events WHERE task_id = ? ORDER BY created_at, event_id",
+                """
+                SELECT *, rowid AS _rowid
+                FROM task_events
+                WHERE task_id = ?
+                ORDER BY COALESCE(event_sequence, _rowid), created_at, event_id
+                """,
                 (task_id,),
             ).fetchall()
             return [decode_payload(row) for row in rows]
@@ -1009,6 +1094,17 @@ class Store:
             if not task:
                 return None
             assert_close_allowed(task, payload)
+            evidence_ref = latest_artifact_source_ref_conn(conn, task_id)
+            if evidence_ref and completion_authority is not None and not completion_authority.get("source_refs"):
+                completion_authority = {
+                    **completion_authority,
+                    "source_refs": normalize_source_refs([evidence_ref]),
+                }
+            if evidence_ref and final_artifact is not None and not final_artifact.get("source_refs"):
+                final_artifact = {
+                    **final_artifact,
+                    "source_refs": normalize_source_refs([evidence_ref], field="final_artifact.source_refs"),
+                }
             conn.execute(
                 """
                 UPDATE tasks
@@ -1385,16 +1481,22 @@ class Store:
         payload: dict[str, Any],
         created_at: int | None = None,
     ) -> None:
+        row = conn.execute(
+            "SELECT COALESCE(MAX(event_sequence), 0) + 1 AS next_sequence FROM task_events WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        event_sequence = int(row["next_sequence"] if row else 1)
         conn.execute(
             """
-            INSERT INTO task_events (event_id, task_id, event_type, payload_json, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO task_events (event_id, task_id, event_type, payload_json, event_sequence, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 f"evt_{uuid.uuid4().hex}",
                 task_id,
                 event_type,
                 json.dumps(payload),
+                event_sequence,
                 created_at or int(time.time()),
             ),
         )
@@ -1606,6 +1708,59 @@ def ensure_healthcheck_agent_conn(conn: sqlite3.Connection, created_at: int) -> 
     )
 
 
+def install_healthcheck_task_id(requester_agent_id: str, idempotency_key: str | None) -> str:
+    if not idempotency_key:
+        return f"task_{uuid.uuid4().hex}"
+    digest = hashlib.sha256(f"{requester_agent_id}:{idempotency_key}".encode("utf-8")).hexdigest()[:32]
+    return f"task_hc_{digest}"
+
+
+def install_healthcheck_ack_text(requester_agent_id: str, task_id: str) -> str:
+    return "\n".join(
+        [
+            f"ACK from {HEALTHCHECK_AGENT_ID}",
+            f"requester={requester_agent_id}",
+            f"task={task_id}",
+            "scope=agentrelay-install-loopback",
+        ]
+    )
+
+
+def latest_agent_event_conn(conn: sqlite3.Connection, agent_id: str, task_id: str) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT * FROM agent_events
+        WHERE agent_id = ? AND task_id = ?
+        ORDER BY created_at DESC, event_id DESC
+        LIMIT 1
+        """,
+        (agent_id, task_id),
+    ).fetchone()
+    return decode_payload(row) if row else None
+
+
+def latest_artifact_source_ref_conn(conn: sqlite3.Connection, task_id: str) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT artifact_id, from_agent_id, kind, created_at
+        FROM artifacts
+        WHERE task_id = ?
+        ORDER BY created_at DESC, artifact_id DESC
+        LIMIT 1
+        """,
+        (task_id,),
+    ).fetchone()
+    if not row:
+        return None
+    return {
+        "type": "tool_result",
+        "label": f"Latest artifact from {row['from_agent_id']}",
+        "summary": f"Task completion was evaluated against artifact {row['artifact_id']} ({row['kind']}).",
+        "visibility": "redacted",
+        "uri": f"agentrelay://tasks/{task_id}/artifacts/{row['artifact_id']}",
+    }
+
+
 def summarize_task(row: sqlite3.Row) -> dict[str, Any]:
     data = dict(row)
     return {
@@ -1651,6 +1806,7 @@ def decode_parts(row: sqlite3.Row) -> dict[str, Any]:
 
 def decode_payload(row: sqlite3.Row) -> dict[str, Any]:
     data = dict(row)
+    data.pop("_rowid", None)
     data["payload"] = json.loads(data.pop("payload_json"))
     if "created_at" in data and "event_id" in data:
         data["cursor"] = agent_event_cursor(data["created_at"], data["event_id"])

@@ -222,7 +222,8 @@ Phase 3 Progress:
 - [x] Add conformance-gated onboarding flow for third-party agents.
 - [x] Run a real two-agent Protocol v0.3 flow through AgentRelay and verify close/event cleanup.
 - [x] Polish requester-side MCP completion decisions and human completion authority.
-- [ ] Validate the new local inbox workbench end-to-end with a real remote agent.
+- [x] Close flow reliability polish: stable task event ordering, idempotent install loopback checks, healthcheck TTL cleanup, local inbox workflow binding, and latest-artifact close evidence refs.
+- [ ] Continue validating the new local inbox workbench end-to-end with more real remote agents.
 
 详细计划见 `phase3-plan.md`。
 
@@ -244,6 +245,13 @@ Latest reliable event delivery note:
 - WebSocket push claims events as `inflight` and sends secret-safe metadata plus `payloadRef`; agents fetch full task content separately.
 - Ack remains backward compatible: old ack calls mark events as `done`, while new clients can explicitly mark `done` or `failed`.
 - MCP exposes agent-first tools to list, claim, and ack agent events.
+
+Latest close flow reliability note:
+
+- Task events now carry per-task `event_sequence` so timelines are stable even when several events share the same second.
+- Install loopback health checks accept idempotency keys, reuse the same synthetic task/event on retry, and expire stale non-terminal healthcheck tasks after a short TTL.
+- Closing a task can automatically attach a sanitized `source_refs` pointer to the latest artifact when the close authority/final artifact did not provide one.
+- The public MCP local inbox records a `localWorkflowBinding` in `state/issues.json`; this binds a Relay task to the local inbox without forcing Codex App, CLI, Slack, WeChat, or any other adapter.
 
 Latest source refs and approval summaries note:
 
