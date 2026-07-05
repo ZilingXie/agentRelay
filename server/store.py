@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import hashlib
 import sqlite3
@@ -29,6 +30,7 @@ PROTOCOL_VERSION = PROTOCOL_V03
 AGENT_EVENT_DELIVERY_STATES = {"pending", "inflight", "done", "failed"}
 HEALTHCHECK_AGENT_ID = "agentrelay-healthcheck"
 HEALTHCHECK_TTL_SECONDS = 30 * 60
+DEFAULT_TASK_TTL_SECONDS = 24 * 60 * 60
 
 
 class ConflictError(Exception):
@@ -523,6 +525,76 @@ class Store:
             )
             self.cleanup_terminal_task_delivery_conn(conn, task_id, now)
 
+    def expire_stale_tasks_conn(self, conn: sqlite3.Connection, now: int) -> None:
+        rows = conn.execute(
+            f"""
+            SELECT task_id FROM tasks
+            WHERE status NOT IN ({", ".join("?" for _ in TERMINAL_STATES)})
+              AND ttl IS NOT NULL
+              AND CAST(ttl AS INTEGER) > 1000000000
+              AND CAST(ttl AS INTEGER) <= ?
+              AND NOT EXISTS (
+                SELECT 1 FROM artifacts
+                WHERE artifacts.task_id = tasks.task_id
+                  AND artifacts.from_agent_id = tasks.target_agent_id
+              )
+            ORDER BY ttl, created_at, task_id
+            """,
+            (*sorted(TERMINAL_STATES), now),
+        ).fetchall()
+        for row in rows:
+            task_id = row["task_id"]
+            task = self.get_task_conn(conn, task_id)
+            if not task or task["status"] in TERMINAL_STATES:
+                continue
+            terminal_reason = (
+                f"Task expired before {task['target_agent_id']} replied within the configured TTL."
+            )
+            conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'expired',
+                    pending_on_agent_id = NULL,
+                    pending_on_human_id = NULL,
+                    next_action = NULL,
+                    claimed_by = NULL,
+                    claimed_at = NULL,
+                    terminal_reason = ?,
+                    updated_at = ?
+                WHERE task_id = ?
+                """,
+                (terminal_reason, now, task_id),
+            )
+            self.add_event_conn(
+                conn,
+                task_id,
+                "task.expired",
+                {
+                    "protocol_version": PROTOCOL_VERSION,
+                    "actor_agent_id": "agentrelay",
+                    "requester_agent_id": task["requester_agent_id"],
+                    "target_agent_id": task["target_agent_id"],
+                    "reason": "task.ttl_expired",
+                    "ttl": task.get("ttl"),
+                    "expired_at": now,
+                    "terminalReason": terminal_reason,
+                    "terminal_reason": terminal_reason,
+                },
+                now,
+            )
+            self.cleanup_terminal_task_delivery_conn(conn, task_id, now)
+            expired_task = self.get_task_conn(conn, task_id)
+            if expired_task:
+                self.create_agent_event_conn(
+                    conn,
+                    expired_task["requester_agent_id"],
+                    "task.pending",
+                    task_id,
+                    expired_task_event_payload(expired_task, now),
+                    idempotency_key=f"{task_id}:{expired_task['requester_agent_id']}:task.ttl_expired:{expired_task.get('ttl')}",
+                    created_at=now,
+                )
+
     def create_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = int(time.time())
         normalized = normalize_task_create(payload)
@@ -534,7 +606,11 @@ class Store:
         subject = normalized["subject"]
         parts = message["parts"]
         requester_thread_id = normalized["requester_thread_id"]
-        ttl = normalized["ttl"]
+        ttl = normalize_task_ttl(
+            normalized["ttl"],
+            ttl_seconds=normalized["ttl_seconds"],
+            now=now,
+        )
         max_turns = normalized["max_turns"]
         done_criteria = normalized["done_criteria"]
         completion_owner_agent_id = normalized["completion_owner_agent_id"]
@@ -547,6 +623,7 @@ class Store:
         done_criteria_payload = normalized["done_criteria_payload"]
 
         with self.connect() as conn:
+            self.expire_stale_tasks_conn(conn, now)
             assert_agent_exists(conn, requester_agent_id)
             assert_agent_exists(conn, target_agent_id)
             conn.execute(
@@ -619,6 +696,7 @@ class Store:
                     "pendingOnAgentId": pending_on_agent_id,
                     "pending_on_agent_id": pending_on_agent_id,
                     "next_action": next_action,
+                    "ttl": ttl,
                 },
                 now,
             )
@@ -626,7 +704,9 @@ class Store:
             return self.get_task_conn(conn, task_id)
 
     def get_task(self, task_id: str) -> dict[str, Any] | None:
+        now = int(time.time())
         with self.connect() as conn:
+            self.expire_stale_tasks_conn(conn, now)
             return self.get_task_conn(conn, task_id)
 
     def get_task_conn(self, conn: sqlite3.Connection, task_id: str) -> dict[str, Any] | None:
@@ -656,7 +736,9 @@ class Store:
         return task
 
     def get_events(self, task_id: str) -> list[dict[str, Any]] | None:
+        now = int(time.time())
         with self.connect() as conn:
+            self.expire_stale_tasks_conn(conn, now)
             if not self.get_task_conn(conn, task_id):
                 return None
             rows = conn.execute(
@@ -686,7 +768,9 @@ class Store:
 
     def list_pending_tasks(self, agent_id: str, limit: int = 100) -> list[dict[str, Any]]:
         claimable_placeholders = ", ".join("?" for _ in CLAIMABLE_STATES)
+        now = int(time.time())
         with self.connect() as conn:
+            self.expire_stale_tasks_conn(conn, now)
             assert_agent_exists(conn, agent_id)
             rows = conn.execute(
                 f"""
@@ -708,6 +792,7 @@ class Store:
         now = int(time.time())
         claimable_placeholders = ", ".join("?" for _ in CLAIMABLE_STATES)
         with self.connect() as conn:
+            self.expire_stale_tasks_conn(conn, now)
             assert_agent_exists(conn, agent_id)
             row = conn.execute(
                 f"""
@@ -744,6 +829,7 @@ class Store:
     def claim_task_by_id(self, agent_id: str, task_id: str) -> dict[str, Any] | None:
         now = int(time.time())
         with self.connect() as conn:
+            self.expire_stale_tasks_conn(conn, now)
             assert_agent_exists(conn, agent_id)
             task = self.get_task_conn(conn, task_id)
             if not task:
@@ -777,6 +863,7 @@ class Store:
     def set_thread(self, agent_id: str, task_id: str, thread_id: str) -> dict[str, Any] | None:
         now = int(time.time())
         with self.connect() as conn:
+            self.expire_stale_tasks_conn(conn, now)
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
@@ -817,6 +904,7 @@ class Store:
     def update_status(self, task_id: str, status: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         now = int(time.time())
         with self.connect() as conn:
+            self.expire_stale_tasks_conn(conn, now)
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
@@ -899,6 +987,7 @@ class Store:
         pending_on_human_id = normalized["pending_on_human_id"]
         next_action = normalized["next_action"]
         with self.connect() as conn:
+            self.expire_stale_tasks_conn(conn, now)
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
@@ -1007,6 +1096,7 @@ class Store:
         if delivery_status not in {"delivered", "failed"}:
             raise ValueError("deliveryStatus must be delivered or failed")
         with self.connect() as conn:
+            self.expire_stale_tasks_conn(conn, now)
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
@@ -1090,6 +1180,7 @@ class Store:
         final_artifact = normalize_final_artifact(payload.get("final_artifact"))
         idempotency_key = payload.get("idempotency_key")
         with self.connect() as conn:
+            self.expire_stale_tasks_conn(conn, now)
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
@@ -1257,7 +1348,9 @@ class Store:
         after_cursor: str | None = None,
         delivery_state: str | None = None,
     ) -> list[dict[str, Any]]:
+        now = int(time.time())
         with self.connect() as conn:
+            self.expire_stale_tasks_conn(conn, now)
             assert_agent_exists(conn, agent_id)
             ack_filter = "" if include_acked else "AND acked_at IS NULL"
             state_filter = ""
@@ -1294,6 +1387,7 @@ class Store:
         now = int(time.time())
         lease_until = now + max(1, lease_seconds)
         with self.connect() as conn:
+            self.expire_stale_tasks_conn(conn, now)
             assert_agent_exists(conn, agent_id)
             cursor_filter = ""
             params: list[Any] = [agent_id, now]
@@ -1578,7 +1672,8 @@ def normalize_task_create(payload: dict[str, Any]) -> dict[str, Any]:
         },
         "subject": payload.get("subject") or "AgentRelay task",
         "requester_thread_id": requester_thread_id,
-        "ttl": payload.get("ttl"),
+        "ttl": payload.get("ttl") or payload.get("expires_at") or payload.get("expiresAt"),
+        "ttl_seconds": payload.get("ttl_seconds") or payload.get("ttlSeconds"),
         "max_turns": int(payload.get("maxTurns") or payload.get("max_turns") or 12),
         "done_criteria": done_criteria_storage,
         "done_criteria_payload": done_criteria_payload,
@@ -1796,6 +1891,64 @@ def pending_event_payload(task: dict[str, Any], reason: str) -> dict[str, Any]:
             "href": f"/agentrelay/tasks/{task['task_id']}",
         },
     }
+
+
+def expired_task_event_payload(task: dict[str, Any], expired_at: int) -> dict[str, Any]:
+    return {
+        "type": "task.pending",
+        "taskId": task["task_id"],
+        "contextId": task["context_id"],
+        "status": "expired",
+        "agentId": task["requester_agent_id"],
+        "pendingOnAgentId": task["requester_agent_id"],
+        "updatedAt": task["updated_at"],
+        "reason": "task.ttl_expired",
+        "expiredAt": expired_at,
+        "ttl": task.get("ttl"),
+        "payloadRef": {
+            "method": "GET",
+            "href": f"/agentrelay/tasks/{task['task_id']}",
+        },
+    }
+
+
+def normalize_task_ttl(ttl: Any, *, ttl_seconds: Any = None, now: int) -> int:
+    if ttl_seconds is not None:
+        seconds = parse_positive_int(ttl_seconds, "ttl_seconds")
+        return now + seconds
+    if ttl is None or ttl == "":
+        return now + DEFAULT_TASK_TTL_SECONDS
+    if isinstance(ttl, (int, float)):
+        value = int(ttl)
+        if value <= 0:
+            raise ValueError("ttl must be positive")
+        return value if value > 1_000_000_000 else now + value
+    if isinstance(ttl, str):
+        stripped = ttl.strip()
+        if not stripped:
+            return now + DEFAULT_TASK_TTL_SECONDS
+        if stripped.isdigit():
+            value = int(stripped)
+            return value if value > 1_000_000_000 else now + value
+        try:
+            normalized = stripped.replace("Z", "+00:00")
+            parsed = datetime.fromisoformat(normalized)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return int(parsed.timestamp())
+        except ValueError as exc:
+            raise ValueError("ttl must be epoch seconds, ttl seconds, or ISO datetime") from exc
+    raise ValueError("ttl must be epoch seconds, ttl seconds, or ISO datetime")
+
+
+def parse_positive_int(value: Any, field: str) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be a positive integer") from exc
+    if parsed <= 0:
+        raise ValueError(f"{field} must be a positive integer")
+    return parsed
 
 
 def decode_parts(row: sqlite3.Row) -> dict[str, Any]:

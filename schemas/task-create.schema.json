@@ -76,7 +76,16 @@
       "minLength": 1
     },
     "ttl": {
-      "type": "string"
+      "description": "Absolute expiry as epoch seconds, seconds from now, or ISO datetime. Defaults to 24 hours.",
+      "oneOf": [
+        { "type": "integer", "minimum": 1 },
+        { "type": "string", "minLength": 1 }
+      ]
+    },
+    "ttl_seconds": {
+      "description": "Relative expiry in seconds from task creation. Defaults to 86400.",
+      "type": "integer",
+      "minimum": 1
     },
     "max_turns": {
       "type": "integer",

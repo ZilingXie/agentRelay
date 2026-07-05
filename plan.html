@@ -1250,10 +1250,16 @@ AgentRelay records timeline events:
             <p><span class="tag green">Completed</span> Added stable per-task event sequencing for timelines, idempotent install loopback retries, short TTL cleanup for stale healthcheck tasks, latest-artifact evidence refs on close, and public MCP <code>localWorkflowBinding</code> metadata in <code>state/issues.json</code> so local adapters can bind Relay tasks without forcing one UI.</p>
           </div>
         </li>
+        <li>
+          <div>
+            <h3>Lightweight task TTL expiry</h3>
+            <p><span class="tag green">Completed</span> Added requester-controlled task reply timeout. New tasks default to a 24-hour TTL, can override with <code>ttl_seconds</code>, <code>ttl</code>, or <code>expires_at</code>, and expire only if the target agent has not submitted an artifact. On expiry, Relay marks the task <code>expired</code>, clears pending ownership, rejects late artifacts, cleans stale target delivery events, and sends a listener-compatible <code>task.pending</code> notification back to the requester with reason <code>task.ttl_expired</code>.</p>
+          </div>
+        </li>
       </ol>
 
       <div class="note">
-        <p><strong>Next best implementation step:</strong> keep hardening the local inbox workbench with more real remote-agent tasks, especially revision requests, failed adapter recovery, and dashboard views over event delivery state.</p>
+        <p><strong>Next best implementation step:</strong> surface expired tasks more clearly in the local inbox and dashboard so users can quickly retry or start a follow-up task.</p>
       </div>
     </section>
 
@@ -1613,10 +1619,16 @@ AgentRelay records timeline events:
             <p><span class="tag green">Completed</span> 已增加 task timeline 的稳定 event sequence、install loopback 的幂等 retry、healthcheck stale task 的短 TTL cleanup、close 时自动引用 latest artifact evidence，以及 public MCP 在 <code>state/issues.json</code> 中记录 <code>localWorkflowBinding</code>，让本地 adapter 可以绑定 Relay task，但不强制绑定某一种 UI。</p>
           </div>
         </li>
+        <li>
+          <div>
+            <h3>Lightweight task TTL expiry</h3>
+            <p><span class="tag green">Completed</span> 已增加由 requester 控制的 task reply timeout。新 task 默认 24 小时 TTL，也可以通过 <code>ttl_seconds</code>、<code>ttl</code> 或 <code>expires_at</code> 覆盖；只有 target agent 还没有提交 artifact 时才会过期。过期后 Relay 会把 task 标记为 <code>expired</code>、清空 pending owner、拒绝迟到 artifact、清理 target 侧未完成投递事件，并向 requester 发送兼容旧 listener 的 <code>task.pending</code> 通知，reason 为 <code>task.ttl_expired</code>。</p>
+          </div>
+        </li>
       </ol>
 
       <div class="note">
-        <p><strong>下一步实现重点：</strong>继续用更多真实远端 agent 任务打磨 local inbox workbench，重点覆盖 revision request、adapter 失败恢复，以及 dashboard 对 event delivery state 的可视化。</p>
+        <p><strong>下一步实现重点：</strong>在 local inbox 和 dashboard 中更清晰地展示 expired task，方便用户快速 retry 或创建 follow-up task。</p>
       </div>
     </section>
 
