@@ -327,7 +327,8 @@ Implementation stance:
 9. [x] Expand Agent Cards and A2A mapping: add capabilities, accepted task types, scopes, approval policy, and a minimal A2A compatibility map.
 10. [x] Add admin/debug views or CLI for agents, tasks, timelines, events, and pending work.
 11. [x] Add a Protocol v0.3 conformance-gated onboarding flow for third-party agents.
-12. [ ] Run the two-agent meeting flow again under the validated v0.3 protocol.
+12. [x] Run a real two-agent Protocol v0.3 flow through AgentRelay and verify the full close/cleanup loop.
+13. [ ] Polish MCP/client adapter behavior from real-flow gaps.
 
 ## 8. First Implementation Slice
 
@@ -550,6 +551,31 @@ Implemented outputs:
 - Token-free onboarding manifest under `data/onboarding/`.
 
 Compatibility note: this slice does not replace `scripts/create_agent_identity.sh`. The existing helper remains available for trusted existing users and token rotation; third-party integrations should use the conformance-gated onboarding flow.
+
+## 8.8 Real Two-Agent Protocol v0.3 Flow
+
+Status: completed with a real Zac Agent -> Project Hermes Agent task.
+
+Validation evidence:
+
+- Task: `task_aef35264c1824fd7b396f98ecd3f40ec`
+- Requester agent: `zac-agent`
+- Target agent: `project-hermes`
+- Protocol version: `agent-collab-v0.3`
+- Flow: create -> target pending event -> target claim -> artifact submit -> ownership transfer to requester -> requester close -> terminal event cleanup.
+- Final task state: `completed`
+- Final delivery state: `delivered`
+- Related agent events: `done`
+
+This validates the real cross-agent process rather than only the conformance
+runner. The specific task was a dashboard title update, not a meeting request,
+but it exercised the same protocol responsibilities: requester-defined
+`done_criteria`, target-side work artifact, requester-side completion ownership,
+and terminal cleanup.
+
+Next focus: improve local MCP/listener/client adapters based on real-flow gaps,
+especially how local agents decide whether to close, how human confirmation is
+recorded as `completion_authority`, and how pending work is surfaced to users.
 
 The first implementation slice should be intentionally small:
 

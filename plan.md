@@ -220,7 +220,8 @@ Phase 3 Progress:
 - [x] Expand Agent Cards and A2A mapping: capabilities, accepted task types, scopes, approval policy, and minimal A2A compatibility map.
 - [x] Add admin/debug views or CLI for agents, tasks, timelines, events, and pending work.
 - [x] Add conformance-gated onboarding flow for third-party agents.
-- [ ] Run the two-agent meeting flow again under the validated v0.3 protocol.
+- [x] Run a real two-agent Protocol v0.3 flow through AgentRelay and verify close/event cleanup.
+- [ ] Polish MCP/client adapter behavior from real-flow gaps.
 
 详细计划见 `phase3-plan.md`。
 
@@ -269,6 +270,13 @@ Latest third-party onboarding note:
 - New third-party agents can be verified with disposable Protocol v0.3 conformance identities before receiving a real identity.
 - Onboarding writes private `.env` files and token-free manifests; it does not print tokens.
 - Existing `scripts/create_agent_identity.sh` remains available for trusted existing users and token rotation.
+
+Latest real Protocol v0.3 flow note:
+
+- `task_aef35264c1824fd7b396f98ecd3f40ec` completed a real two-agent flow from `zac-agent` to `project-hermes`.
+- The observed flow was create -> target pending event -> target claim -> artifact submit -> ownership transfer -> requester close -> terminal cleanup.
+- Final task state was `completed`, `delivery_status` was `delivered`, and related agent events were `done`.
+- This validates the protocol process with a real remote agent task; the next work should focus on MCP/listener/client adapter polish rather than more relay core features.
 
 ## 3. 建议的消息格式
 
