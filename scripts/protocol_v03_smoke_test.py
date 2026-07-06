@@ -254,6 +254,12 @@ def main() -> None:
             closed_event = find_event(events, "task.completed")
             if created_event["payload"].get("protocol_version") != "agent-collab-v0.3":
                 raise AssertionError("task.created missing v0.3 protocol_version")
+            if created_event["payload"].get("max_turns") != 6 or created_event["payload"].get("maxTurns") != 6:
+                raise AssertionError("task.created missing max_turns audit fields")
+            if created_event["payload"].get("completion_owner_agent_id") != "zac-agent":
+                raise AssertionError("task.created missing completion_owner_agent_id audit field")
+            if not created_event["payload"].get("ttl"):
+                raise AssertionError("task.created missing ttl audit field")
             if artifact_event["payload"].get("source_refs", [{}])[0].get("type") != "owner_confirmation":
                 raise AssertionError("artifact.submitted missing source_refs")
             redacted_ref = artifact_event["payload"]["source_refs"][0]
@@ -335,6 +341,8 @@ def main() -> None:
             defaulted_closed = find_event(defaulted_events, "task.completed")
             if defaulted_created["payload"].get("protocol_version") != "agent-collab-v0.3":
                 raise AssertionError("default task.created should use v0.3 protocol_version")
+            if defaulted_created["payload"].get("max_turns") != 12:
+                raise AssertionError("default task.created should audit default max_turns")
             if defaulted_closed["payload"].get("protocol_version") != "agent-collab-v0.3":
                 raise AssertionError("default task.completed should use v0.3 protocol_version")
 

@@ -151,6 +151,18 @@ def main() -> None:
                 raise AssertionError("max_turns violation should terminalize the task as failed")
             if failed_after_max_turns["pending_on_agent_id"] is not None:
                 raise AssertionError("max_turns violation should clear pending_on_agent_id")
+            max_turns_notice = find_agent_event_payload(
+                db_path,
+                "zac-agent",
+                max_turns,
+                "artifact.max_turns_exceeded",
+            )
+            if max_turns_notice.get("status") != "failed":
+                raise AssertionError("requester max_turns notification should report failed status")
+            if "max_turns" not in (max_turns_notice.get("terminal_reason") or ""):
+                raise AssertionError("requester max_turns notification should include terminal reason")
+            if max_turns_notice.get("attempted_pending_on_agent_id") != "frank-agent":
+                raise AssertionError("requester max_turns notification should include attempted handoff")
             pending_after_max_turns = get_json(
                 f"{BASE_URL}/workers/frank-agent/pending",
                 AGENT_B_HEADERS,
@@ -172,6 +184,14 @@ def main() -> None:
             )["data"]["task"]
             if stale_failed["status"] != "failed":
                 raise AssertionError("stale max_turns task should be terminalized as failed")
+            stale_notice = find_agent_event_payload(
+                db_path,
+                "zac-agent",
+                stale_max_turns,
+                "task.max_turns_exhausted",
+            )
+            if stale_notice.get("status") != "failed":
+                raise AssertionError("stale max_turns should notify requester")
 
             closed_task = create_task("transition-terminal-lock", max_turns=3)
             claim_task(closed_task)
@@ -273,6 +293,25 @@ def force_exhausted_non_owner_task(db_path: str, task_id: str) -> None:
             """,
             (task_id,),
         )
+
+
+def find_agent_event_payload(db_path: str, agent_id: str, task_id: str, reason: str) -> dict:
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT payload_json
+            FROM agent_events
+            WHERE agent_id = ? AND task_id = ?
+            ORDER BY created_at, rowid
+            """,
+            (agent_id, task_id),
+        ).fetchall()
+    for row in rows:
+        payload = json.loads(row["payload_json"])
+        if payload.get("reason") == reason:
+            return payload
+    raise AssertionError(f"missing requester notification for {task_id}: {reason}")
 
 
 def task_id_from_summary(task: dict) -> str | None:

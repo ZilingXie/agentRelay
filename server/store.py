@@ -684,6 +684,26 @@ class Store:
             now,
         )
         self.cleanup_terminal_task_delivery_conn(conn, task_id, now)
+        failed_task = self.get_task_conn(conn, task_id)
+        requester_agent_id = task.get("requester_agent_id")
+        if failed_task and requester_agent_id:
+            self.create_agent_event_conn(
+                conn,
+                requester_agent_id,
+                "task.pending",
+                task_id,
+                failed_task_event_payload(
+                    failed_task,
+                    now,
+                    reason=reason,
+                    previous_pending_on_agent_id=previous_pending_on_agent_id,
+                    attempted_actor_agent_id=attempted_actor_agent_id,
+                    attempted_pending_on_agent_id=attempted_pending_on_agent_id,
+                    attempted_turn_count=attempted_turn_count,
+                ),
+                idempotency_key=f"{task_id}:{requester_agent_id}:task.max_turns_failed:{max_turns}:{turn_count}",
+                created_at=now,
+            )
 
     def create_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = int(time.time())
@@ -783,10 +803,13 @@ class Store:
                     "doneCriteria": done_criteria,
                     "done_criteria": done_criteria_payload,
                     "completionOwnerAgentId": completion_owner_agent_id,
+                    "completion_owner_agent_id": completion_owner_agent_id,
                     "pendingOnAgentId": pending_on_agent_id,
                     "pending_on_agent_id": pending_on_agent_id,
                     "next_action": next_action,
                     "ttl": ttl,
+                    "maxTurns": max_turns,
+                    "max_turns": max_turns,
                 },
                 now,
             )
@@ -2020,6 +2043,49 @@ def expired_task_event_payload(task: dict[str, Any], expired_at: int) -> dict[st
         "reason": "task.ttl_expired",
         "expiredAt": expired_at,
         "ttl": task.get("ttl"),
+        "payloadRef": {
+            "method": "GET",
+            "href": f"/agentrelay/tasks/{task['task_id']}",
+        },
+    }
+
+
+def failed_task_event_payload(
+    task: dict[str, Any],
+    failed_at: int,
+    *,
+    reason: str,
+    previous_pending_on_agent_id: str | None,
+    attempted_actor_agent_id: str | None = None,
+    attempted_pending_on_agent_id: str | None = None,
+    attempted_turn_count: int | None = None,
+) -> dict[str, Any]:
+    requester_agent_id = task["requester_agent_id"]
+    return {
+        "type": "task.pending",
+        "taskId": task["task_id"],
+        "contextId": task["context_id"],
+        "status": "failed",
+        "agentId": requester_agent_id,
+        "pendingOnAgentId": requester_agent_id,
+        "updatedAt": task["updated_at"],
+        "reason": reason,
+        "terminalReason": task.get("terminal_reason"),
+        "terminal_reason": task.get("terminal_reason"),
+        "failedAt": failed_at,
+        "failed_at": failed_at,
+        "previousPendingOnAgentId": previous_pending_on_agent_id,
+        "previous_pending_on_agent_id": previous_pending_on_agent_id,
+        "turnCount": task.get("turn_count"),
+        "turn_count": task.get("turn_count"),
+        "maxTurns": task.get("max_turns"),
+        "max_turns": task.get("max_turns"),
+        "attemptedActorAgentId": attempted_actor_agent_id,
+        "attempted_actor_agent_id": attempted_actor_agent_id,
+        "attemptedPendingOnAgentId": attempted_pending_on_agent_id,
+        "attempted_pending_on_agent_id": attempted_pending_on_agent_id,
+        "attemptedTurnCount": attempted_turn_count,
+        "attempted_turn_count": attempted_turn_count,
         "payloadRef": {
             "method": "GET",
             "href": f"/agentrelay/tasks/{task['task_id']}",
