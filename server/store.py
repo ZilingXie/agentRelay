@@ -22,6 +22,7 @@ from server.transitions import (
     assert_known_status,
     assert_max_turns,
     assert_update_status_allowed,
+    is_exhausted_for_pending_agent,
     next_turn_count,
 )
 
@@ -31,6 +32,9 @@ AGENT_EVENT_DELIVERY_STATES = {"pending", "inflight", "done", "failed"}
 HEALTHCHECK_AGENT_ID = "agentrelay-healthcheck"
 HEALTHCHECK_TTL_SECONDS = 30 * 60
 DEFAULT_TASK_TTL_SECONDS = 24 * 60 * 60
+MAX_TURNS_TERMINAL_REASON = (
+    "Task exceeded max_turns before the pending agent could make another legal handoff."
+)
 
 
 class ConflictError(Exception):
@@ -526,6 +530,7 @@ class Store:
             self.cleanup_terminal_task_delivery_conn(conn, task_id, now)
 
     def expire_stale_tasks_conn(self, conn: sqlite3.Connection, now: int) -> None:
+        self.fail_max_turns_exhausted_tasks_conn(conn, now)
         rows = conn.execute(
             f"""
             SELECT task_id FROM tasks
@@ -594,6 +599,91 @@ class Store:
                     idempotency_key=f"{task_id}:{expired_task['requester_agent_id']}:task.ttl_expired:{expired_task.get('ttl')}",
                     created_at=now,
                 )
+
+    def fail_max_turns_exhausted_tasks_conn(self, conn: sqlite3.Connection, now: int) -> None:
+        rows = conn.execute(
+            f"""
+            SELECT * FROM tasks
+            WHERE status NOT IN ({", ".join("?" for _ in TERMINAL_STATES)})
+              AND pending_on_agent_id IS NOT NULL
+              AND pending_on_agent_id != COALESCE(NULLIF(completion_owner_agent_id, ''), requester_agent_id)
+              AND CAST(turn_count AS INTEGER) >= CAST(max_turns AS INTEGER)
+            ORDER BY updated_at, created_at, task_id
+            """,
+            (*sorted(TERMINAL_STATES),),
+        ).fetchall()
+        for row in rows:
+            task = dict(row)
+            if is_exhausted_for_pending_agent(task):
+                self.fail_task_max_turns_conn(
+                    conn,
+                    task,
+                    now,
+                    reason="task.max_turns_exhausted",
+                )
+
+    def fail_task_max_turns_conn(
+        self,
+        conn: sqlite3.Connection,
+        task: dict[str, Any],
+        now: int,
+        *,
+        reason: str,
+        attempted_actor_agent_id: str | None = None,
+        attempted_pending_on_agent_id: str | None = None,
+        attempted_turn_count: int | None = None,
+    ) -> None:
+        task_id = task["task_id"]
+        if task.get("status") in TERMINAL_STATES:
+            return
+        previous_pending_on_agent_id = task.get("pending_on_agent_id")
+        turn_count = int(task.get("turn_count") or 0)
+        max_turns = int(task.get("max_turns") or 12)
+        conn.execute(
+            """
+            UPDATE tasks
+            SET status = 'failed',
+                pending_on_agent_id = NULL,
+                pending_on_human_id = NULL,
+                next_action = NULL,
+                claimed_by = NULL,
+                claimed_at = NULL,
+                terminal_reason = ?,
+                updated_at = ?
+            WHERE task_id = ?
+            """,
+            (MAX_TURNS_TERMINAL_REASON, now, task_id),
+        )
+        self.add_event_conn(
+            conn,
+            task_id,
+            "task.status_updated",
+            {
+                "protocol_version": PROTOCOL_VERSION,
+                "actor_agent_id": "agentrelay",
+                "status": "failed",
+                "reason": reason,
+                "terminalReason": MAX_TURNS_TERMINAL_REASON,
+                "terminal_reason": MAX_TURNS_TERMINAL_REASON,
+                "requester_agent_id": task.get("requester_agent_id"),
+                "target_agent_id": task.get("target_agent_id"),
+                "completion_owner_agent_id": task.get("completion_owner_agent_id"),
+                "previousPendingOnAgentId": previous_pending_on_agent_id,
+                "previous_pending_on_agent_id": previous_pending_on_agent_id,
+                "turnCount": turn_count,
+                "turn_count": turn_count,
+                "maxTurns": max_turns,
+                "max_turns": max_turns,
+                "attemptedActorAgentId": attempted_actor_agent_id,
+                "attempted_actor_agent_id": attempted_actor_agent_id,
+                "attemptedPendingOnAgentId": attempted_pending_on_agent_id,
+                "attempted_pending_on_agent_id": attempted_pending_on_agent_id,
+                "attemptedTurnCount": attempted_turn_count,
+                "attempted_turn_count": attempted_turn_count,
+            },
+            now,
+        )
+        self.cleanup_terminal_task_delivery_conn(conn, task_id, now)
 
     def create_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = int(time.time())
@@ -781,6 +871,10 @@ class Store:
                     OR (status = 'claimed' AND claimed_by = ?)
                   )
                   AND (claimed_by IS NULL OR claimed_by = ?)
+                  AND (
+                    CAST(turn_count AS INTEGER) < CAST(max_turns AS INTEGER)
+                    OR pending_on_agent_id = COALESCE(NULLIF(completion_owner_agent_id, ''), requester_agent_id)
+                  )
                 ORDER BY updated_at, created_at, task_id
                 LIMIT ?
                 """,
@@ -800,6 +894,10 @@ class Store:
                 WHERE pending_on_agent_id = ?
                   AND status IN ({claimable_placeholders})
                   AND (claimed_by IS NULL OR claimed_by = ?)
+                  AND (
+                    CAST(turn_count AS INTEGER) < CAST(max_turns AS INTEGER)
+                    OR pending_on_agent_id = COALESCE(NULLIF(completion_owner_agent_id, ''), requester_agent_id)
+                  )
                 ORDER BY created_at
                 LIMIT 1
                 """,
@@ -1007,7 +1105,22 @@ class Store:
                 next_action = "Requester agent should evaluate the artifact against done_criteria."
             assert_artifact_allowed(task, actor_agent_id, next_status, pending_on_agent_id, next_action)
             turn_count = next_turn_count(task, pending_on_agent_id)
-            assert_max_turns(task, turn_count)
+            try:
+                assert_max_turns(task, turn_count)
+            except TransitionError as exc:
+                if str(exc) != "task exceeded max_turns":
+                    raise
+                self.fail_task_max_turns_conn(
+                    conn,
+                    task,
+                    now,
+                    reason="artifact.max_turns_exceeded",
+                    attempted_actor_agent_id=actor_agent_id,
+                    attempted_pending_on_agent_id=pending_on_agent_id,
+                    attempted_turn_count=turn_count,
+                )
+                conn.commit()
+                raise ValueError(str(exc)) from exc
             conn.execute(
                 """
                 INSERT INTO artifacts (
@@ -1286,6 +1399,8 @@ class Store:
             return None
         agent_id = task.get("pending_on_agent_id")
         if not agent_id or task["status"] in TERMINAL_STATES:
+            return None
+        if is_exhausted_for_pending_agent(task):
             return None
         return self.create_agent_event_conn(
             conn,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import subprocess
 import tempfile
 import time
@@ -28,12 +29,13 @@ AGENT_B_HEADERS = {
 
 def main() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = f"{tmpdir}/agentrelay-transitions.sqlite3"
         env = os.environ.copy()
         env.update(
             {
                 "AGENTRELAY_HOST": "127.0.0.1",
                 "AGENTRELAY_PORT": "8797",
-                "AGENTRELAY_DB_PATH": f"{tmpdir}/agentrelay-transitions.sqlite3",
+                "AGENTRELAY_DB_PATH": db_path,
                 "AGENTRELAY_TOKENS": "zac:zac-agent:zac-token,frank:frank-agent:frank-token",
             }
         )
@@ -141,6 +143,35 @@ def main() -> None:
                 expected_status=400,
             )
             assert_error_contains(err, "max_turns")
+            failed_after_max_turns = get_json(
+                f"{BASE_URL}/tasks/{max_turns}",
+                AGENT_A_HEADERS,
+            )["data"]["task"]
+            if failed_after_max_turns["status"] != "failed":
+                raise AssertionError("max_turns violation should terminalize the task as failed")
+            if failed_after_max_turns["pending_on_agent_id"] is not None:
+                raise AssertionError("max_turns violation should clear pending_on_agent_id")
+            pending_after_max_turns = get_json(
+                f"{BASE_URL}/workers/frank-agent/pending",
+                AGENT_B_HEADERS,
+            )["data"]["tasks"]
+            if any(task_id_from_summary(task) == max_turns for task in pending_after_max_turns):
+                raise AssertionError("max_turns failed task should not remain in worker pending queue")
+
+            stale_max_turns = create_task("transition-stale-max-turns", max_turns=1)
+            force_exhausted_non_owner_task(db_path, stale_max_turns)
+            stale_pending = get_json(
+                f"{BASE_URL}/workers/frank-agent/pending",
+                AGENT_B_HEADERS,
+            )["data"]["tasks"]
+            if any(task_id_from_summary(task) == stale_max_turns for task in stale_pending):
+                raise AssertionError("stale max_turns task should not be exposed as pending")
+            stale_failed = get_json(
+                f"{BASE_URL}/tasks/{stale_max_turns}",
+                AGENT_A_HEADERS,
+            )["data"]["task"]
+            if stale_failed["status"] != "failed":
+                raise AssertionError("stale max_turns task should be terminalized as failed")
 
             closed_task = create_task("transition-terminal-lock", max_turns=3)
             claim_task(closed_task)
@@ -227,6 +258,25 @@ def submit_valid_artifact(task_id: str) -> None:
             "next_action": "Zac should confirm the proposed time.",
         },
     )
+
+
+def force_exhausted_non_owner_task(db_path: str, task_id: str) -> None:
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE tasks
+            SET status = 'claimed',
+                pending_on_agent_id = 'frank-agent',
+                turn_count = max_turns,
+                claimed_by = 'frank-agent'
+            WHERE task_id = ?
+            """,
+            (task_id,),
+        )
+
+
+def task_id_from_summary(task: dict) -> str | None:
+    return task.get("task_id") or task.get("taskId")
 
 
 def artifact_body(summary: str = "Frank can meet Monday 10:30.") -> dict:

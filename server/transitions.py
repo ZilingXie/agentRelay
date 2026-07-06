@@ -58,6 +58,8 @@ def assert_not_expired(task: dict[str, Any]) -> None:
 def assert_claim_allowed(task: dict[str, Any], agent_id: str) -> None:
     assert_not_terminal(task, "claim task")
     assert_not_expired(task)
+    if is_exhausted_for_pending_agent(task):
+        raise TransitionError("task exceeded max_turns")
     pending_on = task.get("pending_on_agent_id")
     if pending_on != agent_id:
         raise TransitionError(f"task is pending on {pending_on or 'none'}, not {agent_id}")
@@ -122,9 +124,31 @@ def next_turn_count(task: dict[str, Any], pending_on_agent_id: str | None) -> in
 
 
 def assert_max_turns(task: dict[str, Any], turn_count: int) -> None:
-    max_turns = int(task.get("max_turns") or 12)
-    if turn_count > max_turns:
+    if turn_count > max_turns_for_task(task):
         raise TransitionError("task exceeded max_turns")
+
+
+def max_turns_for_task(task: dict[str, Any]) -> int:
+    return int(task.get("max_turns") or 12)
+
+
+def turn_count_for_task(task: dict[str, Any]) -> int:
+    return int(task.get("turn_count") or 0)
+
+
+def completion_owner_for_task(task: dict[str, Any]) -> str | None:
+    return task.get("completion_owner_agent_id") or task.get("requester_agent_id")
+
+
+def is_exhausted_for_pending_agent(task: dict[str, Any]) -> bool:
+    pending_on = task.get("pending_on_agent_id")
+    completion_owner = completion_owner_for_task(task)
+    return bool(
+        pending_on
+        and completion_owner
+        and pending_on != completion_owner
+        and turn_count_for_task(task) >= max_turns_for_task(task)
+    )
 
 
 def assert_delivery_allowed(task: dict[str, Any], delivered_by_agent_id: str, thread_id: str) -> None:
