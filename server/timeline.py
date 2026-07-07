@@ -59,6 +59,7 @@ def title_for_event(event_type: str) -> str:
     titles = {
         "task.created": "Task created",
         "task.claimed": "Task claimed",
+        "task.amended": "Task goal amended",
         "task.status_updated": "Task status updated",
         "artifact.submitted": "Artifact submitted",
         "ownership.transferred": "Ownership transferred",
@@ -83,6 +84,11 @@ def summarize_event(event_type: str, payload: dict[str, Any]) -> str:
     if event_type == "task.claimed":
         agent = payload.get("agentId") or payload.get("actor_agent_id") or "agent"
         return f"{agent} claimed the task."
+    if event_type == "task.amended":
+        actor = payload.get("actor_agent_id") or "requester agent"
+        version = payload.get("goal_version") or "new"
+        disposition = payload.get("previous_goal_disposition") or "clarified"
+        return f"{actor} amended the task goal to version {version}; previous goal was {disposition}."
     if event_type == "artifact.submitted":
         actor = payload.get("actor_agent_id") or "agent"
         summary = payload.get("summary")

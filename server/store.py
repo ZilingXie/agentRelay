@@ -9,7 +9,13 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from server.protocol_v03 import PROTOCOL_V03, normalize_completion_authority, normalize_source_refs
+from server.protocol_v03 import (
+    PROTOCOL_V03,
+    PREVIOUS_GOAL_DISPOSITIONS,
+    normalize_completion_authority,
+    normalize_human_authority,
+    normalize_source_refs,
+)
 from server.timeline import build_timeline_entry
 from server.transitions import (
     CLAIMABLE_STATES,
@@ -90,6 +96,8 @@ class Store:
                     ttl INTEGER,
                     max_turns INTEGER NOT NULL DEFAULT 12,
                     turn_count INTEGER NOT NULL DEFAULT 0,
+                    goal_version INTEGER NOT NULL DEFAULT 1,
+                    exchange_epoch INTEGER NOT NULL DEFAULT 1,
                     claimed_by TEXT,
                     claimed_at INTEGER,
                     created_at INTEGER NOT NULL,
@@ -196,6 +204,11 @@ class Store:
             "delivered_to_thread_id": "ALTER TABLE tasks ADD COLUMN delivered_to_thread_id TEXT",
             "delivered_at": "ALTER TABLE tasks ADD COLUMN delivered_at INTEGER",
             "delivery_error": "ALTER TABLE tasks ADD COLUMN delivery_error TEXT",
+            "ttl": "ALTER TABLE tasks ADD COLUMN ttl INTEGER",
+            "max_turns": "ALTER TABLE tasks ADD COLUMN max_turns INTEGER NOT NULL DEFAULT 12",
+            "turn_count": "ALTER TABLE tasks ADD COLUMN turn_count INTEGER NOT NULL DEFAULT 0",
+            "goal_version": "ALTER TABLE tasks ADD COLUMN goal_version INTEGER NOT NULL DEFAULT 1",
+            "exchange_epoch": "ALTER TABLE tasks ADD COLUMN exchange_epoch INTEGER NOT NULL DEFAULT 1",
         }
         for column, sql in migrations.items():
             if column not in columns:
@@ -810,6 +823,8 @@ class Store:
                     "ttl": ttl,
                     "maxTurns": max_turns,
                     "max_turns": max_turns,
+                    "goal_version": 1,
+                    "exchange_epoch": 1,
                 },
                 now,
             )
@@ -1090,6 +1105,104 @@ class Store:
                 self.cleanup_terminal_task_delivery_conn(conn, task_id, now)
             return self.get_task_conn(conn, task_id)
 
+    def amend_task(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        now = int(time.time())
+        normalized = normalize_task_amend(payload, now=now)
+        actor_agent_id = normalized["actor_agent_id"]
+        with self.connect() as conn:
+            self.expire_stale_tasks_conn(conn, now)
+            task = self.get_task_conn(conn, task_id)
+            if not task:
+                return None
+            if task.get("status") in TERMINAL_STATES:
+                raise ConflictError(f"cannot amend terminal task: {task.get('status')}")
+            if actor_agent_id != task.get("requester_agent_id"):
+                raise ConflictError("only requester_agent_id can amend task goals")
+            if actor_agent_id != task.get("completion_owner_agent_id"):
+                raise ConflictError("only completion_owner_agent_id can amend task goals")
+            if normalized["human_authority"].get("via_agent_id") != actor_agent_id:
+                raise ConflictError("human_authority.via_agent_id must match actor_agent_id")
+            current_goal_version = int(task.get("goal_version") or 1)
+            if normalized["expected_goal_version"] != current_goal_version:
+                raise ConflictError(
+                    f"expected_goal_version {normalized['expected_goal_version']} does not match current goal_version {current_goal_version}"
+                )
+            if task.get("pending_on_agent_id") != actor_agent_id:
+                raise ConflictError("task can only be amended while pending on requester review")
+            assert_agent_exists(conn, task["target_agent_id"])
+
+            next_goal_version = current_goal_version + 1
+            next_exchange_epoch = int(task.get("exchange_epoch") or 1) + 1
+            previous_done_criteria = task.get("done_criteria") or ""
+            previous_max_turns = int(task.get("max_turns") or 12)
+            previous_ttl = task.get("ttl")
+            new_max_turns = normalized["new_max_turns"] or previous_max_turns
+            new_ttl = normalized["ttl"]
+            next_action = normalized["next_action"] or "Target agent should respond to the amended goal."
+
+            conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'submitted',
+                    done_criteria = ?,
+                    pending_on_agent_id = target_agent_id,
+                    pending_on_human_id = NULL,
+                    next_action = ?,
+                    ttl = ?,
+                    max_turns = ?,
+                    turn_count = 0,
+                    goal_version = ?,
+                    exchange_epoch = ?,
+                    delivery_status = 'pending',
+                    claimed_by = NULL,
+                    claimed_at = NULL,
+                    updated_at = ?
+                WHERE task_id = ?
+                """,
+                (
+                    normalized["new_done_criteria"],
+                    next_action,
+                    new_ttl,
+                    new_max_turns,
+                    next_goal_version,
+                    next_exchange_epoch,
+                    now,
+                    task_id,
+                ),
+            )
+            self.add_event_conn(
+                conn,
+                task_id,
+                "task.amended",
+                {
+                    "protocol_version": normalized["protocol_version"],
+                    "idempotency_key": normalized["idempotency_key"],
+                    "actor_agent_id": actor_agent_id,
+                    "requester_agent_id": task["requester_agent_id"],
+                    "target_agent_id": task["target_agent_id"],
+                    "previous_goal_version": current_goal_version,
+                    "goal_version": next_goal_version,
+                    "previous_exchange_epoch": task.get("exchange_epoch"),
+                    "exchange_epoch": next_exchange_epoch,
+                    "previous_done_criteria": previous_done_criteria,
+                    "new_done_criteria": normalized["new_done_criteria_payload"],
+                    "previous_goal_disposition": normalized["previous_goal_disposition"],
+                    "previous_max_turns": previous_max_turns,
+                    "new_max_turns": new_max_turns,
+                    "previous_ttl": previous_ttl,
+                    "ttl": new_ttl,
+                    "pendingOnAgentId": task["target_agent_id"],
+                    "pending_on_agent_id": task["target_agent_id"],
+                    "nextAction": next_action,
+                    "next_action": next_action,
+                    "human_authority": normalized["human_authority"],
+                    "reason": normalized["reason"],
+                },
+                now,
+            )
+            self.create_pending_agent_event_conn(conn, task_id, "task.amended", now)
+            return self.get_task_conn(conn, task_id)
+
     def submit_artifact(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         now = int(time.time())
         normalized = normalize_artifact_submit(payload)
@@ -1107,11 +1220,14 @@ class Store:
         pending_on_agent_id = normalized["pending_on_agent_id"]
         pending_on_human_id = normalized["pending_on_human_id"]
         next_action = normalized["next_action"]
+        response_to_goal_version = normalized["response_to_goal_version"]
         with self.connect() as conn:
             self.expire_stale_tasks_conn(conn, now)
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
+            if response_to_goal_version is None:
+                response_to_goal_version = int(task.get("goal_version") or 1)
             if not to_agent:
                 to_agent = other_task_agent(task, actor_agent_id)
             if not pending_on_agent_id and actor_agent_id != task["completion_owner_agent_id"]:
@@ -1202,6 +1318,9 @@ class Store:
                     "source_refs": source_refs,
                     "target_agent_id": to_agent,
                     "requester_agent_id": task["requester_agent_id"],
+                    "goal_version": task.get("goal_version"),
+                    "exchange_epoch": task.get("exchange_epoch"),
+                    "response_to_goal_version": response_to_goal_version,
                     "nextStatus": next_status,
                     "pendingOnAgentId": pending_on_agent_id,
                     "pending_on_agent_id": pending_on_agent_id,
@@ -1315,11 +1434,14 @@ class Store:
         completion_authority = normalize_completion_authority(payload.get("completion_authority"))
         final_artifact = normalize_final_artifact(payload.get("final_artifact"))
         idempotency_key = payload.get("idempotency_key")
+        closed_against_goal_version = payload.get("closed_against_goal_version") or payload.get("closedAgainstGoalVersion")
         with self.connect() as conn:
             self.expire_stale_tasks_conn(conn, now)
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
+            if closed_against_goal_version is None:
+                closed_against_goal_version = int(task.get("goal_version") or 1)
             assert_close_allowed(task, payload)
             evidence_ref = latest_artifact_source_ref_conn(conn, task_id)
             if evidence_ref and completion_authority is not None and not completion_authority.get("source_refs"):
@@ -1361,6 +1483,9 @@ class Store:
                     "closedByAgentId": closed_by_agent_id,
                     "closed_by_agent_id": closed_by_agent_id,
                     "completion_authority": completion_authority,
+                    "goal_version": task.get("goal_version"),
+                    "exchange_epoch": task.get("exchange_epoch"),
+                    "closed_against_goal_version": closed_against_goal_version,
                     "terminalReason": terminal_reason,
                     "terminal_reason": terminal_reason,
                     "final_artifact": final_artifact,
@@ -1852,6 +1977,10 @@ def normalize_artifact_submit(payload: dict[str, Any]) -> dict[str, Any]:
         "pending_on_agent_id": payload.get("pendingOnAgentId") or payload.get("pending_on_agent_id"),
         "pending_on_human_id": payload.get("pendingOnHumanId") or payload.get("pending_on_human_id"),
         "next_action": payload.get("nextAction") or payload.get("next_action"),
+        "response_to_goal_version": payload.get("response_to_goal_version")
+        or payload.get("responseToGoalVersion")
+        or artifact.get("response_to_goal_version")
+        or artifact.get("responseToGoalVersion"),
         "artifact": {
             "artifact_id": artifact.get("artifactId") or artifact.get("artifact_id") or f"art_{uuid.uuid4().hex}",
             "intent": intent,
@@ -1860,6 +1989,54 @@ def normalize_artifact_submit(payload: dict[str, Any]) -> dict[str, Any]:
             "summary": artifact.get("summary"),
             "source_refs": artifact.get("source_refs") or [],
         },
+    }
+
+
+def normalize_task_amend(payload: dict[str, Any], *, now: int) -> dict[str, Any]:
+    actor_agent_id = read_alias(payload, "actor_agent_id", "actorAgentId")
+    if not actor_agent_id:
+        raise ValueError("missing required field: actor_agent_id")
+    expected_goal_version = parse_positive_int(
+        payload.get("expected_goal_version") or payload.get("expectedGoalVersion"),
+        "expected_goal_version",
+    )
+    new_done_criteria_payload = payload.get("new_done_criteria")
+    if new_done_criteria_payload is None:
+        new_done_criteria_payload = payload.get("newDoneCriteria")
+    if new_done_criteria_payload is None:
+        raise ValueError("missing required field: new_done_criteria")
+    new_done_criteria_storage = (
+        json.dumps(new_done_criteria_payload, sort_keys=True)
+        if isinstance(new_done_criteria_payload, dict)
+        else str(new_done_criteria_payload)
+    )
+    if not new_done_criteria_storage.strip():
+        raise ValueError("new_done_criteria must not be empty")
+    disposition = payload.get("previous_goal_disposition") or payload.get("previousGoalDisposition") or "clarified"
+    if disposition not in PREVIOUS_GOAL_DISPOSITIONS:
+        raise ValueError("previous_goal_disposition is not supported")
+    reason = payload.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("missing required field: reason")
+    human_authority = normalize_human_authority(required(payload, "human_authority"))
+    new_max_turns = payload.get("new_max_turns") or payload.get("newMaxTurns")
+    return {
+        "protocol_version": payload.get("protocol_version") or PROTOCOL_VERSION,
+        "idempotency_key": payload.get("idempotency_key"),
+        "actor_agent_id": actor_agent_id,
+        "expected_goal_version": expected_goal_version,
+        "new_done_criteria": new_done_criteria_storage,
+        "new_done_criteria_payload": new_done_criteria_payload,
+        "new_max_turns": parse_positive_int(new_max_turns, "new_max_turns") if new_max_turns is not None else None,
+        "ttl": normalize_task_ttl(
+            payload.get("ttl") or payload.get("expires_at") or payload.get("expiresAt"),
+            ttl_seconds=payload.get("ttl_seconds") or payload.get("ttlSeconds"),
+            now=now,
+        ),
+        "previous_goal_disposition": disposition,
+        "human_authority": human_authority,
+        "reason": reason.strip(),
+        "next_action": payload.get("next_action") or payload.get("nextAction"),
     }
 
 
@@ -2006,6 +2183,10 @@ def summarize_task(row: sqlite3.Row) -> dict[str, Any]:
         "pendingOnAgentId": data["pending_on_agent_id"],
         "pendingOnHumanId": data["pending_on_human_id"],
         "nextAction": data["next_action"],
+        "goalVersion": data.get("goal_version"),
+        "exchangeEpoch": data.get("exchange_epoch"),
+        "turnCount": data.get("turn_count"),
+        "maxTurns": data.get("max_turns"),
         "claimedBy": data["claimed_by"],
         "claimedAt": data["claimed_at"],
         "requesterThreadId": data["requester_thread_id"],
@@ -2022,6 +2203,10 @@ def pending_event_payload(task: dict[str, Any], reason: str) -> dict[str, Any]:
         "status": task["status"],
         "agentId": task["pending_on_agent_id"],
         "pendingOnAgentId": task["pending_on_agent_id"],
+        "goalVersion": task.get("goal_version"),
+        "goal_version": task.get("goal_version"),
+        "exchangeEpoch": task.get("exchange_epoch"),
+        "exchange_epoch": task.get("exchange_epoch"),
         "updatedAt": task["updated_at"],
         "reason": reason,
         "payloadRef": {

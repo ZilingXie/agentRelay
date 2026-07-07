@@ -19,6 +19,7 @@
       "enum": [
         "task.created",
         "task.claimed",
+        "task.amended",
         "task.status_updated",
         "artifact.submitted",
         "ownership.transferred",
@@ -56,6 +57,32 @@
         },
         "pending_on_agent_id": {
           "type": ["string", "null"]
+        },
+        "goal_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "exchange_epoch": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "previous_goal_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "previous_goal_disposition": {
+          "type": "string",
+          "enum": [
+            "accepted_and_extended",
+            "clarified",
+            "superseded_by_human",
+            "rejected_by_human",
+            "cancelled_by_human"
+          ]
+        },
+        "human_authority": {
+          "type": "object",
+          "additionalProperties": true
         },
         "next_action": {
           "type": ["string", "null"]

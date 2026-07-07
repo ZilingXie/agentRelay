@@ -19,6 +19,7 @@ from server.protocol_v03 import (
     next_action_for_payload,
     success_envelope,
     validate_artifact_submit,
+    validate_task_amend,
     validate_task_close,
     validate_task_create,
 )
@@ -295,6 +296,18 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 self.respond_error(404, "task not found")
                 return
             self.respond_protocol({"task": task}, status=201)
+            return
+        if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/amend", path):
+            if is_protocol_v03(payload):
+                validate_task_amend(payload)
+            actor_agent_id = read_alias(payload, "actor_agent_id", "actorAgentId")
+            if not self.require_agent(auth, actor_agent_id):
+                return
+            task = self.store.amend_task(match.group(1), payload)
+            if not task:
+                self.respond_error(404, "task not found")
+                return
+            self.respond_protocol({"task": task})
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/close", path):
             if is_protocol_v03(payload):

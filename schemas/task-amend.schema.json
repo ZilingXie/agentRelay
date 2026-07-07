@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/task-amend.schema.json",
+  "title": "AgentRelay Protocol v0.3 Task Amend",
+  "description": "Requester-side, human-authorized task goal amendment. Human-agent private conversation stays local; Relay audits the requester agent's authority statement.",
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "idempotency_key",
+    "actor_agent_id",
+    "expected_goal_version",
+    "new_done_criteria",
+    "previous_goal_disposition",
+    "human_authority",
+    "reason"
+  ],
+  "properties": {
+    "protocol_version": {
+      "const": "agent-collab-v0.3"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actor_agent_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "expected_goal_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "new_done_criteria": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "additionalProperties": true
+        }
+      ]
+    },
+    "new_max_turns": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "ttl": {
+      "description": "Absolute expiry as epoch seconds, seconds from now, or ISO datetime. Defaults to 24 hours from amendment.",
+      "oneOf": [
+        { "type": "integer", "minimum": 1 },
+        { "type": "string", "minLength": 1 }
+      ]
+    },
+    "ttl_seconds": {
+      "description": "Relative expiry in seconds from amendment. Defaults to 86400.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "previous_goal_disposition": {
+      "type": "string",
+      "enum": [
+        "accepted_and_extended",
+        "clarified",
+        "superseded_by_human",
+        "rejected_by_human",
+        "cancelled_by_human"
+      ]
+    },
+    "human_authority": {
+      "type": "object",
+      "required": ["owner_id", "via_agent_id", "approval_ref", "summary"],
+      "properties": {
+        "owner_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "via_agent_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "approval_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["public", "redacted", "private"],
+          "default": "redacted"
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "source-ref.schema.json"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "next_action": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": true
+}

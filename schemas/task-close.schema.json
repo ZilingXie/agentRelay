@@ -22,6 +22,11 @@
       "type": "string",
       "minLength": 1
     },
+    "closed_against_goal_version": {
+      "description": "Goal version the completion decision evaluated. Defaults to the task's current goal_version.",
+      "type": "integer",
+      "minimum": 1
+    },
     "completion_authority": {
       "type": "object",
       "required": ["type"],

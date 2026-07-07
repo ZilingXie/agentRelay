@@ -193,6 +193,7 @@ Phase 1/2 已经定义出的协议事实：
 
 - 每个 human owner 有自己的 local agent。
 - requester agent 创建 task，并定义 `done_criteria`。
+- task 目标可以在 requester-side human 反馈后演进；Relay 用 `goal_version` 记录当前目标版本，用 `task.amended` 记录 human-authorized amendment。
 - `completion_owner_agent_id` 通常是 requester agent，负责语义完成判断。
 - target agent 可以完成自己的 action，但不能单方面关闭整个 workflow。
 - artifact 表示 action result，不等同于 task complete。
@@ -224,6 +225,7 @@ Phase 3 Progress:
 - [x] Polish requester-side MCP completion decisions and human completion authority.
 - [x] Close flow reliability polish: stable task event ordering, idempotent install loopback checks, healthcheck TTL cleanup, local inbox workflow binding, and latest-artifact close evidence refs.
 - [x] Lightweight task TTL expiry: requester-controlled reply timeout with 24-hour default, requester notification on expiry, and late artifact rejection.
+- [x] Human-authorized task goal amendment: versioned `done_criteria`, `task.amended`, requester-side authority audit, per-exchange max turn reset, and latest-goal completion tracking.
 - [ ] Continue validating the new local inbox workbench end-to-end with more real remote agents.
 
 详细计划见 `phase3-plan.md`。
@@ -259,6 +261,14 @@ Latest task TTL note:
 - New tasks default to a 24-hour reply TTL unless the requester sets `ttl_seconds`, `ttl`, or `expires_at`.
 - TTL expiry is intentionally lightweight: if the target agent has not submitted an artifact by the deadline, Relay marks the task `expired`, clears pending ownership, rejects late artifacts, and sends a listener-compatible `task.pending` event back to the requester with `reason=task.ttl_expired`.
 - If the target agent has already submitted an artifact, the task does not auto-expire while the requester side is evaluating or closing it.
+
+Latest human-authorized task amendment note:
+
+- `POST /agentrelay/api/tasks/{task_id}/amend` lets the requester/completion-owner agent update `done_criteria` only while the task is pending back on requester review.
+- Amendments require `human_authority` with `owner_id`, `via_agent_id`, `approval_ref`, and a redacted summary. Relay audits the authority statement but does not ingest private human-agent conversation.
+- Each amendment increments `goal_version` and `exchange_epoch`, resets `turn_count`, optionally changes `max_turns`, resets the default 24-hour TTL, and emits a listener-compatible `task.pending` event to the target with `reason=task.amended`.
+- Artifacts record `response_to_goal_version`; close events record `closed_against_goal_version`, so old artifacts are not unfairly judged against later clarified goals.
+- `request_revision` remains the right tool for continuing under the current goal; `task.amended` is reserved for human-driven goal/acceptance-criteria changes.
 
 Latest source refs and approval summaries note:
 

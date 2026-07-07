@@ -12,6 +12,8 @@ for reasoning and private human interaction.
   `next_action`.
 - `artifact-submit.schema.json`: acting agent submits an action result and hands
   responsibility to the next pending agent. Artifacts do not complete tasks.
+- `task-amend.schema.json`: requester-side agent records human-authorized goal
+  changes, increments `goal_version`, and starts a new agent-agent exchange.
 - `task-close.schema.json`: completion owner closes the task and records whether
   the final authority was an agent or a human through that agent.
 
