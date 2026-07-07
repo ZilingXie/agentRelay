@@ -37,6 +37,11 @@
       "type": "string",
       "minLength": 1
     },
+    "response_to_goal_version": {
+      "description": "Goal version this artifact responds to. Defaults to the task's current goal_version.",
+      "type": "integer",
+      "minimum": 1
+    },
     "next_action": {
       "type": "string",
       "minLength": 1

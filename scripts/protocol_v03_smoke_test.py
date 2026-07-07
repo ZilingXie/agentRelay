@@ -99,6 +99,8 @@ def main() -> None:
             assert_success_envelope(created_env)
             task = created_env["data"]["task"]
             task_id = task["task_id"]
+            if task.get("goal_version") != 1 or task.get("exchange_epoch") != 1:
+                raise AssertionError(f"new v0.3 task should start at goal_version/exchange_epoch 1: {task}")
             if created_env["next_action"]["agent_id"] != "frank-agent":
                 raise AssertionError("create envelope should point next_action at frank-agent")
             if task["requester_thread_id"] != "zac-thread-v03":
@@ -196,12 +198,91 @@ def main() -> None:
             if artifact_env["next_action"]["agent_id"] != "zac-agent":
                 raise AssertionError("artifact envelope should point next_action at zac-agent")
 
+            wrong_auth_amend = post_json(
+                f"{BASE_URL}/tasks/{task_id}/amend",
+                amend_payload(task_id, expected_goal_version=1),
+                AGENT_B_HEADERS,
+                expected_status=403,
+            )
+            assert_envelope_error(wrong_auth_amend, "TOKEN_AGENT_MISMATCH", None)
+
+            amend_env = post_json(
+                f"{BASE_URL}/tasks/{task_id}/amend",
+                amend_payload(task_id, expected_goal_version=1),
+                AGENT_A_HEADERS,
+            )
+            assert_success_envelope(amend_env)
+            amended_task = amend_env["data"]["task"]
+            if amended_task["goal_version"] != 2 or amended_task["exchange_epoch"] != 2:
+                raise AssertionError(f"amend should increment goal_version and exchange_epoch: {amended_task}")
+            if amended_task["turn_count"] != 0:
+                raise AssertionError("amend should reset turn_count for the next agent-agent exchange")
+            if amended_task["pending_on_agent_id"] != "frank-agent":
+                raise AssertionError("amend should hand the new goal back to target agent")
+            if amend_env["next_action"]["agent_id"] != "frank-agent":
+                raise AssertionError("amend envelope should point next_action at target")
+
+            stale_amend = post_json(
+                f"{BASE_URL}/tasks/{task_id}/amend",
+                amend_payload(task_id, expected_goal_version=1, idempotency_key="stale-amend-v03"),
+                AGENT_A_HEADERS,
+                expected_status=409,
+            )
+            assert_envelope_error(stale_amend, "CONFLICT", None)
+
+            target_pending_amend = post_json(
+                f"{BASE_URL}/tasks/{task_id}/amend",
+                amend_payload(task_id, expected_goal_version=2, idempotency_key="target-pending-amend-v03"),
+                AGENT_A_HEADERS,
+                expected_status=409,
+            )
+            assert_envelope_error(target_pending_amend, "CONFLICT", None)
+
+            claimed_amended_env = post_json(
+                f"{BASE_URL}/workers/frank-agent/tasks/{task_id}/claim",
+                {},
+                AGENT_B_HEADERS,
+            )
+            assert_success_envelope(claimed_amended_env)
+            if claimed_amended_env["data"]["task"]["goal_version"] != 2:
+                raise AssertionError("target claim after amend should see current goal_version")
+
+            amended_artifact_env = post_json(
+                f"{BASE_URL}/tasks/{task_id}/artifacts",
+                {
+                    "protocol_version": "agent-collab-v0.3",
+                    "idempotency_key": "artifact-task-v03-amended-content",
+                    "actor_agent_id": "frank-agent",
+                    "intent": "provide_amended_answer",
+                    "response_to_goal_version": 2,
+                    "artifact": {
+                        "kind": "meeting_confirmation_detail",
+                        "summary": "Frank returned details for the amended goal.",
+                        "parts": [
+                            {
+                                "kind": "text",
+                                "text": "Frank confirms Monday 10:30-11:00 Asia/Shanghai and can provide agenda details."
+                            }
+                        ],
+                    },
+                    "next_status": "delivery_pending",
+                    "pending_on_agent_id": "zac-agent",
+                    "next_action": "Zac agent should evaluate the amended answer against goal version 2.",
+                },
+                AGENT_B_HEADERS,
+                expected_status=201,
+            )
+            assert_success_envelope(amended_artifact_env)
+            if amended_artifact_env["data"]["task"]["turn_count"] != 1:
+                raise AssertionError("amended exchange should count the target-to-requester handoff")
+
             close_env = post_json(
                 f"{BASE_URL}/tasks/{task_id}/close",
                 {
                     "protocol_version": "agent-collab-v0.3",
                     "idempotency_key": "close-task-v03-human-approved",
                     "closed_by_agent_id": "zac-agent",
+                    "closed_against_goal_version": 2,
                     "completion_authority": {
                         "type": "human",
                         "owner_id": "zac",
@@ -251,6 +332,8 @@ def main() -> None:
             events = get_json(f"{BASE_URL}/tasks/{task_id}/events", AGENT_A_HEADERS)["data"]["events"]
             created_event = find_event(events, "task.created")
             artifact_event = find_event(events, "artifact.submitted")
+            amended_event = find_event(events, "task.amended")
+            amended_artifact_event = find_last_event(events, "artifact.submitted")
             closed_event = find_event(events, "task.completed")
             if created_event["payload"].get("protocol_version") != "agent-collab-v0.3":
                 raise AssertionError("task.created missing v0.3 protocol_version")
@@ -260,8 +343,16 @@ def main() -> None:
                 raise AssertionError("task.created missing completion_owner_agent_id audit field")
             if not created_event["payload"].get("ttl"):
                 raise AssertionError("task.created missing ttl audit field")
+            if amended_event["payload"].get("goal_version") != 2:
+                raise AssertionError("task.amended missing new goal_version")
+            if amended_event["payload"].get("previous_goal_disposition") != "clarified":
+                raise AssertionError("task.amended missing previous goal disposition")
+            if amended_event["payload"].get("human_authority", {}).get("via_agent_id") != "zac-agent":
+                raise AssertionError("task.amended missing human authority via requester agent")
             if artifact_event["payload"].get("source_refs", [{}])[0].get("type") != "owner_confirmation":
                 raise AssertionError("artifact.submitted missing source_refs")
+            if amended_artifact_event["payload"].get("response_to_goal_version") != 2:
+                raise AssertionError("amended artifact should record response_to_goal_version")
             redacted_ref = artifact_event["payload"]["source_refs"][0]
             if redacted_ref.get("uri") or redacted_ref.get("metadata"):
                 raise AssertionError("redacted source_ref should not expose uri or metadata")
@@ -276,6 +367,8 @@ def main() -> None:
             authority = closed_event["payload"].get("completion_authority") or {}
             if authority.get("type") != "human":
                 raise AssertionError("task.completed missing human completion authority")
+            if closed_event["payload"].get("closed_against_goal_version") != 2:
+                raise AssertionError("task.completed missing closed_against_goal_version")
             if authority.get("source_refs", [{}])[0].get("uri"):
                 raise AssertionError("completion authority source_refs should be redacted")
             final_artifact = closed_event["payload"].get("final_artifact") or {}
@@ -410,15 +503,15 @@ def assert_success_envelope(payload: dict) -> None:
         raise AssertionError("success envelope missing v0.3 meta")
 
 
-def assert_envelope_error(payload: dict, code: str, field: str) -> None:
+def assert_envelope_error(payload: dict, code: str, field: str | None) -> None:
     if payload.get("ok") is not False:
         raise AssertionError(f"expected error envelope, got: {payload}")
     error = payload.get("error") or {}
     if error.get("code") != code:
         raise AssertionError(f"expected error code {code}, got: {error}")
-    if error.get("detail", {}).get("field") != field:
+    if field is not None and error.get("detail", {}).get("field") != field:
         raise AssertionError(f"expected error field {field}, got: {error}")
-    if not error.get("hint"):
+    if field is not None and not error.get("hint"):
         raise AssertionError("error envelope should include hint")
 
 
@@ -429,11 +522,57 @@ def find_event(events: list[dict], event_type: str) -> dict:
     raise AssertionError(f"missing event: {event_type}")
 
 
+def find_last_event(events: list[dict], event_type: str) -> dict:
+    for event in reversed(events):
+        if event["event_type"] == event_type:
+            return event
+    raise AssertionError(f"missing event: {event_type}")
+
+
 def find_timeline_entry(entries: list[dict], event_type: str) -> dict:
     for entry in entries:
         if entry["event_type"] == event_type:
             return entry
     raise AssertionError(f"missing timeline entry: {event_type}")
+
+
+def amend_payload(
+    task_id: str,
+    *,
+    expected_goal_version: int,
+    idempotency_key: str = "amend-task-v03-human-clarified",
+) -> dict:
+    return {
+        "protocol_version": "agent-collab-v0.3",
+        "idempotency_key": idempotency_key,
+        "actor_agent_id": "zac-agent",
+        "expected_goal_version": expected_goal_version,
+        "new_done_criteria": {
+            "type": "meeting_time_agreed_with_details",
+            "description": "Frank returns a confirmed meeting time and enough detail for Zac to approve the amended goal.",
+            "task_id": task_id,
+        },
+        "new_max_turns": 4,
+        "previous_goal_disposition": "clarified",
+        "human_authority": {
+            "owner_id": "zac",
+            "via_agent_id": "zac-agent",
+            "approval_ref": "zac-local-clarification-789",
+            "summary": "Zac clarified that the answer should include enough detail to review, not just a terse slot.",
+            "visibility": "redacted",
+            "source_refs": [
+                {
+                    "type": "owner_confirmation",
+                    "label": "Zac local clarification",
+                    "summary": "Requester clarified the acceptance criteria for the next exchange.",
+                    "visibility": "redacted",
+                    "uri": "local://zac/private-thread/789",
+                }
+            ],
+        },
+        "reason": "Requester human clarified the task goal after the first artifact.",
+        "next_action": "Frank agent should answer the amended goal version.",
+    }
 
 
 if __name__ == "__main__":

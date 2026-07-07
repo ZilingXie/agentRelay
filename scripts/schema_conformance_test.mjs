@@ -93,6 +93,45 @@ validate("artifact-submit.schema.json", {
   next_action: "Agent A should evaluate the artifact against done_criteria."
 });
 
+validate("task-amend.schema.json", {
+  protocol_version: "agent-collab-v0.3",
+  idempotency_key: "schema-amend-1",
+  actor_agent_id: "agent-a",
+  expected_goal_version: 1,
+  new_done_criteria: {
+    type: "clarified_review_goal",
+    description: "Agent B must return the content to review, not only a file path."
+  },
+  new_max_turns: 4,
+  previous_goal_disposition: "clarified",
+  human_authority: {
+    owner_id: "owner-a",
+    via_agent_id: "agent-a",
+    approval_ref: "local-feedback-1",
+    summary: "Owner A clarified that the requested review content must be included.",
+    visibility: "redacted",
+    source_refs: [
+      {
+        type: "owner_confirmation",
+        label: "Owner A local clarification",
+        visibility: "redacted"
+      }
+    ]
+  },
+  reason: "Human clarified the acceptance criteria after reviewing the first artifact.",
+  next_action: "Agent B should respond to the amended goal."
+});
+
+rejects("task-amend.schema.json", {
+  protocol_version: "agent-collab-v0.3",
+  idempotency_key: "schema-amend-missing-human-authority",
+  actor_agent_id: "agent-a",
+  expected_goal_version: 1,
+  new_done_criteria: "Clarified goal",
+  previous_goal_disposition: "clarified",
+  reason: "Missing human authority should fail."
+});
+
 validate("task-close.schema.json", {
   protocol_version: "agent-collab-v0.3",
   idempotency_key: "schema-close-1",
@@ -266,6 +305,7 @@ validate("agent-card.schema.json", {
 const exampleSchemaMap = {
   "meeting-task-create.json": "task-create.schema.json",
   "meeting-artifact-submit.json": "artifact-submit.schema.json",
+  "meeting-task-amend.json": "task-amend.schema.json",
   "meeting-task-close.json": "task-close.schema.json",
   "dashboard-task-create.json": "task-create.schema.json",
   "dashboard-artifact-submit.json": "artifact-submit.schema.json",

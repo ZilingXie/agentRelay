@@ -1,0 +1,30 @@
+{
+  "protocol_version": "agent-collab-v0.3",
+  "idempotency_key": "meeting-task-amend-example-1",
+  "actor_agent_id": "agent-a",
+  "expected_goal_version": 1,
+  "new_done_criteria": {
+    "type": "meeting_time_with_reviewable_detail",
+    "description": "Agent B must return a confirmed meeting slot plus enough context for Agent A's owner to approve it.",
+    "required_outputs": ["start_time", "end_time", "timezone", "confirmation_summary"]
+  },
+  "new_max_turns": 4,
+  "previous_goal_disposition": "clarified",
+  "human_authority": {
+    "owner_id": "owner-a",
+    "via_agent_id": "agent-a",
+    "approval_ref": "local-clarification-1",
+    "summary": "Owner A clarified that the target should provide enough detail to review the proposed meeting time.",
+    "visibility": "redacted",
+    "source_refs": [
+      {
+        "type": "owner_confirmation",
+        "label": "Owner A local clarification",
+        "summary": "The requester-side owner clarified the acceptance criteria.",
+        "visibility": "redacted"
+      }
+    ]
+  },
+  "reason": "Requester-side human clarified the goal after the first artifact.",
+  "next_action": "Agent B should answer the amended goal version."
+}

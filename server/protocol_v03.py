@@ -15,6 +15,13 @@ SOURCE_REF_TYPES = {
     "other",
 }
 SOURCE_REF_VISIBILITIES = {"public", "redacted", "private"}
+PREVIOUS_GOAL_DISPOSITIONS = {
+    "accepted_and_extended",
+    "clarified",
+    "superseded_by_human",
+    "rejected_by_human",
+    "cancelled_by_human",
+}
 
 
 class ProtocolValidationError(ValueError):
@@ -124,6 +131,35 @@ def validate_task_close(payload: dict[str, Any]) -> None:
         normalize_source_refs(final_artifact.get("source_refs", []), field="final_artifact.source_refs")
 
 
+def validate_task_amend(payload: dict[str, Any]) -> None:
+    require_literal(payload, "protocol_version", PROTOCOL_V03)
+    require_str(payload, "idempotency_key")
+    require_str(payload, "actor_agent_id")
+    expected_goal_version = payload.get("expected_goal_version")
+    if not is_positive_int(expected_goal_version):
+        raise ProtocolValidationError(
+            "expected_goal_version must be a positive integer",
+            field="expected_goal_version",
+        )
+    if not isinstance(payload.get("new_done_criteria"), (str, dict)):
+        raise ProtocolValidationError(
+            "new_done_criteria must be a string or object",
+            field="new_done_criteria",
+        )
+    new_max_turns = payload.get("new_max_turns", payload.get("newMaxTurns"))
+    if new_max_turns is not None and not is_positive_int(new_max_turns):
+        raise ProtocolValidationError("new_max_turns must be a positive integer", field="new_max_turns")
+    disposition = payload.get("previous_goal_disposition", "clarified")
+    if disposition not in PREVIOUS_GOAL_DISPOSITIONS:
+        raise ProtocolValidationError(
+            "previous_goal_disposition is not supported",
+            field="previous_goal_disposition",
+            hint="Use accepted_and_extended, clarified, superseded_by_human, rejected_by_human, or cancelled_by_human.",
+        )
+    require_str(payload, "reason")
+    normalize_human_authority(require_object(payload, "human_authority"))
+
+
 def normalize_source_refs(source_refs: Any, *, field: str = "source_refs") -> list[dict[str, Any]]:
     if source_refs is None:
         return []
@@ -161,6 +197,46 @@ def normalize_source_refs(source_refs: Any, *, field: str = "source_refs") -> li
         if metadata is not None and not isinstance(metadata, dict):
             raise ProtocolValidationError("source ref metadata must be an object", field=f"{item_field}.metadata")
         normalized.append(redact_source_ref(source_ref, ref_type, label, visibility, summary, uri, metadata))
+    return normalized
+
+
+def normalize_human_authority(authority: Any) -> dict[str, Any]:
+    if not isinstance(authority, dict):
+        raise ProtocolValidationError("human_authority must be an object", field="human_authority")
+    normalized: dict[str, Any] = {}
+    for key in ("owner_id", "via_agent_id", "approval_ref"):
+        value = authority.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise ProtocolValidationError(
+                f"human_authority.{key} must be a non-empty string",
+                field=f"human_authority.{key}",
+            )
+        normalized[key] = value.strip()
+    summary = authority.get("summary")
+    if summary is None:
+        raise ProtocolValidationError(
+            "human_authority.summary must be a non-empty string",
+            field="human_authority.summary",
+        )
+    if not isinstance(summary, str) or not summary.strip():
+        raise ProtocolValidationError(
+            "human_authority.summary must be a non-empty string",
+            field="human_authority.summary",
+        )
+    normalized["summary"] = summary.strip()
+    visibility = authority.get("visibility", "redacted")
+    if visibility not in SOURCE_REF_VISIBILITIES:
+        raise ProtocolValidationError(
+            "human_authority.visibility must be public, redacted, or private",
+            field="human_authority.visibility",
+        )
+    normalized["visibility"] = visibility
+    if visibility == "private":
+        normalized["redacted"] = True
+        normalized["summary"] = "Private human task amendment retained by the local agent."
+    source_refs = normalize_source_refs(authority.get("source_refs", []), field="human_authority.source_refs")
+    if source_refs:
+        normalized["source_refs"] = source_refs
     return normalized
 
 

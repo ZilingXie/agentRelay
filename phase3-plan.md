@@ -331,7 +331,8 @@ Implementation stance:
 13. [x] Polish requester-side MCP completion decisions and human completion authority.
 14. [x] Close flow reliability polish: stable task event ordering, idempotent install loopback checks, healthcheck TTL cleanup, local inbox workflow binding, and latest-artifact close evidence refs.
 15. [x] Lightweight task TTL expiry: requester-controlled reply timeout with 24-hour default, requester notification on expiry, and late artifact rejection.
-16. [ ] Continue validating the new local inbox workbench end-to-end with more real remote agents.
+16. [x] Human-authorized task goal amendment: versioned `done_criteria`, `task.amended`, requester-side authority audit, per-exchange max turn reset, and latest-goal completion tracking.
+17. [ ] Continue validating the new local inbox workbench end-to-end with more real remote agents.
 
 ## 8. First Implementation Slice
 
@@ -625,6 +626,24 @@ schemas/response-envelope.schema.json
 server/transitions.py
 scripts/phase3_transition_smoke_test.py
 ```
+
+## 8.16 Human-Authorized Task Goal Amendment
+
+Status: completed as an additive Protocol v0.3 behavior.
+
+Implemented semantics:
+
+- A requester-side human can clarify or change a task goal through the requester/completion-owner agent.
+- Relay stores the current goal in `done_criteria` and tracks its version through `goal_version`.
+- Each amendment emits `task.amended`, records `previous_goal_disposition`, and stores a redacted `human_authority` statement instead of private human-agent chat.
+- Amendment increments `goal_version` and `exchange_epoch`, resets `turn_count`, optionally changes `max_turns`, resets the 24-hour TTL by default, and hands pending ownership back to the target agent.
+- Artifacts record `response_to_goal_version`; close records `closed_against_goal_version`.
+
+Protocol boundary:
+
+- Use `request_revision` when the target should continue under the current goal.
+- Use `task.amended` when the requester-side human changes or clarifies the acceptance criteria.
+- Relay enforces actor/requester ownership and optimistic `expected_goal_version`, but the local agent remains responsible for proving that the human actually authorized the change.
 
 ## 9. Octo Comparison
 
