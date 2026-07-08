@@ -751,6 +751,7 @@ def agent_card(agent: dict[str, Any]) -> dict[str, Any]:
     api_base_url = f"{relay_base_url.rstrip('/')}/api"
     a2a_url = f"{api_base_url}/a2a/{agent_id}"
     agentrelay_url = f"{api_base_url}/agents/{agent_id}/card"
+    role_profile = agent_role_profile(agent)
     skills = default_agent_skills(agent)
     return {
         "protocolVersion": "agentrelay-agent-card-v0.3",
@@ -792,6 +793,8 @@ def agent_card(agent: dict[str, Any]) -> dict[str, Any]:
                         "completion_owner": "requester_agent",
                         "artifact_auto_completes_task": False,
                         "event_delivery": "cursor+lease+ack",
+                        "agent_role": role_profile["agent_role"],
+                        "execution_mode": role_profile["execution_mode"],
                     },
                 }
             ],
@@ -810,6 +813,11 @@ def agent_card(agent: dict[str, Any]) -> dict[str, Any]:
         "agentRelay": {
             "agent_id": agent_id,
             "owner": agent["owner"],
+            "agent_role": role_profile["agent_role"],
+            "execution_mode": role_profile["execution_mode"],
+            "role_description": role_profile["role_description"],
+            "protocol_capabilities": role_profile["capabilities"],
+            "policy": role_profile["policy"],
             "accepted_task_types": accepted_task_types(skills),
             "scopes": default_agent_scopes(agent_id),
             "human_approval_policy": default_human_approval_policy(agent),
@@ -823,10 +831,82 @@ def agent_card(agent: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def agent_role_profile(agent: dict[str, Any]) -> dict[str, Any]:
+    agent_role = str(agent.get("agent_role") or "personal_agent")
+    execution_mode = str(agent.get("execution_mode") or ("autonomous" if agent_role == "service_agent" else "notify_only"))
+    capabilities = parse_json_list(agent.get("capabilities_json")) or default_protocol_capabilities(agent_role)
+    policy = parse_json_object(agent.get("policy_json")) or default_role_policy(agent_role)
+    role_description = (
+        "Autonomous or semi-autonomous service agent. It can claim assigned work and submit artifacts, but it must not change requester-owned goals."
+        if agent_role == "service_agent"
+        else "Human-owned personal agent. It is notifier-first by default and may amend or close requester-owned work only with human authority."
+    )
+    return {
+        "agent_role": agent_role,
+        "execution_mode": execution_mode,
+        "role_description": role_description,
+        "capabilities": capabilities,
+        "policy": policy,
+    }
+
+
+def default_protocol_capabilities(agent_role: str) -> list[str]:
+    if agent_role == "service_agent":
+        return ["task_claim", "task_execute", "artifact_submit", "clarification_request"]
+    return ["task_create", "task_review", "task_close", "task_amend_with_human_authority"]
+
+
+def default_role_policy(agent_role: str) -> dict[str, Any]:
+    if agent_role == "service_agent":
+        return {
+            "autonomous_execution_allowed": True,
+            "can_amend_goal": False,
+            "can_close_owned_task": False,
+            "high_impact_requires_approval": True,
+            "secret_safe_push_only": True,
+        }
+    return {
+        "autonomous_execution_allowed": False,
+        "can_amend_goal": True,
+        "can_close_owned_task": True,
+        "requires_human_authority_for_amend": True,
+        "requires_human_authority_for_close": True,
+        "high_impact_requires_approval": True,
+        "secret_safe_push_only": True,
+    }
+
+
+def parse_json_list(raw: Any) -> list[str] | None:
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(str(raw))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, list):
+        return None
+    return [str(item) for item in parsed if str(item).strip()]
+
+
+def parse_json_object(raw: Any) -> dict[str, Any] | None:
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(str(raw))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
+
+
 def a2a_mapping(agent: dict[str, Any]) -> dict[str, Any]:
     agent_id = agent["agent_id"]
+    role_profile = agent_role_profile(agent)
     return {
         "agent_id": agent_id,
+        "agent_role": role_profile["agent_role"],
+        "execution_mode": role_profile["execution_mode"],
         "a2a_protocol_version": "0.3",
         "agent_card_url": f"/agentrelay/api/agents/{agent_id}/card",
         "preferred_interface": {
