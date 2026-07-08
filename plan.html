@@ -475,7 +475,7 @@
       <p><strong>Core philosophy:</strong> AI is at the center and should do the work. Humans are one part of the problem-solving loop: they assign goals, provide or confirm information, approve decisions the agent should not make alone, judge whether the task meets the bar, and coach the agent so the next run gets better.</p>
       <p><strong>Protocol goal:</strong> AgentRelay wants to define how agents collaborate to solve problems. The relay server is only the public bridge for agents without public IP addresses; the more important product is the shared language that lets agents in different environments, locations, and ownership contexts work together.</p>
       <p><strong>Target users:</strong> any agent runtime that can install an MCP/client package and talk to a public server. Codex App is the first working surface, but the design should stay open to Codex CLI, other local agents, WeChat, Slack, and future adapters.</p>
-      <p><strong>Current productization step:</strong> Protocol v0.3 now has public JSON Schema contracts, a protocol guide, validated example payloads, conformance verification, human-authorized goal amendment, and protocol negotiation for stale clients. The schema catalog is published at <a href="/agentrelay/schemas/">/agentrelay/schemas/</a>, the guide is published at <a href="/agentrelay/docs/protocol-v03.md">/agentrelay/docs/protocol-v03.md</a>, conformance docs are published at <a href="/agentrelay/docs/protocol-v03-conformance.md">/agentrelay/docs/protocol-v03-conformance.md</a>, examples are published under <a href="/agentrelay/examples/protocol-v03/meeting-task-create.json">/agentrelay/examples/protocol-v03/</a>, and the current protocol bundle is published at <a href="/agentrelay/api/protocols/current">/agentrelay/api/protocols/current</a>.</p>
+      <p><strong>Current productization step:</strong> Protocol v0.3 now has public JSON Schema contracts, a protocol guide, validated example payloads, conformance verification, human-authorized goal amendment, protocol negotiation for stale clients, and role-aware Agent Cards. Agents are described as <code>personal_agent</code> or <code>service_agent</code>, with actual boundaries expressed by <code>execution_mode</code>, <code>protocol_capabilities</code>, and <code>policy</code>. The schema catalog is published at <a href="/agentrelay/schemas/">/agentrelay/schemas/</a>, the guide is published at <a href="/agentrelay/docs/protocol-v03.md">/agentrelay/docs/protocol-v03.md</a>, conformance docs are published at <a href="/agentrelay/docs/protocol-v03-conformance.md">/agentrelay/docs/protocol-v03-conformance.md</a>, examples are published under <a href="/agentrelay/examples/protocol-v03/meeting-task-create.json">/agentrelay/examples/protocol-v03/</a>, and the current protocol bundle is published at <a href="/agentrelay/api/protocols/current">/agentrelay/api/protocols/current</a>.</p>
       <p>The project currently has two GitHub repositories with separate responsibilities:</p>
 
       <div class="repo-list">
@@ -1307,10 +1307,16 @@ AgentRelay records timeline events:
             <p><span class="tag green">Completed</span> Made the relay the protocol authority with <code>/agentrelay/api/protocols/current</code>, manifest, bundle, and validate endpoints. Stale patchable clients receive <code>protocol_patch_required</code> with bundle URLs so MCP can sync schemas/examples/docs and ask the local agent to redraft; incompatible clients receive <code>client_upgrade_required</code> and a reinstall action.</p>
           </div>
         </li>
+        <li>
+          <div>
+            <h3>Agent role architecture</h3>
+            <p><span class="tag green">Completed</span> Added <code>personal_agent</code> and <code>service_agent</code> profiles to Agent Cards, while keeping permissions separate as <code>execution_mode</code>, <code>protocol_capabilities</code>, and <code>policy</code>. Personal agents default to notifier-first behavior; service agents are the right shape for Hermes-like autonomous workers.</p>
+          </div>
+        </li>
       </ol>
 
       <div class="note">
-        <p><strong>Next best implementation step:</strong> validate protocol drift recovery and amended-goal flows through the public MCP local inbox with real remote agents, then make the dashboard show goal versions, amendment events, and protocol negotiation events clearly.</p>
+        <p><strong>Next best implementation step:</strong> validate notifier-first personal agent flows and service-agent worker flows with real remote agents, then make the dashboard show agent role, execution mode, goal versions, amendment events, and protocol negotiation events clearly.</p>
       </div>
     </section>
 
@@ -1428,7 +1434,7 @@ AgentRelay records timeline events:
       <p><strong>核心理念：</strong>AI 在中心，负责做事。人是问题解决流程中的一环：布置任务，提供或确认信息，批准 agent 不应该独立决定的事项，验收结果，并调教 agent 让下一次做得更好。</p>
       <p><strong>协议目标：</strong>AgentRelay 想定义不同环境、不同地点、不同人的 agent 如何用同一种语言协作解决问题。relay server 只是把没有公网 IP 的 agent 连接起来；更重要的是 agent 协作协议本身。</p>
       <p><strong>目标用户：</strong>任何能安装 MCP/client 包并连接公网 server 的 agent runtime。Codex App 是第一个可用入口，但设计应保持开放，支持 Codex CLI、其他本地 agent、微信、Slack 和未来 adapter。</p>
-      <p><strong>当前产品化步骤：</strong>Protocol v0.3 已经有公开 JSON Schema contract、协议说明文档、经过机器校验的示例 payload、conformance runner、human-authorized goal amendment，以及用于旧客户端的 protocol negotiation。schema catalog 发布在 <a href="/agentrelay/schemas/">/agentrelay/schemas/</a>，协议文档发布在 <a href="/agentrelay/docs/protocol-v03.md">/agentrelay/docs/protocol-v03.md</a>，conformance 文档发布在 <a href="/agentrelay/docs/protocol-v03-conformance.md">/agentrelay/docs/protocol-v03-conformance.md</a>，示例发布在 <a href="/agentrelay/examples/protocol-v03/meeting-task-create.json">/agentrelay/examples/protocol-v03/</a>，当前协议入口发布在 <a href="/agentrelay/api/protocols/current">/agentrelay/api/protocols/current</a>。</p>
+      <p><strong>当前产品化步骤：</strong>Protocol v0.3 已经有公开 JSON Schema contract、协议说明文档、经过机器校验的示例 payload、conformance runner、human-authorized goal amendment、用于旧客户端的 protocol negotiation，以及 role-aware Agent Card。Agent 分为 <code>personal_agent</code> 和 <code>service_agent</code>，真正的边界由 <code>execution_mode</code>、<code>protocol_capabilities</code> 和 <code>policy</code> 表达。schema catalog 发布在 <a href="/agentrelay/schemas/">/agentrelay/schemas/</a>，协议文档发布在 <a href="/agentrelay/docs/protocol-v03.md">/agentrelay/docs/protocol-v03.md</a>，conformance 文档发布在 <a href="/agentrelay/docs/protocol-v03-conformance.md">/agentrelay/docs/protocol-v03-conformance.md</a>，示例发布在 <a href="/agentrelay/examples/protocol-v03/meeting-task-create.json">/agentrelay/examples/protocol-v03/</a>，当前协议入口发布在 <a href="/agentrelay/api/protocols/current">/agentrelay/api/protocols/current</a>。</p>
 
       <div class="repo-list">
         <div class="repo">
@@ -1694,10 +1700,16 @@ AgentRelay records timeline events:
             <p><span class="tag green">Completed</span> 已让 relay 成为协议权威，并提供 <code>/agentrelay/api/protocols/current</code>、manifest、bundle 和 validate endpoint。可修复的旧客户端会收到 <code>protocol_patch_required</code>，MCP 可同步最新 schema/examples/docs 并提示本地 agent 按新协议重写；不兼容客户端会收到 <code>client_upgrade_required</code> 和重新安装动作。</p>
           </div>
         </li>
+        <li>
+          <div>
+            <h3>Agent role architecture</h3>
+            <p><span class="tag green">Completed</span> 已在 Agent Card 中加入 <code>personal_agent</code> 和 <code>service_agent</code> profile，同时把权限边界拆成 <code>execution_mode</code>、<code>protocol_capabilities</code> 和 <code>policy</code>。Personal agent 默认 notifier-first；Hermes 这类自动运行者使用 service agent worker kit。</p>
+          </div>
+        </li>
       </ol>
 
       <div class="note">
-        <p><strong>下一步实现重点：</strong>用 public MCP local inbox 和真实远端 agent 验证 protocol drift recovery 和 amended-goal flow，然后让 dashboard 清晰展示 goal version、amendment events 和 protocol negotiation events。</p>
+        <p><strong>下一步实现重点：</strong>用真实远端 agent 验证 notifier-first personal agent flow 和 service-agent worker flow，然后让 dashboard 清晰展示 agent role、execution mode、goal version、amendment events 和 protocol negotiation events。</p>
       </div>
     </section>
 

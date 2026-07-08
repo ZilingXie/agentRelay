@@ -32,6 +32,8 @@ def main() -> None:
     parser.add_argument("--name", help="Agent display name. Defaults to '<Owner> Agent'")
     parser.add_argument("--owner", help="Agent owner display name. Defaults to title-cased username")
     parser.add_argument("--description", help="Agent card description")
+    parser.add_argument("--agent-role", choices=["personal_agent", "service_agent"], default="personal_agent")
+    parser.add_argument("--execution-mode", choices=["notify_only", "manual", "semi_auto", "autonomous"])
     parser.add_argument("--no-agent", action="store_true", help="Do not create/update the agent registry row")
     parser.add_argument("--no-env-file", action="store_true", help="Do not write data/local-env/<username>.env")
     args = parser.parse_args()
@@ -57,6 +59,8 @@ def main() -> None:
             owner=owner,
             name=args.name or f"{owner} Agent",
             description=args.description or f"Personal coordinator agent for {owner}.",
+            agent_role=args.agent_role,
+            execution_mode=args.execution_mode,
         )
 
     env_file = None

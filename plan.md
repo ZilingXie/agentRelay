@@ -195,6 +195,7 @@ Phase 1/2 已经定义出的协议事实：
 - requester agent 创建 task，并定义 `done_criteria`。
 - task 目标可以在 requester-side human 反馈后演进；Relay 用 `goal_version` 记录当前目标版本，用 `task.amended` 记录 human-authorized amendment。
 - Relay 是协议权威；当本地 MCP/agent 使用过旧协议发送请求时，server 返回结构化 protocol negotiation error，引导客户端拉取最新 schema/examples/docs 并让本地 agent 按新协议重写请求。
+- Agent 分为 `personal_agent` 和 `service_agent` 两种角色，但 role 只解释 agent 类型；真正的权限边界由 `execution_mode`、`protocol_capabilities` 和 `policy` 表达。
 - `completion_owner_agent_id` 通常是 requester agent，负责语义完成判断。
 - target agent 可以完成自己的 action，但不能单方面关闭整个 workflow。
 - artifact 表示 action result，不等同于 task complete。
@@ -228,7 +229,8 @@ Phase 3 Progress:
 - [x] Lightweight task TTL expiry: requester-controlled reply timeout with 24-hour default, requester notification on expiry, and late artifact rejection.
 - [x] Human-authorized task goal amendment: versioned `done_criteria`, `task.amended`, requester-side authority audit, per-exchange max turn reset, and latest-goal completion tracking.
 - [x] Protocol negotiation and drift recovery: publish current protocol bundle, reject patchable stale wire versions with `protocol_patch_required`, distinguish `client_upgrade_required`, and let MCP sync schemas/examples/docs for local redraft.
-- [ ] Continue validating the new local inbox workbench end-to-end with more real remote agents.
+- [x] Agent role architecture: define `personal_agent` and `service_agent`, expose role/execution/capability/policy in Agent Cards, and shift personal clients toward notifier-first UX.
+- [ ] Continue validating the notifier-first personal agent inbox and service worker kit split with more real remote agents.
 
 详细计划见 `phase3-plan.md`。
 

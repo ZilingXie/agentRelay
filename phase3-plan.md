@@ -333,7 +333,8 @@ Implementation stance:
 15. [x] Lightweight task TTL expiry: requester-controlled reply timeout with 24-hour default, requester notification on expiry, and late artifact rejection.
 16. [x] Human-authorized task goal amendment: versioned `done_criteria`, `task.amended`, requester-side authority audit, per-exchange max turn reset, and latest-goal completion tracking.
 17. [x] Protocol negotiation and drift recovery: server-owned current protocol metadata, protocol bundle publishing, validation endpoint, stale-version structured errors, and MCP protocol sync recovery for local redraft.
-18. [ ] Continue validating the new local inbox workbench end-to-end with more real remote agents.
+18. [x] Agent role architecture: define `personal_agent` and `service_agent`, separate role from `execution_mode`, `protocol_capabilities`, and `policy`, and expose the profile through Agent Cards.
+19. [ ] Continue validating the new notifier-first personal agent inbox and service worker kit split with more real remote agents.
 
 ## 8. First Implementation Slice
 
@@ -669,6 +670,38 @@ Protocol boundary:
 - MCP/local guardrails still protect local workflow, files, human boundaries, and adapter behavior.
 - Automatic LLM redraft is intentionally not hidden inside the MCP package yet; the MCP returns the synced bundle, original request, and redraft instructions so the local agent can preserve user intent and resubmit safely.
 - Redrafted retries should preserve the original idempotency key when available, or include `retry_of` when a new key is required.
+
+## 8.18 Agent Role Architecture
+
+Status: completed as an additive Agent Card and agent registry profile.
+
+Architecture:
+
+- `personal_agent` is a human-owned assistant. It is notifier-first by default,
+  represents a human owner, and can amend or close requester-owned work only
+  with human authority.
+- `service_agent` is an autonomous or semi-autonomous worker. It can claim
+  assigned work and submit artifacts, but it must not change requester-owned
+  goals.
+- `agent_role` explains what kind of agent this is.
+- `execution_mode` explains how it runs: `notify_only`, `manual`, `semi_auto`,
+  or `autonomous`.
+- `protocol_capabilities` explain what the agent can do.
+- `policy` explains approval and safety boundaries.
+
+Product boundary:
+
+- The public MCP default for personal agents should be a lightweight notifier:
+  listener, local inbox, task display, and safe copyable prompt.
+- Automatic local agent invocation belongs behind explicit opt-in examples or
+  service worker kits.
+- Hermes-like deployments should use a service worker kit with listener,
+  launcher, worker loop, submit/ack, and unavailable fallback.
+
+Compatibility note: role metadata is additive. Existing agents default to
+`personal_agent` and `notify_only`, while known service actors such as
+`project-hermes` and `agentrelay-healthcheck` are represented as
+`service_agent` profiles.
 
 ## 9. Octo Comparison
 

@@ -50,6 +50,10 @@ def main() -> None:
             raise AssertionError("agent owner not stored")
         if row["name"] != "Alice Example Agent":
             raise AssertionError("agent name not stored")
+        if row["agent_role"] != "personal_agent":
+            raise AssertionError("new auth identities should default to personal_agent")
+        if row["execution_mode"] != "notify_only":
+            raise AssertionError("personal agent identities should default to notify_only")
 
         env_file = env_dir / "alice-example.env"
         env_text = env_file.read_text()

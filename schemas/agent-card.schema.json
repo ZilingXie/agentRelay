@@ -95,7 +95,34 @@
     },
     "agentRelay": {
       "type": "object",
-      "required": ["agent_id", "owner", "accepted_task_types", "scopes", "human_approval_policy", "endpoints"],
+      "required": [
+        "agent_id",
+        "owner",
+        "agent_role",
+        "execution_mode",
+        "protocol_capabilities",
+        "policy",
+        "accepted_task_types",
+        "scopes",
+        "human_approval_policy",
+        "endpoints"
+      ],
+      "properties": {
+        "agent_role": {
+          "enum": ["personal_agent", "service_agent"]
+        },
+        "execution_mode": {
+          "enum": ["notify_only", "manual", "semi_auto", "autonomous"]
+        },
+        "protocol_capabilities": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
       "additionalProperties": true
     }
   },

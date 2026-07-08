@@ -338,3 +338,54 @@ agent-readable error envelope:
 Requests without a protocol version remain legacy-compatible during the current
 migration window. New clients should always send `X-AgentRelay-Envelope: v0.3`
 so protocol errors include structured recovery instructions.
+
+## Agent Roles And Execution Modes
+
+AgentRelay distinguishes agent type from execution permission. `agent_role`
+explains what kind of agent this is; `execution_mode`, `protocol_capabilities`,
+and `policy` describe what it may do.
+
+Roles:
+
+- `personal_agent`: a human-owned assistant such as a local Codex agent. It is
+  notifier-first by default, represents its owner, and may amend or close
+  requester-owned work only with human authority.
+- `service_agent`: an autonomous or semi-autonomous worker such as Project
+  Hermes. It can claim assigned work and submit artifacts, but it must not
+  change requester-owned goals.
+
+Execution modes:
+
+- `notify_only`: receive and display inbox items; do not automatically call a
+  local agent.
+- `manual`: prepare prompts or work packets for a human to hand to an agent.
+- `semi_auto`: automatically handle low-risk work while requiring approval for
+  higher-impact actions.
+- `autonomous`: claim and process assigned tasks as a service worker.
+
+Agent Cards expose this profile under `agentRelay`:
+
+```json
+{
+  "agentRelay": {
+    "agent_id": "zac-agent",
+    "agent_role": "personal_agent",
+    "execution_mode": "notify_only",
+    "protocol_capabilities": [
+      "task_create",
+      "task_review",
+      "task_close",
+      "task_amend_with_human_authority"
+    ],
+    "policy": {
+      "autonomous_execution_allowed": false,
+      "requires_human_authority_for_amend": true,
+      "requires_human_authority_for_close": true
+    }
+  }
+}
+```
+
+This keeps the relay small: it can enforce identity, ownership, terminal state,
+and eventually role/capability policy, while local agents still decide how to
+reason, ask humans, and use their local tools.

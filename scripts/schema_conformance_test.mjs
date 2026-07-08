@@ -291,6 +291,13 @@ validate("agent-card.schema.json", {
   agentRelay: {
     agent_id: "agent-b",
     owner: "owner-b",
+    agent_role: "service_agent",
+    execution_mode: "autonomous",
+    protocol_capabilities: ["task_claim", "task_execute", "artifact_submit"],
+    policy: {
+      autonomous_execution_allowed: true,
+      can_amend_goal: false
+    },
     accepted_task_types: ["meeting.schedule"],
     scopes: ["agent:agent-b:tasks:claim"],
     human_approval_policy: {

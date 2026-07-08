@@ -36,6 +36,8 @@ def main() -> None:
             owner=owner,
             name=f"{owner} Agent",
             description=f"Personal coordinator agent for {owner}.",
+            agent_role="personal_agent",
+            execution_mode="notify_only",
         )
         synced.append(agent)
     print(json.dumps({"ok": True, "synced": synced}, indent=2))

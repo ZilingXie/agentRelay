@@ -38,6 +38,38 @@ AGENT_EVENT_DELIVERY_STATES = {"pending", "inflight", "done", "failed"}
 HEALTHCHECK_AGENT_ID = "agentrelay-healthcheck"
 HEALTHCHECK_TTL_SECONDS = 30 * 60
 DEFAULT_TASK_TTL_SECONDS = 24 * 60 * 60
+AGENT_ROLES = {"personal_agent", "service_agent"}
+EXECUTION_MODES = {"notify_only", "manual", "semi_auto", "autonomous"}
+DEFAULT_PERSONAL_CAPABILITIES = [
+    "task_create",
+    "task_review",
+    "task_close",
+    "task_amend_with_human_authority",
+]
+DEFAULT_SERVICE_CAPABILITIES = [
+    "task_claim",
+    "task_execute",
+    "artifact_submit",
+    "clarification_request",
+]
+DEFAULT_PERSONAL_POLICY = {
+    "autonomous_execution_allowed": False,
+    "can_amend_goal": True,
+    "can_close_owned_task": True,
+    "requires_human_authority_for_amend": True,
+    "requires_human_authority_for_close": True,
+    "high_impact_requires_approval": True,
+    "secret_safe_push_only": True,
+}
+DEFAULT_SERVICE_POLICY = {
+    "autonomous_execution_allowed": True,
+    "can_amend_goal": False,
+    "can_close_owned_task": False,
+    "requires_human_authority_for_amend": False,
+    "requires_human_authority_for_close": False,
+    "high_impact_requires_approval": True,
+    "secret_safe_push_only": True,
+}
 MAX_TURNS_TERMINAL_REASON = (
     "Task exceeded max_turns before the pending agent could make another legal handoff."
 )
@@ -68,6 +100,10 @@ class Store:
                     name TEXT NOT NULL,
                     owner TEXT NOT NULL,
                     description TEXT NOT NULL,
+                    agent_role TEXT NOT NULL DEFAULT 'personal_agent',
+                    execution_mode TEXT NOT NULL DEFAULT 'notify_only',
+                    capabilities_json TEXT NOT NULL DEFAULT '',
+                    policy_json TEXT NOT NULL DEFAULT '',
                     created_at INTEGER NOT NULL
                 );
 
@@ -182,10 +218,42 @@ class Store:
                     ON task_thread_bindings (agent_id, updated_at);
                 """
             )
+            self.ensure_agent_columns(conn)
             self.ensure_task_columns(conn)
             self.ensure_task_event_columns(conn)
             self.ensure_agent_event_columns(conn)
             self.ensure_seed_agents(conn)
+
+    def ensure_agent_columns(self, conn: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(agents)").fetchall()
+        }
+        migrations = {
+            "agent_role": "ALTER TABLE agents ADD COLUMN agent_role TEXT NOT NULL DEFAULT 'personal_agent'",
+            "execution_mode": "ALTER TABLE agents ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'notify_only'",
+            "capabilities_json": "ALTER TABLE agents ADD COLUMN capabilities_json TEXT NOT NULL DEFAULT ''",
+            "policy_json": "ALTER TABLE agents ADD COLUMN policy_json TEXT NOT NULL DEFAULT ''",
+        }
+        for column, sql in migrations.items():
+            if column not in columns:
+                conn.execute(sql)
+        conn.execute(
+            """
+            UPDATE agents
+            SET agent_role = 'service_agent',
+                execution_mode = 'autonomous',
+                capabilities_json = ?,
+                policy_json = ?
+            WHERE agent_id IN ('project-hermes', ?)
+              AND agent_role = 'personal_agent'
+            """,
+            (
+                json.dumps(DEFAULT_SERVICE_CAPABILITIES),
+                json.dumps(DEFAULT_SERVICE_POLICY),
+                HEALTHCHECK_AGENT_ID,
+            ),
+        )
 
     def ensure_task_columns(self, conn: sqlite3.Connection) -> None:
         columns = {
@@ -262,17 +330,45 @@ class Store:
     def ensure_seed_agents(self, conn: sqlite3.Connection) -> None:
         now = int(time.time())
         agents = [
-            ("zac-agent", "Zac Agent", "Zac", "Personal coordinator agent for Zac."),
-            ("frank-agent", "Frank Agent", "Frank", "Personal coordinator agent for Frank."),
+            (
+                "zac-agent",
+                "Zac Agent",
+                "Zac",
+                "Personal coordinator agent for Zac.",
+                "personal_agent",
+                "notify_only",
+                DEFAULT_PERSONAL_CAPABILITIES,
+                DEFAULT_PERSONAL_POLICY,
+            ),
+            (
+                "frank-agent",
+                "Frank Agent",
+                "Frank",
+                "Personal coordinator agent for Frank.",
+                "personal_agent",
+                "notify_only",
+                DEFAULT_PERSONAL_CAPABILITIES,
+                DEFAULT_PERSONAL_POLICY,
+            ),
         ]
-        for agent_id, name, owner, description in agents:
+        for agent_id, name, owner, description, agent_role, execution_mode, capabilities, policy in agents:
             conn.execute(
                 """
                 INSERT OR IGNORE INTO agents
-                    (agent_id, name, owner, description, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                    (agent_id, name, owner, description, agent_role, execution_mode, capabilities_json, policy_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (agent_id, name, owner, description, now),
+                (
+                    agent_id,
+                    name,
+                    owner,
+                    description,
+                    agent_role,
+                    execution_mode,
+                    json.dumps(capabilities),
+                    json.dumps(policy),
+                    now,
+                ),
             )
 
     def get_agent(self, agent_id: str) -> dict[str, Any] | None:
@@ -294,23 +390,52 @@ class Store:
         owner: str,
         name: str | None = None,
         description: str | None = None,
+        agent_role: str | None = None,
+        execution_mode: str | None = None,
+        capabilities: list[str] | None = None,
+        policy: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         now = int(time.time())
         agent_name = name or f"{owner} Agent"
         agent_description = description or f"Personal coordinator agent for {owner}."
         with self.connect() as conn:
             existing = conn.execute(
-                "SELECT created_at FROM agents WHERE agent_id = ?",
+                "SELECT * FROM agents WHERE agent_id = ?",
                 (agent_id,),
             ).fetchone()
             created_at = int(existing["created_at"]) if existing else now
+            normalized_role = normalize_agent_role(agent_role or (existing["agent_role"] if existing else None), agent_id)
+            normalized_execution_mode = normalize_execution_mode(
+                execution_mode or (existing["execution_mode"] if existing else None),
+                normalized_role,
+            )
+            normalized_capabilities = capabilities
+            if normalized_capabilities is None and existing:
+                normalized_capabilities = parse_json_list(existing["capabilities_json"])
+            if normalized_capabilities is None:
+                normalized_capabilities = default_agent_capabilities(normalized_role)
+            normalized_policy = policy
+            if normalized_policy is None and existing:
+                normalized_policy = parse_json_object(existing["policy_json"])
+            if normalized_policy is None:
+                normalized_policy = default_agent_policy(normalized_role)
             conn.execute(
                 """
                 INSERT OR REPLACE INTO agents
-                    (agent_id, name, owner, description, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                    (agent_id, name, owner, description, agent_role, execution_mode, capabilities_json, policy_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (agent_id, agent_name, owner, agent_description, created_at),
+                (
+                    agent_id,
+                    agent_name,
+                    owner,
+                    agent_description,
+                    normalized_role,
+                    normalized_execution_mode,
+                    json.dumps(normalized_capabilities),
+                    json.dumps(normalized_policy),
+                    created_at,
+                ),
             )
             row = conn.execute(
                 "SELECT * FROM agents WHERE agent_id = ?",
@@ -2089,16 +2214,23 @@ def assert_agent_exists(conn: sqlite3.Connection, agent_id: str) -> None:
 
 
 def ensure_agent_conn(conn: sqlite3.Connection, agent_id: str, owner: str, created_at: int) -> None:
+    role = normalize_agent_role(None, agent_id)
+    execution_mode = normalize_execution_mode(None, role)
     conn.execute(
         """
-        INSERT OR IGNORE INTO agents (agent_id, name, owner, description, created_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT OR IGNORE INTO agents
+            (agent_id, name, owner, description, agent_role, execution_mode, capabilities_json, policy_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             agent_id,
             f"{owner} Agent",
             owner,
             f"Personal coordinator agent for {owner}.",
+            role,
+            execution_mode,
+            json.dumps(default_agent_capabilities(role)),
+            json.dumps(default_agent_policy(role)),
             created_at,
         ),
     )
@@ -2107,12 +2239,15 @@ def ensure_agent_conn(conn: sqlite3.Connection, agent_id: str, owner: str, creat
 def ensure_healthcheck_agent_conn(conn: sqlite3.Connection, created_at: int) -> None:
     conn.execute(
         """
-        INSERT OR IGNORE INTO agents (agent_id, name, owner, description, created_at)
-        VALUES (?, 'AgentRelay Healthcheck', 'AgentRelay', ?, ?)
+        INSERT OR IGNORE INTO agents
+            (agent_id, name, owner, description, agent_role, execution_mode, capabilities_json, policy_json, created_at)
+        VALUES (?, 'AgentRelay Healthcheck', 'AgentRelay', ?, 'service_agent', 'autonomous', ?, ?, ?)
         """,
         (
             HEALTHCHECK_AGENT_ID,
             "Built-in synthetic actor for install loopback health checks. It has no login token and does not run a remote agent.",
+            json.dumps(DEFAULT_SERVICE_CAPABILITIES),
+            json.dumps(DEFAULT_SERVICE_POLICY),
             created_at,
         ),
     )
@@ -2123,6 +2258,59 @@ def install_healthcheck_task_id(requester_agent_id: str, idempotency_key: str | 
         return f"task_{uuid.uuid4().hex}"
     digest = hashlib.sha256(f"{requester_agent_id}:{idempotency_key}".encode("utf-8")).hexdigest()[:32]
     return f"task_hc_{digest}"
+
+
+def normalize_agent_role(value: str | None, agent_id: str = "") -> str:
+    if agent_id in {HEALTHCHECK_AGENT_ID, "project-hermes"}:
+        return "service_agent"
+    role = str(value or "personal_agent").strip()
+    if role not in AGENT_ROLES:
+        raise ValueError(f"invalid agent_role: {role}")
+    return role
+
+
+def normalize_execution_mode(value: str | None, agent_role: str) -> str:
+    default = "autonomous" if agent_role == "service_agent" else "notify_only"
+    execution_mode = str(value or default).strip()
+    if execution_mode not in EXECUTION_MODES:
+        raise ValueError(f"invalid execution_mode: {execution_mode}")
+    return execution_mode
+
+
+def default_agent_capabilities(agent_role: str) -> list[str]:
+    if agent_role == "service_agent":
+        return list(DEFAULT_SERVICE_CAPABILITIES)
+    return list(DEFAULT_PERSONAL_CAPABILITIES)
+
+
+def default_agent_policy(agent_role: str) -> dict[str, Any]:
+    if agent_role == "service_agent":
+        return dict(DEFAULT_SERVICE_POLICY)
+    return dict(DEFAULT_PERSONAL_POLICY)
+
+
+def parse_json_list(raw: str | None) -> list[str] | None:
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, list):
+        return None
+    return [str(item) for item in parsed if str(item).strip()]
+
+
+def parse_json_object(raw: str | None) -> dict[str, Any] | None:
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
 
 
 def install_healthcheck_ack_text(requester_agent_id: str, task_id: str) -> str:

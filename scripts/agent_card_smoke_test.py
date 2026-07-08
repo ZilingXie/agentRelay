@@ -57,6 +57,14 @@ def main() -> None:
             relay = card["agentRelay"]
             if relay["agent_id"] != "frank-agent":
                 raise AssertionError("agentRelay metadata missing agent id")
+            if relay["agent_role"] != "personal_agent":
+                raise AssertionError("seed human agents should default to personal_agent")
+            if relay["execution_mode"] != "notify_only":
+                raise AssertionError("personal agents should default to notify_only")
+            if "task_amend_with_human_authority" not in relay["protocol_capabilities"]:
+                raise AssertionError("personal agent card should advertise human-authorized amend capability")
+            if relay["policy"]["autonomous_execution_allowed"]:
+                raise AssertionError("personal agent card should not allow autonomous execution by default")
             if "meeting.schedule" not in relay["accepted_task_types"]:
                 raise AssertionError("agent card should include accepted task types")
             if "agent:frank-agent:events:ack" not in relay["scopes"]:
@@ -78,6 +86,8 @@ def main() -> None:
                 raise AssertionError("A2A mapping should claim card discovery support")
             if mapping["operation_map"]["message/send"]["agentrelay"] != "POST /agentrelay/api/tasks":
                 raise AssertionError("A2A message/send should map to task create")
+            if mapping["agent_role"] != "personal_agent":
+                raise AssertionError("A2A mapping should include agent role")
 
             task_event_schema = get_json("http://127.0.0.1:8797/agentrelay/schemas/task-event.schema.json")
             if task_event_schema["title"] != "AgentRelay Protocol v0.3 Task Event":
