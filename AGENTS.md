@@ -1,67 +1,91 @@
 # AgentRelay Development Rules
 
-These instructions apply to the `/home/ubuntu/agentRelay` repository.
+These instructions apply to `/home/ubuntu/projects/agentrelay/agentRelay`.
 
-## Repository
+## Source Of Truth
 
-This is the server-side AgentRelay project.
+1. `AGENTS.md` is the hot-path instruction file for this repository. Keep it concise enough to load frequently.
+2. This repo is the AgentRelay server/cloud relay project: protocol authority, HTTP/WSS relay, SQLite state, auth, delivery reliability, audit/timeline, admin dashboard, Docker deployment, and roadmap docs.
+3. The client/agent-side MCP project is separate: `/home/ubuntu/projects/agentrelay/agent-relay-mcp` and <https://github.com/ZilingXie/agent-relay-mcp>.
+4. Protocol docs live in `docs/protocol-v03.md`, public schemas in `schemas/`, examples in `examples/protocol-v03/`, and roadmap status in `plan.md`, `phase3-plan.md`, and `plan.html`.
+5. The public roadmap page is served from `/var/www/html/agentrelay/plan.html`; after changing `plan.html`, sync it there when the user expects the public page to update.
 
-GitHub repository:
+## Non-Negotiables
 
-```text
-https://github.com/ZilingXie/agentRelay
-```
+1. Keep `main` clean and synchronized with `origin/main`.
+2. Do not make feature, protocol, server behavior, deployment, or MCP-facing API changes directly on `main`.
+3. Create a task branch/worktree for non-trivial work, keep changes scoped, then PR back to `main`.
+4. Preserve secrets and runtime state. Do not print tokens or commit `.env`, `data/`, SQLite databases, auth files, logs, or other runtime artifacts.
+5. AgentRelay should stay small: route, persist, authorize, notify, audit, and enforce transport/state invariants. Do not turn the relay into the local agent brain or a hardcoded UX adapter.
+6. Local inbox-to-user-workflow adapters belong in the MCP/client repo or user-owned integrations, not in the cloud relay.
+7. Preserve compatibility unless the user explicitly approves a breaking migration. Prefer additive Protocol v0.3+ behavior.
 
-The client/agent-side MCP project is separate:
+## Branch And PR Workflow
 
-```text
-https://github.com/ZilingXie/agent-relay-mcp
-```
+For any new feature, protocol change, server behavior change, deployment change, dashboard change, MCP-facing API change, or other non-trivial logic change:
 
-## Worktree And PR Policy
-
-For any new feature, protocol change, server behavior change, MCP-facing API change,
-or other non-trivial logic change:
-
-1. Create a new branch/worktree before editing.
-2. Keep the change scoped to that branch/worktree.
-3. Run the relevant tests before finishing.
-4. Commit the change.
-5. Push the branch.
-6. Open a pull request.
-7. Merge the pull request after review/approval.
-
-Do not continue making feature or protocol changes directly on `main`.
-
-Small documentation-only corrections may be made directly when the user explicitly
-asks for a quick edit, but roadmap/protocol documentation that accompanies a code
-change should be included in that feature branch and PR.
-
-## Current Project Direction
-
-AgentRelay is an agent-first collaboration protocol and relay server. The relay
-connects agents that do not have public IP addresses, but it should stay small:
-identity, auth, state, notification, delivery reliability, and audit history.
-
-The relay should not become the agent brain, a human-centered IM product, or a
-hardcoded local workflow adapter. Local inbox-to-user-workflow adapters remain
-user-owned and client-specific.
-
-## Compatibility
-
-Preserve existing Phase 1/2 and Protocol v0.2 compatibility unless the user
-explicitly approves a breaking migration.
-
-When adding Protocol v0.3+ behavior, prefer opt-in or additive behavior first.
-
-## Validation
-
-Before opening a PR, run at least:
+1. Start from clean `main`.
+2. Create a worktree under `/home/ubuntu/projects/agentrelay/`:
 
 ```bash
-npm test
-git diff --check
+git worktree add -b <branch-name> ../agentRelay-<short-slug> main
 ```
 
-If the change is narrow and full tests are temporarily impractical, run the most
-relevant targeted tests and clearly state what was not run.
+3. Work only in that task worktree.
+4. Run targeted verification that proves the change.
+5. Commit task-owned files only.
+6. Push the branch, open a PR to `main`, and merge after verification.
+7. Fast-forward `/home/ubuntu/projects/agentrelay/agentRelay` to `origin/main`.
+8. Remove only the task-owned worktree/local branch after the PR is merged.
+
+Small documentation-only corrections may be made directly on `main` when the user explicitly asks for a quick edit, but roadmap/protocol documentation accompanying code should be included in the feature PR.
+
+## Validation Matrix
+
+1. Docs-only changes:
+   - Inspect the changed text.
+   - Run `git diff --check`.
+2. Schema/protocol docs/examples:
+   - Run `npm run test:schema`.
+   - Run the relevant protocol smoke test when behavior semantics change.
+3. Server behavior, auth, task lifecycle, event delivery, dashboard, or deployment code:
+   - Run `npm test` unless the change is very narrow and a targeted subset is clearly sufficient.
+4. Docker/runtime changes:
+   - Rebuild/restart with `sudo docker compose up -d --build`.
+   - Verify `https://server.stellarix.space/agentrelay/api/health`.
+   - Verify one task-specific live marker.
+5. Public roadmap changes:
+   - Copy `plan.html` to `/var/www/html/agentrelay/plan.html`.
+   - Verify `https://server.stellarix.space/agentrelay/plan.html`.
+
+## Protocol Boundaries
+
+1. Agent roles are `personal_agent` and `service_agent`.
+2. Role is descriptive; permissions are expressed through `execution_mode`, `protocol_capabilities`, and `policy`.
+3. `personal_agent` defaults to notifier-first behavior and may amend/close requester-owned work only with human authority.
+4. `service_agent` may claim assigned work and submit artifacts, but must not change requester-owned goals.
+5. Artifact submission does not automatically complete a task.
+6. Close is controlled by `completion_owner_agent_id`; human completion authority is recorded through the authorized agent, not by making human-agent private chat part of relay audit.
+7. WebSocket push must remain secret-safe; full task payloads are fetched through authenticated HTTP.
+
+## Deployment Notes
+
+Production runs from this repo with Docker Compose:
+
+```text
+agentrelay-api -> 127.0.0.1:8787
+agentrelay-ws  -> 127.0.0.1:8788
+host nginx     -> https://server.stellarix.space/agentrelay/...
+```
+
+Runtime state is bind-mounted under `data/`. Do not bake credentials or SQLite state into images.
+
+## Final Report Checklist
+
+Include:
+
+1. What changed and why.
+2. PR/commit links when applicable.
+3. Verification commands and results.
+4. Deployment/public-page verification when applicable.
+5. Any residual risk or skipped checks.
