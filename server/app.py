@@ -23,6 +23,16 @@ from server.protocol_v03 import (
     validate_task_close,
     validate_task_create,
 )
+from server.protocol_registry import (
+    CURRENT_PROTOCOL_SHORT,
+    PROTOCOL_NAME,
+    ProtocolNegotiationRequired,
+    ensure_protocol_compatible,
+    negotiation_error_detail,
+    protocol_bundle,
+    protocol_manifest,
+    protocol_summary,
+)
 
 
 DEFAULT_DB_PATH = "./data/agentrelay.sqlite3"
@@ -44,6 +54,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.route_get()
         except ConflictError as exc:
             self.respond_error(409, str(exc), error_type="conflict", code="CONFLICT")
+        except ProtocolNegotiationRequired as exc:
+            self.respond_protocol_negotiation_required(exc)
         except ProtocolValidationError as exc:
             self.respond_protocol_error(exc)
         except ValueError as exc:
@@ -57,6 +69,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.route_post()
         except ConflictError as exc:
             self.respond_error(409, str(exc), error_type="conflict", code="CONFLICT")
+        except ProtocolNegotiationRequired as exc:
+            self.respond_protocol_negotiation_required(exc)
         except ProtocolValidationError as exc:
             self.respond_protocol_error(exc)
         except ValueError as exc:
@@ -68,10 +82,22 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         path = clean_path(self.path)
         query = query_params(self.path)
         if path == "/health":
-            self.respond_json({"ok": True, "service": "agentrelay"})
+            self.respond_json({"ok": True, "service": "agentrelay", "protocol": protocol_summary(public_base_url())})
             return
         if path == "/agentrelay/health":
-            self.respond_json({"ok": True, "service": "agentrelay"})
+            self.respond_json({"ok": True, "service": "agentrelay", "protocol": protocol_summary(public_base_url())})
+            return
+        if path == "/agentrelay/protocols":
+            self.respond_json({"protocols": [protocol_summary(public_base_url())]})
+            return
+        if path == "/agentrelay/protocols/current":
+            self.respond_json(protocol_manifest(public_base_url()))
+            return
+        if path == f"/agentrelay/protocols/{PROTOCOL_NAME}/{CURRENT_PROTOCOL_SHORT}/manifest":
+            self.respond_json(protocol_manifest(public_base_url()))
+            return
+        if path == f"/agentrelay/protocols/{PROTOCOL_NAME}/{CURRENT_PROTOCOL_SHORT}/bundle":
+            self.respond_json(protocol_bundle(public_base_url()))
             return
         if path in {"/agentrelay/dashboard", "/agentrelay/dashboard/"}:
             self.serve_dashboard_asset("index.html")
@@ -240,6 +266,20 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         payload = self.read_json()
         self.protocol_v03_response = is_protocol_v03(payload)
+        if path == "/agentrelay/protocols/validate":
+            protocol_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else payload
+            ensure_protocol_compatible(protocol_payload)
+            operation = payload.get("operation")
+            if is_protocol_v03(protocol_payload):
+                validate_protocol_operation(operation, protocol_payload)
+            self.respond_protocol(
+                {
+                    "valid": True,
+                    "operation": operation,
+                    "protocol": protocol_summary(public_base_url()),
+                }
+            )
+            return
         if path == "/agentrelay/healthchecks/install":
             requester_agent_id = auth.get("agent_id")
             if not requester_agent_id:
@@ -262,6 +302,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_protocol(result, status=201)
             return
         if path == "/agentrelay/tasks":
+            ensure_protocol_compatible(payload)
             if is_protocol_v03(payload):
                 validate_task_create(payload)
             requester_agent_id = read_alias(payload, "requester_agent_id", "requesterAgentId", payload.get("from"))
@@ -281,6 +322,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_protocol({"task": task})
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/artifacts", path):
+            ensure_protocol_compatible(payload)
             if is_protocol_v03(payload):
                 validate_artifact_submit(payload)
             artifact = payload.get("artifact") if isinstance(payload.get("artifact"), dict) else {}
@@ -298,6 +340,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_protocol({"task": task}, status=201)
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/amend", path):
+            ensure_protocol_compatible(payload)
             if is_protocol_v03(payload):
                 validate_task_amend(payload)
             actor_agent_id = read_alias(payload, "actor_agent_id", "actorAgentId")
@@ -310,6 +353,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_protocol({"task": task})
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/close", path):
+            ensure_protocol_compatible(payload)
             if is_protocol_v03(payload):
                 validate_task_close(payload)
                 payload = normalize_close_payload(payload)
@@ -598,6 +642,17 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             detail={"field": exc.field} if exc.field else None,
         )
 
+    def respond_protocol_negotiation_required(self, exc: ProtocolNegotiationRequired) -> None:
+        self.protocol_v03_response = True
+        self.respond_error(
+            exc.status,
+            str(exc),
+            error_type="protocol_negotiation",
+            code=exc.code,
+            hint=exc.hint,
+            detail=negotiation_error_detail(exc, public_base_url()),
+        )
+
     def wants_envelope(self) -> bool:
         return (
             self.headers.get("X-AgentRelay-Envelope", "") == ENVELOPE_V03
@@ -661,6 +716,26 @@ def parse_int_query(
     return parsed
 
 
+def public_base_url() -> str:
+    return os.environ.get("AGENTRELAY_PUBLIC_BASE_URL", "https://server.stellarix.space/agentrelay")
+
+
+def validate_protocol_operation(operation: Any, payload: dict[str, Any]) -> None:
+    if operation in {"task_create", "create_task", "POST /tasks", None, ""}:
+        validate_task_create(payload)
+        return
+    if operation in {"artifact_submit", "submit_artifact", "POST /tasks/{task_id}/artifacts"}:
+        validate_artifact_submit(payload)
+        return
+    if operation in {"task_amend", "amend_task", "POST /tasks/{task_id}/amend"}:
+        validate_task_amend(payload)
+        return
+    if operation in {"task_close", "close_task", "POST /tasks/{task_id}/close"}:
+        validate_task_close(payload)
+        return
+    raise ValueError("unknown protocol validation operation")
+
+
 def agent_events_response(events: list[dict[str, Any]]) -> dict[str, Any]:
     next_cursor = events[-1]["cursor"] if events else None
     return {
@@ -672,7 +747,7 @@ def agent_events_response(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 def agent_card(agent: dict[str, Any]) -> dict[str, Any]:
     agent_id = agent["agent_id"]
-    relay_base_url = os.environ.get("AGENTRELAY_PUBLIC_BASE_URL", "https://server.stellarix.space/agentrelay")
+    relay_base_url = public_base_url()
     api_base_url = f"{relay_base_url.rstrip('/')}/api"
     a2a_url = f"{api_base_url}/a2a/{agent_id}"
     agentrelay_url = f"{api_base_url}/agents/{agent_id}/card"
