@@ -1304,7 +1304,7 @@ AgentRelay records timeline events:
         <li>
           <div>
             <h3>Protocol negotiation and drift recovery</h3>
-            <p><span class="tag green">Completed</span> Made the relay the protocol authority with <code>/agentrelay/api/protocols/current</code>, manifest, bundle, and validate endpoints. Stale patchable clients receive <code>protocol_patch_required</code> with bundle URLs so MCP can sync schemas/examples/docs and ask the local agent to redraft; incompatible clients receive <code>client_upgrade_required</code> and a reinstall action.</p>
+            <p><span class="tag green">Completed</span> Made the relay the protocol authority with <code>/agentrelay/api/protocols/current</code>, manifest, bundle, and validate endpoints. Stale patchable clients receive <code>protocol_patch_required</code> with bundle URLs so MCP can sync schemas/examples/docs, auto-retry safe task create/artifact submit protocol-version patches, and keep task amend/close on explicit review; incompatible clients receive <code>client_upgrade_required</code> and a reinstall action.</p>
           </div>
         </li>
         <li>
@@ -1697,7 +1697,7 @@ AgentRelay records timeline events:
         <li>
           <div>
             <h3>Protocol negotiation and drift recovery</h3>
-            <p><span class="tag green">Completed</span> 已让 relay 成为协议权威，并提供 <code>/agentrelay/api/protocols/current</code>、manifest、bundle 和 validate endpoint。可修复的旧客户端会收到 <code>protocol_patch_required</code>，MCP 可同步最新 schema/examples/docs 并提示本地 agent 按新协议重写；不兼容客户端会收到 <code>client_upgrade_required</code> 和重新安装动作。</p>
+            <p><span class="tag green">Completed</span> 已让 relay 成为协议权威，并提供 <code>/agentrelay/api/protocols/current</code>、manifest、bundle 和 validate endpoint。可修复的旧客户端会收到 <code>protocol_patch_required</code>，MCP 可同步最新 schema/examples/docs，并对安全的 task create/artifact submit 协议版本补丁自动重试；task amend/close 仍保留显式 review。不兼容客户端会收到 <code>client_upgrade_required</code> 和重新安装动作。</p>
           </div>
         </li>
         <li>

@@ -332,7 +332,7 @@ Implementation stance:
 14. [x] Close flow reliability polish: stable task event ordering, idempotent install loopback checks, healthcheck TTL cleanup, local inbox workflow binding, and latest-artifact close evidence refs.
 15. [x] Lightweight task TTL expiry: requester-controlled reply timeout with 24-hour default, requester notification on expiry, and late artifact rejection.
 16. [x] Human-authorized task goal amendment: versioned `done_criteria`, `task.amended`, requester-side authority audit, per-exchange max turn reset, and latest-goal completion tracking.
-17. [x] Protocol negotiation and drift recovery: server-owned current protocol metadata, protocol bundle publishing, validation endpoint, stale-version structured errors, and MCP protocol sync recovery for local redraft.
+17. [x] Protocol negotiation and drift recovery: server-owned current protocol metadata, protocol bundle publishing, validation endpoint, stale-version structured errors, MCP protocol sync recovery, and automatic retry for safe task create/artifact submit protocol-version patches.
 18. [x] Agent role architecture: define `personal_agent` and `service_agent`, separate role from `execution_mode`, `protocol_capabilities`, and `policy`, and expose the profile through Agent Cards.
 19. [ ] Continue validating the new notifier-first personal agent inbox and service worker kit split with more real remote agents.
 
@@ -661,15 +661,15 @@ Implemented semantics:
 - Patchable stale versions return `protocol_patch_required` with bundle URLs and the action `fetch_protocol_and_redraft`.
 - Incompatible versions return `client_upgrade_required` with the action `upgrade_mcp_client`.
 - The MCP client sends the v0.3 envelope by default, can run `npm run protocol:sync`, and exposes `agentrelay_protocol_sync`.
-- When MCP sees `protocol_patch_required`, it fetches and caches the latest bundle under the local protocol cache and returns structured redraft guidance to the local agent.
+- When MCP sees `protocol_patch_required`, it fetches and caches the latest bundle under the local protocol cache. For server-declared safe operations (`task_create` and `artifact_submit`), it updates the top-level `protocol_version`, preserves the idempotency key, and retries once automatically.
 - When MCP sees `client_upgrade_required`, it tells the user/agent to reinstall with `npx github:ZilingXie/agent-relay-mcp install`.
 
 Protocol boundary:
 
 - Server validation only guards the wire protocol and compatibility policy.
 - MCP/local guardrails still protect local workflow, files, human boundaries, and adapter behavior.
-- Automatic LLM redraft is intentionally not hidden inside the MCP package yet; the MCP returns the synced bundle, original request, and redraft instructions so the local agent can preserve user intent and resubmit safely.
-- Redrafted retries should preserve the original idempotency key when available, or include `retry_of` when a new key is required.
+- Automatic protocol-version repair is hidden for safe create/artifact patch drift. Goal-changing or authority-changing operations such as task amendment and task close still return the synced bundle, original request, and review guidance so the local agent preserves user intent before resubmitting.
+- Redrafted retries preserve the original idempotency key when available, or include `retry_of` when a new key is required.
 
 ## 8.18 Agent Role Architecture
 
