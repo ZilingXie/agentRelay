@@ -32,7 +32,10 @@
     "test:admin-cli": "python3 scripts/admin_cli_smoke_test.py",
     "test:admin-dashboard": "python3 scripts/admin_dashboard_smoke_test.py",
     "test:install-healthcheck": "python3 scripts/install_healthcheck_smoke_test.py",
-    "test:phase2:ws": "python3 scripts/phase2_ws_smoke_test.py"
+    "test:phase2:ws": "python3 scripts/phase2_ws_smoke_test.py",
+    "codegraph:init": "codegraph init",
+    "codegraph:sync": "codegraph sync",
+    "codegraph:status": "codegraph status"
   },
   "keywords": [],
   "author": "",
@@ -41,5 +44,8 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ajv": "^8.20.0",
     "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@colbymchenry/codegraph": "^1.3.0"
   }
 }

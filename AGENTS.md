@@ -35,8 +35,15 @@ git worktree add -b <branch-name> ../agentRelay-<short-slug> main
 4. Run targeted verification that proves the change.
 5. Commit task-owned files only.
 6. Push the branch, open a PR to `main`, and merge after verification.
-7. Fast-forward `/home/ubuntu/projects/agentrelay/agentRelay` to `origin/main`.
-8. Remove only the task-owned worktree/local branch after the PR is merged.
+7. After opening or updating the PR, refresh CodeGraph state from the task worktree:
+
+```bash
+npm run codegraph:status
+```
+
+If it reports pending sync, run `npm run codegraph:sync` and then rerun `npm run codegraph:status`. Include the final CodeGraph status in the PR/final report.
+8. Fast-forward `/home/ubuntu/projects/agentrelay/agentRelay` to `origin/main`.
+9. Remove only the task-owned worktree/local branch after the PR is merged.
 
 Small documentation-only corrections may be made directly on `main` when the user explicitly asks for a quick edit, but roadmap/protocol documentation accompanying code should be included in the feature PR.
 
@@ -88,4 +95,5 @@ Include:
 2. PR/commit links when applicable.
 3. Verification commands and results.
 4. Deployment/public-page verification when applicable.
-5. Any residual risk or skipped checks.
+5. CodeGraph status after PR work, when a PR was opened or updated.
+6. Any residual risk or skipped checks.
