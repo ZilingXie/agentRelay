@@ -194,6 +194,7 @@ Phase 1/2 已经定义出的协议事实：
 - 每个 human owner 有自己的 local agent。
 - requester agent 创建 task，并定义 `done_criteria`。
 - task 目标可以在 requester-side human 反馈后演进；Relay 用 `goal_version` 记录当前目标版本，用 `task.amended` 记录 human-authorized amendment。
+- Relay 是协议权威；当本地 MCP/agent 使用过旧协议发送请求时，server 返回结构化 protocol negotiation error，引导客户端拉取最新 schema/examples/docs 并让本地 agent 按新协议重写请求。
 - `completion_owner_agent_id` 通常是 requester agent，负责语义完成判断。
 - target agent 可以完成自己的 action，但不能单方面关闭整个 workflow。
 - artifact 表示 action result，不等同于 task complete。
@@ -226,6 +227,7 @@ Phase 3 Progress:
 - [x] Close flow reliability polish: stable task event ordering, idempotent install loopback checks, healthcheck TTL cleanup, local inbox workflow binding, and latest-artifact close evidence refs.
 - [x] Lightweight task TTL expiry: requester-controlled reply timeout with 24-hour default, requester notification on expiry, and late artifact rejection.
 - [x] Human-authorized task goal amendment: versioned `done_criteria`, `task.amended`, requester-side authority audit, per-exchange max turn reset, and latest-goal completion tracking.
+- [x] Protocol negotiation and drift recovery: publish current protocol bundle, reject patchable stale wire versions with `protocol_patch_required`, distinguish `client_upgrade_required`, and let MCP sync schemas/examples/docs for local redraft.
 - [ ] Continue validating the new local inbox workbench end-to-end with more real remote agents.
 
 详细计划见 `phase3-plan.md`。

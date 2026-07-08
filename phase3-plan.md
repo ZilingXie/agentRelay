@@ -332,7 +332,8 @@ Implementation stance:
 14. [x] Close flow reliability polish: stable task event ordering, idempotent install loopback checks, healthcheck TTL cleanup, local inbox workflow binding, and latest-artifact close evidence refs.
 15. [x] Lightweight task TTL expiry: requester-controlled reply timeout with 24-hour default, requester notification on expiry, and late artifact rejection.
 16. [x] Human-authorized task goal amendment: versioned `done_criteria`, `task.amended`, requester-side authority audit, per-exchange max turn reset, and latest-goal completion tracking.
-17. [ ] Continue validating the new local inbox workbench end-to-end with more real remote agents.
+17. [x] Protocol negotiation and drift recovery: server-owned current protocol metadata, protocol bundle publishing, validation endpoint, stale-version structured errors, and MCP protocol sync recovery for local redraft.
+18. [ ] Continue validating the new local inbox workbench end-to-end with more real remote agents.
 
 ## 8. First Implementation Slice
 
@@ -644,6 +645,30 @@ Protocol boundary:
 - Use `request_revision` when the target should continue under the current goal.
 - Use `task.amended` when the requester-side human changes or clarifies the acceptance criteria.
 - Relay enforces actor/requester ownership and optimistic `expected_goal_version`, but the local agent remains responsible for proving that the human actually authorized the change.
+
+## 8.17 Protocol Negotiation And Drift Recovery
+
+Status: completed as an additive server-authoritative protocol compatibility layer.
+
+Implemented semantics:
+
+- AgentRelay server is the protocol authority for the current accepted wire protocol.
+- Public protocol discovery endpoints expose the current protocol, manifest, schemas, examples, docs, and compatibility policy.
+- API requests can declare their envelope through `X-AgentRelay-Envelope`.
+- Accepted protocol versions continue normally.
+- Deprecated but accepted versions are allowed during the compatibility window.
+- Patchable stale versions return `protocol_patch_required` with bundle URLs and the action `fetch_protocol_and_redraft`.
+- Incompatible versions return `client_upgrade_required` with the action `upgrade_mcp_client`.
+- The MCP client sends the v0.3 envelope by default, can run `npm run protocol:sync`, and exposes `agentrelay_protocol_sync`.
+- When MCP sees `protocol_patch_required`, it fetches and caches the latest bundle under the local protocol cache and returns structured redraft guidance to the local agent.
+- When MCP sees `client_upgrade_required`, it tells the user/agent to reinstall with `npx github:ZilingXie/agent-relay-mcp install`.
+
+Protocol boundary:
+
+- Server validation only guards the wire protocol and compatibility policy.
+- MCP/local guardrails still protect local workflow, files, human boundaries, and adapter behavior.
+- Automatic LLM redraft is intentionally not hidden inside the MCP package yet; the MCP returns the synced bundle, original request, and redraft instructions so the local agent can preserve user intent and resubmit safely.
+- Redrafted retries should preserve the original idempotency key when available, or include `retry_of` when a new key is required.
 
 ## 9. Octo Comparison
 
