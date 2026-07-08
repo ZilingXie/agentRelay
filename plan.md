@@ -228,7 +228,7 @@ Phase 3 Progress:
 - [x] Close flow reliability polish: stable task event ordering, idempotent install loopback checks, healthcheck TTL cleanup, local inbox workflow binding, and latest-artifact close evidence refs.
 - [x] Lightweight task TTL expiry: requester-controlled reply timeout with 24-hour default, requester notification on expiry, and late artifact rejection.
 - [x] Human-authorized task goal amendment: versioned `done_criteria`, `task.amended`, requester-side authority audit, per-exchange max turn reset, and latest-goal completion tracking.
-- [x] Protocol negotiation and drift recovery: publish current protocol bundle, reject patchable stale wire versions with `protocol_patch_required`, distinguish `client_upgrade_required`, and let MCP sync schemas/examples/docs for local redraft.
+- [x] Protocol negotiation and drift recovery: publish current protocol bundle, reject patchable stale wire versions with `protocol_patch_required`, distinguish `client_upgrade_required`, and let MCP sync schemas/examples/docs plus auto-retry safe task create/artifact submit protocol-version patches.
 - [x] Agent role architecture: define `personal_agent` and `service_agent`, expose role/execution/capability/policy in Agent Cards, and shift personal clients toward notifier-first UX.
 - [ ] Continue validating the notifier-first personal agent inbox and service worker kit split with more real remote agents.
 
