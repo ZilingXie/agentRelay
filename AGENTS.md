@@ -8,7 +8,8 @@ These instructions apply to `/home/ubuntu/projects/agentrelay/agentRelay`.
 2. This repo is the AgentRelay server/cloud relay project: protocol authority, HTTP/WSS relay, SQLite state, auth, delivery reliability, audit/timeline, admin dashboard, Docker deployment, and roadmap docs.
 3. The client/agent-side MCP project is separate: `/home/ubuntu/projects/agentrelay/agent-relay-mcp` and <https://github.com/ZilingXie/agent-relay-mcp>.
 4. Protocol docs live in `docs/protocol-v03.md`, public schemas in `schemas/`, examples in `examples/protocol-v03/`, and roadmap status in `plan.md`, `phase3-plan.md`, and `plan.html`.
-5. The public roadmap page is served from `/var/www/html/agentrelay/plan.html`; after changing `plan.html`, sync it there when the user expects the public page to update.
+5. The canonical planning surface is <https://server.stellarix.space/agentrelay/plan.html#intro>; keep all future plan updates centered there.
+6. The public roadmap page is served from `/var/www/html/agentrelay/plan.html`; after changing `plan.html`, sync it there when the user expects the public page to update.
 
 ## Non-Negotiables
 
