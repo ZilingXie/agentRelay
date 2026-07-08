@@ -29,7 +29,8 @@
       margin: 0;
       background: var(--paper);
       color: var(--ink);
-      line-height: 1.58;
+      font-size: 15px;
+      line-height: 1.45;
     }
 
     a {
@@ -79,42 +80,42 @@
     }
 
     .page {
-      max-width: 1180px;
+      max-width: 1120px;
       margin: 0 auto;
-      padding: 36px 22px 64px;
+      padding: 24px 18px 48px;
     }
 
     header {
       display: grid;
       grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.8fr);
-      gap: 28px;
+      gap: 20px;
       align-items: end;
-      padding: 22px 0 28px;
+      padding: 16px 0 20px;
       border-bottom: 1px solid var(--line);
     }
 
     h1 {
-      margin: 0 0 12px;
-      font-size: clamp(2.1rem, 5vw, 4.4rem);
-      line-height: 0.98;
+      margin: 0 0 10px;
+      font-size: clamp(1.8rem, 4vw, 3.4rem);
+      line-height: 1;
       letter-spacing: 0;
     }
 
     h2 {
-      margin: 0 0 16px;
-      font-size: 1.55rem;
+      margin: 0 0 12px;
+      font-size: 1.32rem;
       line-height: 1.2;
       letter-spacing: 0;
     }
 
     h3 {
-      margin: 0 0 8px;
-      font-size: 1.05rem;
+      margin: 0 0 6px;
+      font-size: 0.98rem;
       letter-spacing: 0;
     }
 
     p {
-      margin: 0 0 14px;
+      margin: 0 0 10px;
     }
 
     code,
@@ -125,24 +126,24 @@
     pre {
       overflow-x: auto;
       margin: 0;
-      padding: 16px;
+      padding: 12px;
       background: #182026;
       color: #edf2f4;
       border-radius: 8px;
-      font-size: 0.9rem;
-      line-height: 1.45;
+      font-size: 0.84rem;
+      line-height: 1.38;
     }
 
     section {
-      padding: 32px 0;
+      padding: 24px 0;
       border-bottom: 1px solid var(--line);
     }
 
     .subtitle {
       max-width: 780px;
-      margin: 0 0 10px;
+      margin: 0 0 8px;
       color: var(--muted);
-      font-size: 1.05rem;
+      font-size: 0.98rem;
     }
 
     .status-box,
@@ -154,7 +155,7 @@
     }
 
     .status-box {
-      padding: 18px;
+      padding: 14px;
       box-shadow: var(--shadow);
     }
 
@@ -167,27 +168,27 @@
     nav {
       display: flex;
       flex-wrap: wrap;
-      gap: 10px;
-      padding: 18px 0 8px;
+      gap: 8px;
+      padding: 14px 0 6px;
     }
 
     nav a {
       display: inline-flex;
       align-items: center;
       min-height: 36px;
-      padding: 6px 12px;
+      padding: 5px 10px;
       border: 1px solid var(--line);
       border-radius: 999px;
       background: #fff;
       color: var(--ink);
       text-decoration: none;
-      font-size: 0.92rem;
+      font-size: 0.86rem;
     }
 
     .grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 16px;
+      gap: 12px;
     }
 
     .three {
@@ -195,7 +196,7 @@
     }
 
     .card {
-      padding: 18px;
+      padding: 14px;
       min-width: 0;
     }
 
@@ -207,12 +208,12 @@
 
     .tag {
       display: inline-block;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
       color: #fff;
       background: var(--teal);
       border-radius: 999px;
-      padding: 3px 9px;
-      font-size: 0.78rem;
+      padding: 2px 8px;
+      font-size: 0.72rem;
       font-weight: 700;
     }
 
@@ -223,7 +224,7 @@
 
     .note {
       border-left: 4px solid var(--amber);
-      padding: 12px 16px;
+      padding: 10px 14px;
       background: #fff8ea;
       border-radius: 0 8px 8px 0;
     }
@@ -231,12 +232,12 @@
     .repo-list {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px;
-      margin-top: 12px;
+      gap: 12px;
+      margin-top: 10px;
     }
 
     .repo {
-      padding: 16px;
+      padding: 14px;
       background: #fff;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -251,17 +252,17 @@
     .architecture {
       display: grid;
       grid-template-columns: minmax(190px, 1fr) 56px minmax(190px, 1fr) 56px minmax(190px, 1fr);
-      gap: 12px;
+      gap: 10px;
       align-items: stretch;
-      margin-top: 18px;
+      margin-top: 14px;
     }
 
     .node {
       display: grid;
-      gap: 10px;
+      gap: 8px;
       align-content: start;
-      min-height: 190px;
-      padding: 16px;
+      min-height: 160px;
+      padding: 14px;
       background: #fff;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -279,7 +280,7 @@
     .arrow {
       display: grid;
       place-items: center;
-      min-height: 190px;
+      min-height: 160px;
       color: var(--muted);
       font-weight: 800;
     }
@@ -305,13 +306,74 @@
     }
 
     .flow-note {
+      margin-top: 12px;
+    }
+
+    .comm-tabs {
       margin-top: 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .tab-controls {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0;
+      background: #eef3f7;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .tab-controls button {
+      min-height: 40px;
+      padding: 9px 10px;
+      border: 0;
+      border-right: 1px solid var(--line);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+
+    .tab-controls button:last-child {
+      border-right: 0;
+    }
+
+    .tab-controls button[aria-selected="true"] {
+      background: #fff;
+      color: var(--blue);
+    }
+
+    .tab-panel {
+      display: none;
+      padding: 16px;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    .feature-columns {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 10px;
+    }
+
+    .feature-list {
+      display: grid;
+      gap: 8px;
+      margin: 8px 0 0;
+      padding-left: 18px;
     }
 
     .steps {
       counter-reset: step;
       display: grid;
-      gap: 12px;
+      gap: 10px;
       padding: 0;
       margin: 0;
       list-style: none;
@@ -321,11 +383,11 @@
       counter-increment: step;
       display: grid;
       grid-template-columns: 42px minmax(0, 1fr);
-      gap: 12px;
+      gap: 10px;
       background: #fff;
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 14px;
+      padding: 12px;
     }
 
     .steps li::before {
@@ -342,7 +404,7 @@
 
     .protocol-list {
       display: grid;
-      gap: 14px;
+      gap: 12px;
       padding: 0;
       margin: 0;
       list-style: none;
@@ -352,7 +414,7 @@
       background: #fff;
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 16px;
+      padding: 14px;
     }
 
     .field-list {
@@ -374,13 +436,13 @@
       border: 1px solid var(--line);
       border-radius: 8px;
       overflow: hidden;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
     }
 
     .comparison-table th,
     .comparison-table td {
       border-bottom: 1px solid var(--line);
-      padding: 12px 14px;
+      padding: 10px 12px;
       text-align: left;
       vertical-align: top;
     }
@@ -395,26 +457,26 @@
     }
 
     details {
-      margin: 14px 0;
+      margin: 12px 0;
       overflow: hidden;
     }
 
     summary {
       cursor: pointer;
-      padding: 16px 18px;
+      padding: 12px 14px;
       font-weight: 800;
       color: var(--blue);
       background: #eef3f7;
     }
 
     .details-body {
-      padding: 18px;
+      padding: 14px;
     }
 
     footer {
-      padding: 28px 0 0;
+      padding: 22px 0 0;
       color: var(--muted);
-      font-size: 0.92rem;
+      font-size: 0.86rem;
     }
 
     @media (max-width: 900px) {
@@ -422,8 +484,13 @@
       .grid,
       .three,
       .repo-list,
-      .architecture {
+      .architecture,
+      .feature-columns {
         grid-template-columns: 1fr;
+      }
+
+      .tab-controls {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
       .arrow {
@@ -436,7 +503,7 @@
       }
 
       .page {
-        padding: 24px 16px 48px;
+        padding: 20px 14px 40px;
       }
     }
   </style>
@@ -496,54 +563,114 @@
 
     <section id="architecture">
       <h2>How Agents Communicate</h2>
-      <p>Agent A and Agent B both live on private machines. They cannot accept inbound public HTTP calls, so both connect outward to the relay. The MCP client gives each local agent tools for creating tasks, claiming work, submitting artifacts, and listening for pending events.</p>
+      <p>Agent A and Agent B both live on private machines, so they connect outward through MCP/client tools and the public relay. The tabs below track what is shipped and what is still open across the client, server, protocol, and dashboard surfaces.</p>
 
-      <div class="architecture" aria-label="AgentRelay architecture diagram">
-        <div class="node">
-          <span class="tag blue">Agent A side</span>
-          <h3>Agent A local agent</h3>
-          <ul>
-            <li>Codex App / CLI thread</li>
-            <li>AgentRelay MCP tools</li>
-            <li>Local listener and inbox</li>
-            <li>User-owned hook adapter</li>
-          </ul>
+      <div class="comm-tabs" data-tabs="architecture-en">
+        <div class="tab-controls" role="tablist" aria-label="Agent communication surfaces">
+          <button type="button" id="architecture-en-mcp-tab" role="tab" aria-selected="true" aria-controls="architecture-en-mcp" data-tab-target="mcp">mcp</button>
+          <button type="button" id="architecture-en-server-tab" role="tab" aria-selected="false" aria-controls="architecture-en-server" data-tab-target="server">server</button>
+          <button type="button" id="architecture-en-protocol-tab" role="tab" aria-selected="false" aria-controls="architecture-en-protocol" data-tab-target="protocol">protocol</button>
+          <button type="button" id="architecture-en-dashboard-tab" role="tab" aria-selected="false" aria-controls="architecture-en-dashboard" data-tab-target="dashboard">dashboard</button>
         </div>
 
-        <div class="arrow" aria-hidden="true"><span></span></div>
+        <div id="architecture-en-mcp" class="tab-panel active" role="tabpanel" aria-labelledby="architecture-en-mcp-tab" data-tab-panel="mcp">
+          <span class="tag blue">Client surface</span>
+          <h3>MCP package and local listener</h3>
+          <p>Local agents use the public MCP package to call relay tools, listen for task events, write inbox work, and keep human-facing workflow choices local.</p>
+          <div class="feature-columns">
+            <div>
+              <h3>Completed</h3>
+              <ul class="feature-list">
+                <li>Completion decision helper and human completion authority fields shipped in <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/3">agent-relay-mcp#3</a>.</li>
+                <li>Hosted install loopback verifies server reachability, listener delivery, inbox write, and close flow in <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/4">agent-relay-mcp#4</a> with server support in <a href="https://github.com/ZilingXie/agentRelay/pull/23">agentRelay#23</a>.</li>
+                <li>Local inbox workflow bindings, expiry notifications, and file access guardrails shipped in <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/6">#6</a>, <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/8">#8</a>, and <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/10">#10</a>.</li>
+                <li>Task amendment, protocol sync recovery, notifier-first inbox behavior, and auto-retry for patchable drift shipped in <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/12">#12</a>, <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/15">#15</a>, <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/16">#16</a>, and <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/17">#17</a>.</li>
+              </ul>
+            </div>
+            <div>
+              <h3>Not yet done</h3>
+              <ul class="feature-list">
+                <li>Run real remote-agent validation for notifier-first personal agents and service-agent workers.</li>
+                <li>Polish Codex App / Codex CLI bridge adapters so inbound inbox work can open the right local workflow without cloud coupling.</li>
+                <li>Add clearer user-facing upgrade guidance when a protocol drift requires reinstall instead of auto-redraft.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
 
-        <div class="node">
+        <div id="architecture-en-server" class="tab-panel" role="tabpanel" aria-labelledby="architecture-en-server-tab" data-tab-panel="server">
           <span class="tag green">Cloud relay</span>
-          <h3>AgentRelay server</h3>
-          <ul>
-            <li>Docker Compose API and WS services</li>
-            <li>HTTPS/WSS via nginx</li>
-            <li>SQLite task/event store</li>
-            <li>Token auth and audit trail</li>
-          </ul>
+          <h3>Server transport, state, and reliability</h3>
+          <p>The server stays small: route work, persist state, authorize callers, notify agents, audit protocol movement, and expose recovery APIs.</p>
+          <div class="feature-columns">
+            <div>
+              <h3>Completed</h3>
+              <ul class="feature-list">
+                <li>Task timeline/state transitions, reliable event delivery, and source refs landed in <a href="https://github.com/ZilingXie/agentRelay/pull/1">#1</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/2">#2</a>, and <a href="https://github.com/ZilingXie/agentRelay/pull/3">#3</a>.</li>
+                <li>Admin CLI, Docker identity restarts, v0.3 action envelopes, and read-only dashboard shipped in <a href="https://github.com/ZilingXie/agentRelay/pull/6">#6</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/9">#9</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/10">#10</a>, and <a href="https://github.com/ZilingXie/agentRelay/pull/11">#11</a>.</li>
+                <li>Third-party onboarding, terminal delivery cleanup, install healthcheck, close-flow hardening, TTL expiry, max-turn handling, and human goal amendment shipped in <a href="https://github.com/ZilingXie/agentRelay/pull/19">#19</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/20">#20</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/23">#23</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/24">#24</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/25">#25</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/26">#26</a>, and <a href="https://github.com/ZilingXie/agentRelay/pull/27">#27</a>.</li>
+                <li>Protocol negotiation, role-aware Agent Cards, CodeGraph tooling, and automatic protocol repair roadmap landed in <a href="https://github.com/ZilingXie/agentRelay/pull/28">#28</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/30">#30</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/31">#31</a>, and <a href="https://github.com/ZilingXie/agentRelay/pull/32">#32</a>.</li>
+              </ul>
+            </div>
+            <div>
+              <h3>Not yet done</h3>
+              <ul class="feature-list">
+                <li>Production-grade observability for event backlog, retry health, protocol negotiation frequency, and install-loopback failures.</li>
+                <li>Admin-safe token rotation and agent lifecycle management without exposing runtime secrets.</li>
+                <li>More live service-agent traffic to validate load, retry behavior, and failure recovery beyond the current two-agent flows.</li>
+              </ul>
+            </div>
+          </div>
         </div>
 
-        <div class="arrow" aria-hidden="true"><span></span></div>
+        <div id="architecture-en-protocol" class="tab-panel" role="tabpanel" aria-labelledby="architecture-en-protocol-tab" data-tab-panel="protocol">
+          <span class="tag amber">Shared contract</span>
+          <h3>Protocol v0.3 and compatibility</h3>
+          <p>The protocol defines task ownership, done criteria, human authority, artifacts, timeline events, role metadata, and drift recovery.</p>
+          <div class="feature-columns">
+            <div>
+              <h3>Completed</h3>
+              <ul class="feature-list">
+                <li>v0.3 response envelopes, default protocol events, public schemas, guide, examples, and conformance runner shipped in <a href="https://github.com/ZilingXie/agentRelay/pull/10">#10</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/14">#14</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/15">#15</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/16">#16</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/17">#17</a>, and <a href="https://github.com/ZilingXie/agentRelay/pull/18">#18</a>.</li>
+                <li>Requester handoff loop prevention, human-authorized goal amendment, and protocol negotiation guardrails shipped in <a href="https://github.com/ZilingXie/agentRelay/pull/13">#13</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/27">#27</a>, and <a href="https://github.com/ZilingXie/agentRelay/pull/28">#28</a>.</li>
+                <li>Protocol drift recovery roadmap and role architecture landed in <a href="https://github.com/ZilingXie/agentRelay/pull/29">#29</a> and <a href="https://github.com/ZilingXie/agentRelay/pull/30">#30</a>; server-side automatic repair roadmap update landed in <a href="https://github.com/ZilingXie/agentRelay/pull/32">#32</a>.</li>
+              </ul>
+            </div>
+            <div>
+              <h3>Not yet done</h3>
+              <ul class="feature-list">
+                <li>Formal child-task/context continuation semantics for post-completion follow-up and revisions.</li>
+                <li>Clear v0.2 deprecation window and removal plan after enough clients advertise v0.3 capabilities.</li>
+                <li>More conformance profiles for personal-agent, service-agent, and unavailable-agent edge cases.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
 
-        <div class="node">
-          <span class="tag amber">Agent B side</span>
-          <h3>Agent B local agent</h3>
-          <ul>
-            <li>Codex App / CLI / other surface</li>
-            <li>AgentRelay MCP tools</li>
-            <li>WebSocket listener</li>
-            <li>Human confirmation with Agent B owner</li>
-          </ul>
+        <div id="architecture-en-dashboard" class="tab-panel" role="tabpanel" aria-labelledby="architecture-en-dashboard-tab" data-tab-panel="dashboard">
+          <span class="tag red">Operator view</span>
+          <h3>Dashboard and audit visibility</h3>
+          <p>The dashboard is read-only today: it lets an operator inspect agents, tasks, events, artifacts, and protocol state without becoming the workflow UI.</p>
+          <div class="feature-columns">
+            <div>
+              <h3>Completed</h3>
+              <ul class="feature-list">
+                <li>Read-only admin dashboard and admin API shipped in <a href="https://github.com/ZilingXie/agentRelay/pull/11">agentRelay#11</a>.</li>
+                <li>Timeline-ready protocol events and v0.3 task movement support shipped in <a href="https://github.com/ZilingXie/agentRelay/pull/1">#1</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/10">#10</a>, and <a href="https://github.com/ZilingXie/agentRelay/pull/14">#14</a>.</li>
+                <li>Terminal delivery cleanup, TTL expiry, max-turn notification, human amendment, and protocol negotiation events now have server-side state to expose in <a href="https://github.com/ZilingXie/agentRelay/pull/20">#20</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/25">#25</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/26">#26</a>, <a href="https://github.com/ZilingXie/agentRelay/pull/27">#27</a>, and <a href="https://github.com/ZilingXie/agentRelay/pull/28">#28</a>.</li>
+              </ul>
+            </div>
+            <div>
+              <h3>Not yet done</h3>
+              <ul class="feature-list">
+                <li>Show agent role, execution mode, protocol capabilities, goal versions, amendment events, and negotiation recovery events directly in the dashboard.</li>
+                <li>Add stronger filtering and timeline grouping for multi-agent investigations.</li>
+                <li>Keep the dashboard read-only while making deployment and live-health markers easier to verify.</li>
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
-
-      <pre class="flow-note"><code>1. Agent A owner tells Agent A: ask Agent B when they can meet.
-2. Agent A uses agent-relay-mcp to create a task on AgentRelay.
-3. AgentRelay stores the task and emits task.pending for agent-b.
-4. Agent B listener receives the WebSocket event, claims the task, and writes local inbox work.
-5. Agent B asks its owner if needed, then submits an artifact/result.
-6. AgentRelay transfers pending ownership back to agent-a.
-7. Agent A listener receives the result and Agent A continues in its owner's chosen workflow.</code></pre>
     </section>
 
     <section id="completed">
@@ -1452,30 +1579,113 @@ AgentRelay records timeline events:
 
     <section id="zh-architecture">
       <h2>Agent 如何通信</h2>
-      <p>AgentRelay 的核心不是 IM，也不是把人放在流程中心；它是一个让 agent 跨环境协作的协议层和 relay 层。</p>
+      <p>Agent A 和 Agent B 都在私有机器上，不能接收入站公网 HTTP，所以通过 MCP/client 主动连到公网 relay。下面四个 tab 记录 client、server、protocol、dashboard 的已完成和未完成项。</p>
 
-      <div class="architecture">
-        <div class="node">
-          <h3>Agent A 本地 agent</h3>
-          <p>接收 owner 的目标，创建 task，定义 done criteria，并通过 MCP/client 调用 relay。</p>
-          <span>Codex App / CLI / 其他 agent</span>
+      <div class="comm-tabs" data-tabs="architecture-zh">
+        <div class="tab-controls" role="tablist" aria-label="Agent 通信模块">
+          <button type="button" id="architecture-zh-mcp-tab" role="tab" aria-selected="true" aria-controls="architecture-zh-mcp" data-tab-target="mcp">mcp</button>
+          <button type="button" id="architecture-zh-server-tab" role="tab" aria-selected="false" aria-controls="architecture-zh-server" data-tab-target="server">server</button>
+          <button type="button" id="architecture-zh-protocol-tab" role="tab" aria-selected="false" aria-controls="architecture-zh-protocol" data-tab-target="protocol">protocol</button>
+          <button type="button" id="architecture-zh-dashboard-tab" role="tab" aria-selected="false" aria-controls="architecture-zh-dashboard" data-tab-target="dashboard">dashboard</button>
         </div>
-        <div class="arrow">→</div>
-        <div class="node relay">
-          <h3>AgentRelay server</h3>
-          <p>公网 relay，维护 task state、auth、agent event、timeline 和可靠投递；不替 agent 做判断。</p>
-          <span>HTTP + WebSocket + MCP</span>
-        </div>
-        <div class="arrow">→</div>
-        <div class="node">
-          <h3>Agent B 本地 agent</h3>
-          <p>通过 cursor/claim 或 WebSocket 收到任务，必要时询问自己的 owner 或工具，然后提交 artifact。</p>
-          <span>本地 workflow adapter 自定义</span>
-        </div>
-      </div>
 
-      <div class="note">
-        <p><strong>边界：</strong>cloud relay 只负责通道、状态、身份、通知、可靠投递和审计。inbox 到 Codex App、CLI、微信、Slack 的自动投递逻辑由每个用户自己配置。</p>
+        <div id="architecture-zh-mcp" class="tab-panel active" role="tabpanel" aria-labelledby="architecture-zh-mcp-tab" data-tab-panel="mcp">
+          <span class="tag blue">Client surface</span>
+          <h3>MCP package 和本地 listener</h3>
+          <p>本地 agent 通过 public MCP package 调 relay tool、监听 task event、写入 inbox，并把人机 workflow 的选择留在本地。</p>
+          <div class="feature-columns">
+            <div>
+              <h3>已完成</h3>
+              <ul class="feature-list">
+                <li>Completion decision helper 和 human completion authority 字段已在 <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/3">agent-relay-mcp#3</a> 完成。</li>
+                <li>Hosted install loopback 已验证 server 可达性、listener delivery、inbox 写入和 close flow：<a href="https://github.com/ZilingXie/agent-relay-mcp/pull/4">agent-relay-mcp#4</a>，server 配套在 <a href="https://github.com/ZilingXie/agentRelay/pull/23">agentRelay#23</a>。</li>
+                <li>Local inbox workflow binding、过期任务通知和本地文件访问白名单已在 <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/6">#6</a>、<a href="https://github.com/ZilingXie/agent-relay-mcp/pull/8">#8</a>、<a href="https://github.com/ZilingXie/agent-relay-mcp/pull/10">#10</a> 完成。</li>
+                <li>Task amendment、protocol sync recovery、notifier-first inbox 和 patchable drift 自动重试已在 <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/12">#12</a>、<a href="https://github.com/ZilingXie/agent-relay-mcp/pull/15">#15</a>、<a href="https://github.com/ZilingXie/agent-relay-mcp/pull/16">#16</a>、<a href="https://github.com/ZilingXie/agent-relay-mcp/pull/17">#17</a> 完成。</li>
+              </ul>
+            </div>
+            <div>
+              <h3>未完成</h3>
+              <ul class="feature-list">
+                <li>用真实远端 agent 验证 notifier-first personal agent flow 和 service-agent worker flow。</li>
+                <li>继续打磨 Codex App / Codex CLI bridge adapter，让 inbox work 能进入正确本地 workflow，但不耦合到 cloud relay。</li>
+                <li>当 protocol drift 不能自动 redraft、必须 reinstall 时，给用户更清楚的升级指引。</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div id="architecture-zh-server" class="tab-panel" role="tabpanel" aria-labelledby="architecture-zh-server-tab" data-tab-panel="server">
+          <span class="tag green">Cloud relay</span>
+          <h3>Server transport、state 和 reliability</h3>
+          <p>Server 保持很小：route work、persist state、authorize caller、notify agent、audit protocol movement，并提供恢复 API。</p>
+          <div class="feature-columns">
+            <div>
+              <h3>已完成</h3>
+              <ul class="feature-list">
+                <li>Task timeline/state transition、可靠 event delivery 和 source ref 已在 <a href="https://github.com/ZilingXie/agentRelay/pull/1">#1</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/2">#2</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/3">#3</a> 完成。</li>
+                <li>Admin CLI、Docker identity restart、v0.3 action envelope 和 read-only dashboard 已在 <a href="https://github.com/ZilingXie/agentRelay/pull/6">#6</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/9">#9</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/10">#10</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/11">#11</a> 完成。</li>
+                <li>Third-party onboarding、terminal delivery cleanup、install healthcheck、close-flow hardening、TTL expiry、max-turn handling 和 human goal amendment 已在 <a href="https://github.com/ZilingXie/agentRelay/pull/19">#19</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/20">#20</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/23">#23</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/24">#24</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/25">#25</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/26">#26</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/27">#27</a> 完成。</li>
+                <li>Protocol negotiation、role-aware Agent Card、CodeGraph tooling 和 automatic protocol repair roadmap 已在 <a href="https://github.com/ZilingXie/agentRelay/pull/28">#28</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/30">#30</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/31">#31</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/32">#32</a> 完成。</li>
+              </ul>
+            </div>
+            <div>
+              <h3>未完成</h3>
+              <ul class="feature-list">
+                <li>补 production 级 observability：event backlog、retry health、protocol negotiation frequency、install-loopback failure。</li>
+                <li>补 admin-safe token rotation 和 agent lifecycle management，同时不暴露 runtime secret。</li>
+                <li>用更多真实 service-agent traffic 验证 load、retry 和 failure recovery。</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div id="architecture-zh-protocol" class="tab-panel" role="tabpanel" aria-labelledby="architecture-zh-protocol-tab" data-tab-panel="protocol">
+          <span class="tag amber">Shared contract</span>
+          <h3>Protocol v0.3 和兼容性</h3>
+          <p>Protocol 定义 task ownership、done criteria、human authority、artifact、timeline event、role metadata 和 drift recovery。</p>
+          <div class="feature-columns">
+            <div>
+              <h3>已完成</h3>
+              <ul class="feature-list">
+                <li>v0.3 response envelope、默认 protocol event、public schema、guide、example 和 conformance runner 已在 <a href="https://github.com/ZilingXie/agentRelay/pull/10">#10</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/14">#14</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/15">#15</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/16">#16</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/17">#17</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/18">#18</a> 完成。</li>
+                <li>Requester handoff self-loop 防护、human-authorized goal amendment 和 protocol negotiation guardrail 已在 <a href="https://github.com/ZilingXie/agentRelay/pull/13">#13</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/27">#27</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/28">#28</a> 完成。</li>
+                <li>Protocol drift recovery roadmap 和 role architecture 已在 <a href="https://github.com/ZilingXie/agentRelay/pull/29">#29</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/30">#30</a> 完成；server-side automatic repair roadmap 更新在 <a href="https://github.com/ZilingXie/agentRelay/pull/32">#32</a>。</li>
+              </ul>
+            </div>
+            <div>
+              <h3>未完成</h3>
+              <ul class="feature-list">
+                <li>正式定义 child task / context continuation，用于完成后的 follow-up 和 revision。</li>
+                <li>在足够多 client 宣告 v0.3 capability 后，明确 v0.2 deprecation window 和移除计划。</li>
+                <li>补 personal-agent、service-agent、unavailable-agent edge case 的 conformance profile。</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div id="architecture-zh-dashboard" class="tab-panel" role="tabpanel" aria-labelledby="architecture-zh-dashboard-tab" data-tab-panel="dashboard">
+          <span class="tag red">Operator view</span>
+          <h3>Dashboard 和审计可见性</h3>
+          <p>Dashboard 目前保持 read-only：帮助 operator 看 agent、task、event、artifact 和 protocol state，但不变成业务 workflow UI。</p>
+          <div class="feature-columns">
+            <div>
+              <h3>已完成</h3>
+              <ul class="feature-list">
+                <li>Read-only admin dashboard 和 admin API 已在 <a href="https://github.com/ZilingXie/agentRelay/pull/11">agentRelay#11</a> 完成。</li>
+                <li>Dashboard-ready timeline event 和 v0.3 task movement 支撑已在 <a href="https://github.com/ZilingXie/agentRelay/pull/1">#1</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/10">#10</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/14">#14</a> 完成。</li>
+                <li>Terminal delivery cleanup、TTL expiry、max-turn notification、human amendment 和 protocol negotiation event 已有 server-side state，可用于 dashboard 展示：<a href="https://github.com/ZilingXie/agentRelay/pull/20">#20</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/25">#25</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/26">#26</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/27">#27</a>、<a href="https://github.com/ZilingXie/agentRelay/pull/28">#28</a>。</li>
+              </ul>
+            </div>
+            <div>
+              <h3>未完成</h3>
+              <ul class="feature-list">
+                <li>在 dashboard 直接显示 agent role、execution mode、protocol capability、goal version、amendment event 和 negotiation recovery event。</li>
+                <li>为多 agent 排查补更强的 filter 和 timeline grouping。</li>
+                <li>保持 dashboard read-only，同时让 deployment 和 live-health marker 更容易验证。</li>
+              </ul>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1789,6 +1999,25 @@ AgentRelay records timeline events:
         document.body.dataset.lang = lang;
         localStorage.setItem("agentrelay-plan-lang", lang);
       });
+    }
+
+    for (const tabs of document.querySelectorAll("[data-tabs]")) {
+      const buttons = tabs.querySelectorAll("[data-tab-target]");
+      const panels = tabs.querySelectorAll("[data-tab-panel]");
+
+      for (const button of buttons) {
+        button.addEventListener("click", () => {
+          const target = button.dataset.tabTarget;
+
+          for (const item of buttons) {
+            item.setAttribute("aria-selected", String(item === button));
+          }
+
+          for (const panel of panels) {
+            panel.classList.toggle("active", panel.dataset.tabPanel === target);
+          }
+        });
+      }
     }
   </script>
 </body>
