@@ -311,3 +311,30 @@ docs/protocol-v03-conformance.md
 The server still accepts legacy and v0.2 compatibility payloads while the
 ecosystem migrates. New clients should send `agent-collab-v0.3` and should use
 the public schemas as their contract.
+
+## Protocol Negotiation
+
+The relay publishes the active protocol contract so installed MCP clients do not
+silently drift from the server:
+
+- `GET /agentrelay/api/health`: includes current protocol version and digest.
+- `GET /agentrelay/api/protocols/current`: returns the current manifest.
+- `GET /agentrelay/api/protocols/agent-collab/v0.3/manifest`: returns the
+  pinned v0.3 manifest.
+- `GET /agentrelay/api/protocols/agent-collab/v0.3/bundle`: returns manifest,
+  schemas, examples, and docs in one JSON bundle.
+- `POST /agentrelay/api/protocols/validate`: validates a candidate payload for
+  a named operation before a real mutation is attempted.
+
+Mutation requests with an unsupported explicit `protocol_version` return an
+agent-readable error envelope:
+
+- `protocol_patch_required`: the client can fetch the current bundle, ask the
+  local agent to redraft the original payload without changing user intent, and
+  retry with idempotency protection.
+- `client_upgrade_required`: the protocol change may require new client code,
+  tools, endpoints, or workflow semantics; upgrade the MCP client before retry.
+
+Requests without a protocol version remain legacy-compatible during the current
+migration window. New clients should always send `X-AgentRelay-Envelope: v0.3`
+so protocol errors include structured recovery instructions.
