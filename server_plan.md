@@ -4,7 +4,7 @@ Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/age
 
 Status date: 2026-07-09.
 
-Latest update: The user-facing plan now keeps the communication section focused on how AgentRelay works, moves completed MCP/client work into the folded Phase 3 record, and presents Phase 4 as not-started product tabs for MCP, server, protocol, and dashboard.
+Latest update: The user-facing plan now keeps the active roadmap ahead of historical context by moving the Completed sections directly above References.
 
 ## Purpose
 
