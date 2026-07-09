@@ -4,7 +4,7 @@ Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/age
 
 Status date: 2026-07-09.
 
-Latest update: The user-facing plan now keeps the active roadmap ahead of historical context by moving the Completed sections directly above References.
+Latest update: Planning rules now require completed features in the user-facing plan to be marked completed with the relevant PR number/link.
 
 ## Purpose
 

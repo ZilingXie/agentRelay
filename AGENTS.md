@@ -13,6 +13,7 @@ These instructions apply to `/home/ubuntu/projects/agentrelay/agentRelay`.
 7. Protocol docs live in `docs/protocol-v03.md`, public schemas in `schemas/`, and examples in `examples/protocol-v03/`.
 8. Repo-local `plan.md`, `phase3-plan.md`, and `plan.html` are historical/project-local references, not the canonical overall plan, unless the user explicitly asks to refresh them.
 9. After every completed change, and after any explicit planning pass that changes direction or priorities, update both `server_plan.md` and `/home/ubuntu/projects/stellarix-site/agentrelay/plan.html`.
+10. When updating `/home/ubuntu/projects/stellarix-site/agentrelay/plan.html`, if a planned feature has been completed, mark that feature as completed and include the relevant PR number/link. Do not leave completed work in a not-started or pending state.
 
 ## Non-Negotiables
 
@@ -67,6 +68,7 @@ Small documentation-only corrections may be made directly on `main` when the use
    - Verify one task-specific live marker.
 5. Public roadmap changes:
    - Update `/home/ubuntu/projects/stellarix-site/agentrelay/plan.html`.
+   - For every completed feature represented on the page, mark it completed and attach the relevant PR number/link.
    - Copy `/home/ubuntu/projects/stellarix-site/agentrelay/plan.html` to `/var/www/html/agentrelay/plan.html`.
    - Verify `https://server.stellarix.space/agentrelay/plan.html`.
 
