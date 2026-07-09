@@ -4,7 +4,7 @@ Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/age
 
 Status date: 2026-07-09.
 
-Latest update: established the planning split between this server-facing file and the user-facing overall plan at `/home/ubuntu/projects/stellarix-site/agentrelay/plan.html`.
+Latest update: Phase 3 is now treated as mostly complete in the user-facing plan, and Phase 4 is planned around agent worker productization.
 
 ## Purpose
 
@@ -45,10 +45,38 @@ After every completed change, and after any explicit planning pass that changes 
 - Protocol negotiation and drift recovery, including server-owned protocol bundle metadata and structured stale-client repair instructions.
 - Role-aware Agent Cards for personal/service agents.
 
+## Phase 4 Server Plan
+
+Phase 4 goal: support a usable real-agent worker product without making the relay heavy. MCP owns the Service Worker Kit runtime, while the server provides the durable state, visibility, lifecycle safety, and protocol maturity needed to operate those workers.
+
+Server-side workstreams:
+
+1. Dashboard observability
+   - Show agent role, execution mode, protocol capabilities, and service-agent status.
+   - Surface goal versions, task amendments, TTL/max-turn outcomes, protocol negotiation events, delivery states, and retry/backlog health.
+   - Keep dashboard read-only until there is a clearly safe operator mutation model.
+
+2. Service worker visibility
+   - Ensure server APIs expose enough task/event state for MCP service workers to debug claim, lease, submit, ACK, retry, fallback, and terminal cleanup.
+   - Add targeted live markers for worker-loop validation without leaking task payloads into WebSocket pushes.
+
+3. Agent lifecycle operations
+   - Improve onboarding, install health checks, token rotation, service-agent status inspection, and deactivation workflows.
+   - Preserve secret hygiene: never print tokens, never commit runtime auth/data, and avoid public mutable admin APIs too early.
+
+4. Protocol continuation semantics
+   - Define child tasks and context continuation for follow-up, revision, and post-completion changes.
+   - Keep terminal tasks terminal; related future work should create a new task under the same context.
+
+5. Protocol compatibility maturity
+   - Add/maintain conformance profiles for personal agents, service agents, and unavailable-agent paths.
+   - Plan the v0.2 deprecation window once v0.3 capability reporting is common enough.
+
 ## Active Next Steps
 
+- Support the MCP Service Worker Kit with enough server/dashboard visibility to debug worker runs end to end.
 - Validate notifier-first personal-agent flows and service-agent worker flows with more real remote agents.
-- Make dashboard views show agent role, execution mode, protocol capabilities, goal versions, amendment events, TTL/max-turn outcomes, and protocol negotiation events clearly.
+- Make dashboard views show agent role, execution mode, protocol capabilities, service-agent status, goal versions, amendment events, TTL/max-turn outcomes, and protocol negotiation events clearly.
 - Add production-grade observability for event backlog, retry health, protocol negotiation frequency, install-loopback failures, and live service-agent traffic.
 - Define child-task/context continuation semantics for post-completion follow-up and revision workflows.
 - Plan a v0.2 deprecation window after enough clients advertise v0.3 capability.
