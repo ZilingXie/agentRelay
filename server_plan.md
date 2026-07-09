@@ -4,7 +4,7 @@ Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/age
 
 Status date: 2026-07-09.
 
-Latest update: Phase 3 is now treated as mostly complete in the user-facing plan, and Phase 4 is planned around agent worker productization.
+Latest update: The user-facing plan now keeps the communication section focused on how AgentRelay works, moves completed MCP/client work into the folded Phase 3 record, and presents Phase 4 as not-started product tabs for MCP, server, protocol, and dashboard.
 
 ## Purpose
 
@@ -47,7 +47,7 @@ After every completed change, and after any explicit planning pass that changes 
 
 ## Phase 4 Server Plan
 
-Phase 4 goal: support a usable real-agent worker product without making the relay heavy. MCP owns the Service Worker Kit runtime, while the server provides the durable state, visibility, lifecycle safety, and protocol maturity needed to operate those workers.
+Phase 4 goal: support a usable real-agent worker product without making the relay heavy. MCP owns the Service Worker Kit runtime, while the server provides the durable state, visibility, lifecycle safety, and protocol maturity needed to operate those workers. Phase 4 server-side items are currently not started.
 
 Server-side workstreams:
 
