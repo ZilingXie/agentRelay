@@ -7,9 +7,12 @@ These instructions apply to `/home/ubuntu/projects/agentrelay/agentRelay`.
 1. `AGENTS.md` is the hot-path instruction file for this repository. Keep it concise enough to load frequently.
 2. This repo is the AgentRelay server/cloud relay project: protocol authority, HTTP/WSS relay, SQLite state, auth, delivery reliability, audit/timeline, admin dashboard, Docker deployment, and roadmap docs.
 3. The client/agent-side MCP project is separate: `/home/ubuntu/projects/agentrelay/agent-relay-mcp` and <https://github.com/ZilingXie/agent-relay-mcp>.
-4. Protocol docs live in `docs/protocol-v03.md`, public schemas in `schemas/`, examples in `examples/protocol-v03/`, and roadmap status in `plan.md`, `phase3-plan.md`, and `plan.html`.
-5. The canonical planning surface is <https://server.stellarix.space/agentrelay/plan.html#intro>; keep all future plan updates centered there.
-6. The public roadmap page is served from `/var/www/html/agentrelay/plan.html`; after changing `plan.html`, sync it there when the user expects the public page to update.
+4. Server-side working plan for Codex/maintainers lives in `server_plan.md`.
+5. The only canonical overall project plan for the user lives at `/home/ubuntu/projects/stellarix-site/agentrelay/plan.html`.
+6. The public roadmap URL is <https://server.stellarix.space/agentrelay/plan.html#intro>; publish it by syncing `/home/ubuntu/projects/stellarix-site/agentrelay/plan.html` to `/var/www/html/agentrelay/plan.html`.
+7. Protocol docs live in `docs/protocol-v03.md`, public schemas in `schemas/`, and examples in `examples/protocol-v03/`.
+8. Repo-local `plan.md`, `phase3-plan.md`, and `plan.html` are historical/project-local references, not the canonical overall plan, unless the user explicitly asks to refresh them.
+9. After every completed change, and after any explicit planning pass that changes direction or priorities, update both `server_plan.md` and `/home/ubuntu/projects/stellarix-site/agentrelay/plan.html`.
 
 ## Non-Negotiables
 
@@ -63,7 +66,8 @@ Small documentation-only corrections may be made directly on `main` when the use
    - Verify `https://server.stellarix.space/agentrelay/api/health`.
    - Verify one task-specific live marker.
 5. Public roadmap changes:
-   - Copy `plan.html` to `/var/www/html/agentrelay/plan.html`.
+   - Update `/home/ubuntu/projects/stellarix-site/agentrelay/plan.html`.
+   - Copy `/home/ubuntu/projects/stellarix-site/agentrelay/plan.html` to `/var/www/html/agentrelay/plan.html`.
    - Verify `https://server.stellarix.space/agentrelay/plan.html`.
 
 ## Protocol Boundaries
@@ -97,4 +101,5 @@ Include:
 3. Verification commands and results.
 4. Deployment/public-page verification when applicable.
 5. CodeGraph status after PR work, when a PR was opened or updated.
-6. Any residual risk or skipped checks.
+6. Whether `server_plan.md` and `/home/ubuntu/projects/stellarix-site/agentrelay/plan.html` were updated.
+7. Any residual risk or skipped checks.
