@@ -4,7 +4,7 @@ Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/age
 
 Status date: 2026-07-14.
 
-Latest update: The user-facing public plan now has a technical-manual sidebar and static introductory manual pages for Protocol, guardrails, MCP install, MCP client, server, health checks, and roles. Manual intro pages now share the same persistent sidebar and use compact manual typography.
+Latest update: The user-facing public plan and manual pages now use a lightweight text-outline sidebar. Manual document links swap the right-side content with client-side fetch/history updates, avoiding full page reloads when moving between manual intro pages.
 
 ## Purpose
 
@@ -30,7 +30,7 @@ After every completed change, and after any explicit planning pass that changes 
 
 - AgentRelay is the server/cloud relay project: protocol authority, HTTP/WSS relay, SQLite state, auth, delivery reliability, audit/timeline, admin dashboard, Docker deployment, and public protocol assets.
 - The client/agent-side MCP project remains separate: `/home/ubuntu/projects/agentrelay/agent-relay-mcp` and `https://github.com/ZilingXie/agent-relay-mcp`.
-- The public canonical plan has a manual-style navigation shell. Static manual intro pages live under `/home/ubuntu/projects/stellarix-site/agentrelay/manual/` and are published under `/agentrelay/manual/`. The intro pages load shared assets from `/agentrelay/manual/assets/` for the persistent sidebar and compact typography.
+- The public canonical plan has a manual-style navigation shell. Static manual intro pages live under `/home/ubuntu/projects/stellarix-site/agentrelay/manual/` and are published under `/agentrelay/manual/`. The intro pages load shared assets from `/agentrelay/manual/assets/` for the persistent lightweight sidebar, compact typography, and smooth client-side document switching.
 - Protocol v0.3 is the active contract. Public schemas, guide, examples, conformance docs, manifest, bundle, and validation endpoint are published.
 - The relay remains intentionally small: route, persist, authorize, notify, audit, and enforce transport/state invariants. Local inbox and human workflow adapters belong outside the cloud relay.
 - Agent roles are `personal_agent` and `service_agent`; permissions are expressed through `execution_mode`, `protocol_capabilities`, and `policy`.
@@ -45,7 +45,7 @@ After every completed change, and after any explicit planning pass that changes 
 - Read-only admin dashboard and local admin/debug CLI.
 - Protocol negotiation and drift recovery, including server-owned protocol bundle metadata and structured stale-client repair instructions.
 - Role-aware Agent Cards for personal/service agents.
-- Public manual navigation for Protocol, guardrails, MCP install, MCP client, server, health checks, and roles.
+- Public manual navigation for Protocol, guardrails, MCP install, MCP client, server, health checks, and roles, including lightweight outline styling and smooth manual-page switching.
 
 ## Phase 4 Server Plan
 
