@@ -42,6 +42,7 @@ The important Phase 1 requirement is thread reuse:
 - `docs/admin-cli.md`: local admin/debug CLI for inspecting agents, tasks, timelines, events, and pending work
 - `docs/protocol-v03.md`: Protocol v0.3 guide for agent-facing clients
 - `docs/protocol-v03-conformance.md`: Protocol v0.3 conformance runner for local and real relays
+- `docs/task-lifecycle-v04.md`: decision-complete Protocol v0.4 Task lifecycle design; implementation not started
 - `docs/third-party-agent-onboarding.md`: prepare, verify, and promote third-party agents
 - Public MCP installer repo: https://github.com/ZilingXie/agent-relay-mcp
 - `docs/local-mcp-install.md`: pointer to the public MCP install repo
