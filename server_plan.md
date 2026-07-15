@@ -98,11 +98,30 @@ Agreed current-message direction fields:
 - The Task snapshot stores the current values while each Message preserves its own historical `from_agent_id` / `to_agent_id` values.
 - With strict alternation, a new message must come from the current `to_agent_id`; Relay atomically swaps direction when it persists that message.
 
+Agreed terminal, limit, and follow-up fields:
+
+- `reason`: the single machine-readable terminal reason. Do not add a separate `terminal_reason_code`; detailed error text belongs in the related Event.
+- `terminal_by_agent_id`: the Agent that requested the terminal transition. It is nullable for Relay-driven `expired` and internal `failed` transitions. Do not add `terminal_at`; immutable terminal tasks use `updated_at` as the terminal timestamp.
+- `completed_against_message_id`: the current delivered response used by the requester Agent to confirm completion.
+- `max_turns`: the maximum requester-to-response turns allowed for the Task.
+- `turn_expires_at`: the only Task expiry deadline. Do not add a separate task-level expiry field.
+- `is_followup`: a Relay-generated, read-only boolean. A follow-up Task id uses `<root_task_id>_<n>`, where Relay allocates `n` atomically; clients must not construct follow-up ids or set this flag.
+
+Agreed `failed` reasons:
+
+- `delivery_retry_exhausted`: Relay could not deliver the current message after exhausting its retry policy.
+- `listener_persistence_failed`: the target Listener reported an unrecoverable local Inbox persistence failure.
+- `relay_persistence_failed`: Relay could not persist required Task/Message state after the Task already existed.
+- `agent_reported_failure`: the current Agent explicitly ended the Task because it could not continue.
+- `internal_consistency_error`: Relay detected an unrecoverable state or data invariant violation.
+
+Transient transport errors and rejected invalid messages do not move the Task to `failed`; they remain retryable request/event failures.
+
 Open design items:
 
 - Define one turn as a requester message through receipt of the corresponding response, and settle exactly when the turn counter advances.
 - Minimize the remaining current-turn metadata without losing message identity, concurrency protection, timestamps, or expiry semantics.
-- Define terminal transition authority and reason codes for `expired`, `failed`, and `cancelled`.
+- Define the remaining `cancelled` authority details and the complete status transition table.
 - Define backward-compatible migration from Protocol v0.3 and its existing task/event delivery fields.
 - Add conformance cases for delivered-but-unanswered versus not-delivered tasks before implementation.
 
