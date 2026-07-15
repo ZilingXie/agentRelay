@@ -2,9 +2,9 @@
 
 Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/agentRelay`.
 
-Status date: 2026-07-14.
+Status date: 2026-07-15.
 
-Latest update: Task lifecycle redesign is now tracked as a planning-only workstream. The lifecycle status vocabulary is agreed; turn metadata, transition contracts, migration, and implementation remain open.
+Latest update: The Protocol v0.4 Task lifecycle design is decision-complete, including transitions, fields, failure reasons, follow-up lineage, compatibility, conformance, and a protocol-level prohibition on hard-deleting Tasks. Implementation has not started.
 
 ## Purpose
 
@@ -74,56 +74,19 @@ Server-side workstreams:
    - Add/maintain conformance profiles for personal agents, service agents, and unavailable-agent paths.
    - Plan the v0.2 deprecation window once v0.3 capability reporting is common enough.
 
-## Task Lifecycle Redesign (Planning)
+## Protocol v0.4 Task Lifecycle Plan
 
-This is the up-to-date design direction, not the currently implemented v0.3 state machine. No API, schema, database, or runtime behavior changes are included in this planning pass.
+The design is complete and implementation has not started. The authoritative implementation contract is [`docs/task-lifecycle-v04.md`](docs/task-lifecycle-v04.md).
 
-Agreed lifecycle states:
+Key decisions:
 
-- `submitted`: the current-turn message was validated and persisted by Relay and is waiting for the target Listener ACK.
-- `delivered`: the target Listener persisted the current-turn message in its local Inbox and ACKed Relay.
-- `completed`: the requester Agent confirmed that the task goal was achieved.
-- `expired`: the current turn exceeded its allowed time without the expected delivery, reply, or completion.
-- `failed`: an unrecoverable failure or exhausted retry policy ended the task; a structured reason is required.
-- `cancelled`: reserved for requester-initiated termination; detailed transition rules remain open.
-- `archived`: not part of the lifecycle until its semantics are designed.
-
-The multi-turn lifecycle repeats `submitted -> delivered` for each exchange. Initial requests and later replies use the same `submitted` state. `working`, `claimed`, `replied`, human participation, and local execution progress are not lifecycle states in this design. The requester Agent remains responsible for explicitly moving a delivered task to `completed` after evaluating the goal.
-
-Agreed current-message direction fields:
-
-- `from_agent_id`: the Agent that submitted the current message.
-- `to_agent_id`: the Agent whose Listener must receive the current message and who owns the next reply or completion action after delivery.
-- Keep the fields independent; do not merge them into one route field and do not reuse the older `last_actor_agent_id` / `pending_on_agent_id` names for this model.
-- The Task snapshot stores the current values while each Message preserves its own historical `from_agent_id` / `to_agent_id` values.
-- With strict alternation, a new message must come from the current `to_agent_id`; Relay atomically swaps direction when it persists that message.
-
-Agreed terminal, limit, and follow-up fields:
-
-- `reason`: the single machine-readable terminal reason. Do not add a separate `terminal_reason_code`; detailed error text belongs in the related Event.
-- `terminal_by_agent_id`: the Agent that requested the terminal transition. It is nullable for Relay-driven `expired` and internal `failed` transitions. Do not add `terminal_at`; immutable terminal tasks use `updated_at` as the terminal timestamp.
-- `completed_against_message_id`: the current delivered response used by the requester Agent to confirm completion.
-- `max_turns`: the maximum requester-to-response turns allowed for the Task.
-- `turn_expires_at`: the only Task expiry deadline. Do not add a separate task-level expiry field.
-- `is_followup`: a Relay-generated, read-only boolean. A follow-up Task id uses `<root_task_id>_<n>`, where Relay allocates `n` atomically; clients must not construct follow-up ids or set this flag.
-
-Agreed `failed` reasons:
-
-- `delivery_retry_exhausted`: Relay could not deliver the current message after exhausting its retry policy.
-- `listener_persistence_failed`: the target Listener reported an unrecoverable local Inbox persistence failure.
-- `relay_persistence_failed`: Relay could not persist required Task/Message state after the Task already existed.
-- `agent_reported_failure`: the current Agent explicitly ended the Task because it could not continue.
-- `internal_consistency_error`: Relay detected an unrecoverable state or data invariant violation.
-
-Transient transport errors and rejected invalid messages do not move the Task to `failed`; they remain retryable request/event failures.
-
-Open design items:
-
-- Define one turn as a requester message through receipt of the corresponding response, and settle exactly when the turn counter advances.
-- Minimize the remaining current-turn metadata without losing message identity, concurrency protection, timestamps, or expiry semantics.
-- Define the remaining `cancelled` authority details and the complete status transition table.
-- Define backward-compatible migration from Protocol v0.3 and its existing task/event delivery fields.
-- Add conformance cases for delivered-but-unanswered versus not-delivered tasks before implementation.
+- Active states are `submitted`, `delivered`, `completed`, `expired`, and `failed`; `cancelled` and `archived` are reserved and unreachable in v0.4.
+- One turn runs from requester Message through requester ACK of the target response. Target responses keep the turn number; requester follow-ups increment it.
+- The Task stores a fixed current snapshot with `current_message_id`, independent `from_agent_id` / `to_agent_id`, `status_version`, `max_turns`, and one immutable `task_expires_at`.
+- At `max_turns`, Relay rejects another turn and the requester explicitly chooses `completed` or `failed/max_turns_exhausted`.
+- Follow-ups use opaque ids and only `root_task_id`; root Tasks self-reference and direct source is audited in `task.followup_created`.
+- v0.4 forbids hard deletion of every Task at API, CLI, store, foreign-key, and database-trigger layers.
+- v0.3 Tasks continue under v0.3; v0.4 activates only after server and both participants advertise support and pass conformance.
 
 ## Active Next Steps
 
@@ -133,7 +96,7 @@ Open design items:
 - Add production-grade observability for event backlog, retry health, protocol negotiation frequency, install-loopback failures, and live service-agent traffic.
 - Define child-task/context continuation semantics for post-completion follow-up and revision workflows.
 - Plan a v0.2 deprecation window after enough clients advertise v0.3 capability.
-- Finish the Task lifecycle turn/field design, transition table, failure semantics, and compatibility plan before changing the active protocol.
+- Implement Protocol v0.4 in server-first and client-second PRs using `docs/task-lifecycle-v04.md`; do not enable v0.4 creation until end-to-end conformance passes.
 
 ## Validation Notes
 
