@@ -4,7 +4,7 @@ Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/age
 
 Status date: 2026-07-14.
 
-Latest update: The user-facing public plan and manual pages now use a lightweight text-outline sidebar. Manual document links swap the right-side content with client-side fetch/history updates, avoiding full page reloads when moving between manual intro pages.
+Latest update: Task lifecycle redesign is now tracked as a planning-only workstream. The lifecycle status vocabulary is agreed; turn metadata, transition contracts, migration, and implementation remain open.
 
 ## Purpose
 
@@ -74,6 +74,30 @@ Server-side workstreams:
    - Add/maintain conformance profiles for personal agents, service agents, and unavailable-agent paths.
    - Plan the v0.2 deprecation window once v0.3 capability reporting is common enough.
 
+## Task Lifecycle Redesign (Planning)
+
+This is the up-to-date design direction, not the currently implemented v0.3 state machine. No API, schema, database, or runtime behavior changes are included in this planning pass.
+
+Agreed lifecycle states:
+
+- `submitted`: the current-turn message was validated and persisted by Relay and is waiting for the target Listener ACK.
+- `delivered`: the target Listener persisted the current-turn message in its local Inbox and ACKed Relay.
+- `completed`: the requester Agent confirmed that the task goal was achieved.
+- `expired`: the current turn exceeded its allowed time without the expected delivery, reply, or completion.
+- `failed`: an unrecoverable failure or exhausted retry policy ended the task; a structured reason is required.
+- `cancelled`: reserved for requester-initiated termination; detailed transition rules remain open.
+- `archived`: not part of the lifecycle until its semantics are designed.
+
+The multi-turn lifecycle repeats `submitted -> delivered` for each exchange. Initial requests and later replies use the same `submitted` state. `working`, `claimed`, `replied`, human participation, and local execution progress are not lifecycle states in this design. The requester Agent remains responsible for explicitly moving a delivered task to `completed` after evaluating the goal.
+
+Open design items:
+
+- Define one turn as a requester message through receipt of the corresponding response, and settle exactly when the turn counter advances.
+- Minimize current-turn metadata without losing sender/receiver direction, message identity, concurrency protection, timestamps, or expiry semantics.
+- Define terminal transition authority and reason codes for `expired`, `failed`, and `cancelled`.
+- Define backward-compatible migration from Protocol v0.3 and its existing task/event delivery fields.
+- Add conformance cases for delivered-but-unanswered versus not-delivered tasks before implementation.
+
 ## Active Next Steps
 
 - Support the MCP Service Worker Kit with enough server/dashboard visibility to debug worker runs end to end.
@@ -82,6 +106,7 @@ Server-side workstreams:
 - Add production-grade observability for event backlog, retry health, protocol negotiation frequency, install-loopback failures, and live service-agent traffic.
 - Define child-task/context continuation semantics for post-completion follow-up and revision workflows.
 - Plan a v0.2 deprecation window after enough clients advertise v0.3 capability.
+- Finish the Task lifecycle turn/field design, transition table, failure semantics, and compatibility plan before changing the active protocol.
 
 ## Validation Notes
 
