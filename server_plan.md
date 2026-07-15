@@ -90,10 +90,18 @@ Agreed lifecycle states:
 
 The multi-turn lifecycle repeats `submitted -> delivered` for each exchange. Initial requests and later replies use the same `submitted` state. `working`, `claimed`, `replied`, human participation, and local execution progress are not lifecycle states in this design. The requester Agent remains responsible for explicitly moving a delivered task to `completed` after evaluating the goal.
 
+Agreed current-message direction fields:
+
+- `from_agent_id`: the Agent that submitted the current message.
+- `to_agent_id`: the Agent whose Listener must receive the current message and who owns the next reply or completion action after delivery.
+- Keep the fields independent; do not merge them into one route field and do not reuse the older `last_actor_agent_id` / `pending_on_agent_id` names for this model.
+- The Task snapshot stores the current values while each Message preserves its own historical `from_agent_id` / `to_agent_id` values.
+- With strict alternation, a new message must come from the current `to_agent_id`; Relay atomically swaps direction when it persists that message.
+
 Open design items:
 
 - Define one turn as a requester message through receipt of the corresponding response, and settle exactly when the turn counter advances.
-- Minimize current-turn metadata without losing sender/receiver direction, message identity, concurrency protection, timestamps, or expiry semantics.
+- Minimize the remaining current-turn metadata without losing message identity, concurrency protection, timestamps, or expiry semantics.
 - Define terminal transition authority and reason codes for `expired`, `failed`, and `cancelled`.
 - Define backward-compatible migration from Protocol v0.3 and its existing task/event delivery fields.
 - Add conformance cases for delivered-but-unanswered versus not-delivered tasks before implementation.
