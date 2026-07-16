@@ -50,10 +50,32 @@ def main() -> None:
             assert_snapshot(task, "submitted", 1, 1, "zac-agent", "frank-agent")
             task_id = task["task_id"]
             assert task["root_task_id"] == task_id
+            assert_task_delete_rejected(task_id)
 
             events = get("/workers/frank-agent/events", B)["events"]
             pending = next(event for event in events if event["event_type"] == "task.message_pending")
             informational = next(event for event in events if event["event_type"] == "task.status_changed")
+            post(
+                f"/workers/frank-agent/events/{pending['event_id']}/ack",
+                {"taskId": task_id, "deliveryState": "done"},
+                B,
+                409,
+            )
+            post(f"/tasks/{task_id}/status", {"status": "cancelled"}, A, 409)
+            post(f"/workers/frank-agent/tasks/{task_id}/claim", {}, B, 409)
+            post(
+                f"/workers/frank-agent/tasks/{task_id}/thread",
+                {"threadId": "legacy-thread"},
+                B,
+                409,
+            )
+            post(
+                f"/tasks/{task_id}/deliveries",
+                {"deliveredByAgentId": "zac-agent", "threadId": "legacy-thread"},
+                A,
+                409,
+            )
+            post(f"/tasks/{task_id}/close", {"closedByAgentId": "zac-agent"}, A, 409)
             post(
                 f"/workers/frank-agent/events/{informational['event_id']}/ack",
                 {"taskId": task_id, "deliveryState": "done"},
@@ -182,6 +204,16 @@ def get(path: str, headers: dict[str, str]) -> dict:
 
 def post(path: str, payload: dict, headers: dict[str, str], status: int = 200) -> dict:
     return request("POST", path, payload, headers, status)
+
+
+def assert_task_delete_rejected(task_id: str) -> None:
+    req = urllib.request.Request(BASE + f"/tasks/{task_id}", method="DELETE", headers=A)
+    try:
+        urllib.request.urlopen(req, timeout=3)
+    except urllib.error.HTTPError as exc:
+        assert exc.code in {404, 405, 501}
+        return
+    raise AssertionError("Task DELETE API unexpectedly succeeded")
 
 
 def request(method: str, path: str, payload: dict | None, headers: dict[str, str], status: int) -> dict:

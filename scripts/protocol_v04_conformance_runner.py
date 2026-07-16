@@ -121,6 +121,17 @@ def multi_turn_and_max_turns(store: Store) -> None:
     assert task["turn_sequence"] == 2
     task = response_delivered(store, task, "multi-2")
     assert_conflict(lambda: message(store, task, A, "turn-3-rejected"))
+    completed = store.complete_v04_task(
+        task["task_id"], A,
+        {**context(task, "multi-complete"), "completed_against_message_id": task["current_message_id"]},
+    )
+    assert completed["status"] == "completed"
+
+    task = response_delivered(store, create(store, "c-max-fail", max_turns=1), "max-fail")
+    assert_conflict(lambda: message(store, task, A, "max-followup-rejected"))
+    assert_conflict(lambda: store.fail_v04_task(
+        task["task_id"], B, {**context(task, "bad-max-fail"), "reason": "max_turns_exhausted"},
+    ))
     failed = store.fail_v04_task(
         task["task_id"], A, {**context(task, "max-fail"), "reason": "max_turns_exhausted"},
     )
@@ -149,17 +160,38 @@ def stale_acks_and_terminal_guards(store: Store) -> None:
         {**context(task, "right-evidence"), "completed_against_message_id": task["current_message_id"]},
     )
     assert_conflict(lambda: message(store, terminal, A, "terminal-message"))
+    assert_conflict(lambda: ack(store, terminal, A, "terminal-ack"))
+    assert_conflict(lambda: store.complete_v04_task(
+        terminal["task_id"], A,
+        {**context(terminal, "terminal-complete"), "completed_against_message_id": terminal["current_message_id"]},
+    ))
+    assert_conflict(lambda: store.fail_v04_task(
+        terminal["task_id"], A,
+        {**context(terminal, "terminal-fail"), "reason": "agent_reported_failure"},
+    ))
 
 
 def expiry(store: Store) -> None:
-    submitted = create(store, "c-expire-submitted", expires_at=int(time.time()) + 1)
-    time.sleep(1.05)
-    assert store.get_task(submitted["task_id"])["status"] == "expired"
-    delivered = create(store, "c-expire-delivered", expires_at=int(time.time()) + 1)
-    delivered = ack(store, delivered, B, "expire-delivered-ack")
-    time.sleep(1.05)
-    expired = store.get_task(delivered["task_id"])
-    assert expired["status"] == "expired" and expired["task_expires_at"] == delivered["task_expires_at"]
+    deadline = int(time.time()) + 2
+    submitted = create(store, "c-expire-submitted", expires_at=deadline)
+    delivered = ack(store, create(store, "c-expire-delivered", expires_at=deadline), B, "expire-delivered-ack")
+    completable = response_delivered(store, create(store, "c-expire-complete", expires_at=deadline), "expire-complete")
+    failable = create(store, "c-expire-fail", expires_at=deadline)
+    time.sleep(max(0.0, deadline - time.time()) + 0.05)
+
+    assert_conflict(lambda: ack(store, submitted, B, "expired-ack"))
+    assert_conflict(lambda: message(store, delivered, B, "expired-message"))
+    assert_conflict(lambda: store.complete_v04_task(
+        completable["task_id"], A,
+        {**context(completable, "expired-completion"), "completed_against_message_id": completable["current_message_id"]},
+    ))
+    assert_conflict(lambda: store.fail_v04_task(
+        failable["task_id"], B,
+        {**context(failable, "expired-failure"), "reason": "listener_persistence_failed"},
+    ))
+    for task in (submitted, delivered, completable, failable):
+        expired = store.get_task(task["task_id"])
+        assert expired["status"] == "expired" and expired["task_expires_at"] == deadline
 
 
 def failure_authority(store: Store) -> None:
@@ -213,6 +245,8 @@ def lineage_and_concurrency(store: Store) -> None:
         children = list(pool.map(follow, (1, 2)))
     assert len({child["task_id"] for child in children}) == 2
     assert all(child["root_task_id"] == root["task_id"] for child in children)
+    duplicate = follow(1)
+    assert duplicate["task_id"] == children[0]["task_id"]
     lineage = store.get_task_lineage(children[0]["task_id"])
     assert {task["task_id"] for task in lineage} == {root["task_id"], *(child["task_id"] for child in children)}
     with store.connect() as conn:
@@ -226,9 +260,36 @@ def lineage_and_concurrency(store: Store) -> None:
 def deletion_and_compatibility(store: Store) -> None:
     assert not hasattr(store, "delete_task")
     v04 = create(store, "c-delete")
+    assert_conflict(lambda: store.update_status(v04["task_id"], "cancelled", {}))
+    assert_conflict(lambda: store.claim_task_by_id(B, v04["task_id"]))
+    assert_conflict(lambda: store.set_thread(B, v04["task_id"], "thread-v04"))
+    assert_conflict(lambda: store.submit_artifact(v04["task_id"], {
+        "actor_agent_id": B,
+        "artifact": {"parts": [{"kind": "text", "text": "legacy artifact"}]},
+    }))
+    assert_conflict(lambda: store.amend_task(v04["task_id"], {
+        "actor_agent_id": A,
+        "expected_goal_version": 1,
+        "new_done_criteria": "legacy amendment",
+        "human_authority": {
+            "owner_id": "zac", "via_agent_id": A, "approval_ref": "legacy-amend",
+            "summary": "legacy amendment must not mutate v0.4", "visibility": "redacted",
+        },
+        "reason": "legacy amendment guard",
+    }))
+    assert_conflict(lambda: store.mark_delivery(
+        v04["task_id"], {"deliveredByAgentId": A, "threadId": "thread-v04"},
+    ))
+    assert_conflict(lambda: store.close_task(v04["task_id"], {"closedByAgentId": A}))
     with store.connect() as conn:
         task_fks = conn.execute("PRAGMA foreign_key_list(messages)").fetchall()
         assert all(str(row["on_delete"]).upper() != "CASCADE" for row in task_fks)
+        pending = conn.execute(
+            "SELECT event_id FROM agent_events WHERE task_id = ? AND can_transition_task = 1",
+            (v04["task_id"],),
+        ).fetchone()
+    assert_conflict(lambda: store.ack_agent_event(B, pending["event_id"], v04["task_id"]))
+    with store.connect() as conn:
         try:
             conn.execute("DELETE FROM tasks WHERE task_id = ?", (v04["task_id"],))
         except sqlite3.IntegrityError:
