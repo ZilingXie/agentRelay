@@ -142,6 +142,7 @@ def protocol_manifest_v04(public_base_url: str | None = None) -> dict[str, Any]:
         "manifest": f"{base}/api/protocols/{PROTOCOL_NAME}/v0.4/manifest",
         "bundle": f"{base}/api/protocols/{PROTOCOL_NAME}/v0.4/bundle",
         "docs": f"{base}/docs/task-lifecycle-v04.md",
+        "examples": f"{base}/examples/protocol-v04/",
     }
     return manifest
 
