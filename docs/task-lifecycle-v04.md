@@ -1,11 +1,13 @@
 # Protocol v0.4 Task Lifecycle Design
 
-Status: design complete; server implementation verified, MCP/Listener implementation pending.
+Status: implemented and verified across Relay and MCP/Listener; explicit non-default rollout.
 
 Status date: 2026-07-16.
 
-Protocol v0.3 remains the active contract until the server and MCP/Listener
-implementations pass the v0.4 conformance suite and advertise v0.4 support.
+Protocol v0.3 remains the default compatibility contract. Protocol v0.4 is
+available through explicit client tools after server/client conformance and a
+production two-Agent E2E passed; automatic selection remains deferred until
+participant capability advertisement is complete.
 
 ## 1. Goals And Boundaries
 
