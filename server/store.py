@@ -16,6 +16,7 @@ from server.protocol_v03 import (
     normalize_human_authority,
     normalize_source_refs,
 )
+from server.protocol_v04 import FAILED_REASONS, PROTOCOL_V04
 from server.timeline import build_timeline_entry
 from server.transitions import (
     CLAIMABLE_STATES,
@@ -77,6 +78,11 @@ MAX_TURNS_TERMINAL_REASON = (
 
 class ConflictError(Exception):
     """Raised when a task exists but cannot perform the requested state transition."""
+
+    def __init__(self, message: str, *, code: str = "CONFLICT", current_task: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.code = code
+        self.current_task = current_task
 
 
 class Store:
@@ -220,8 +226,10 @@ class Store:
             )
             self.ensure_agent_columns(conn)
             self.ensure_task_columns(conn)
+            self.ensure_message_columns(conn)
             self.ensure_task_event_columns(conn)
             self.ensure_agent_event_columns(conn)
+            self.ensure_v04_storage(conn)
             self.ensure_seed_agents(conn)
 
     def ensure_agent_columns(self, conn: sqlite3.Connection) -> None:
@@ -277,10 +285,39 @@ class Store:
             "turn_count": "ALTER TABLE tasks ADD COLUMN turn_count INTEGER NOT NULL DEFAULT 0",
             "goal_version": "ALTER TABLE tasks ADD COLUMN goal_version INTEGER NOT NULL DEFAULT 1",
             "exchange_epoch": "ALTER TABLE tasks ADD COLUMN exchange_epoch INTEGER NOT NULL DEFAULT 1",
+            "root_task_id": "ALTER TABLE tasks ADD COLUMN root_task_id TEXT",
+            "protocol_version": f"ALTER TABLE tasks ADD COLUMN protocol_version TEXT NOT NULL DEFAULT '{PROTOCOL_V03}'",
+            "turn_sequence": "ALTER TABLE tasks ADD COLUMN turn_sequence INTEGER",
+            "current_message_id": "ALTER TABLE tasks ADD COLUMN current_message_id TEXT",
+            "from_agent_id": "ALTER TABLE tasks ADD COLUMN from_agent_id TEXT",
+            "to_agent_id": "ALTER TABLE tasks ADD COLUMN to_agent_id TEXT",
+            "status_version": "ALTER TABLE tasks ADD COLUMN status_version INTEGER",
+            "task_expires_at": "ALTER TABLE tasks ADD COLUMN task_expires_at INTEGER",
+            "reason": "ALTER TABLE tasks ADD COLUMN reason TEXT",
+            "terminal_by_agent_id": "ALTER TABLE tasks ADD COLUMN terminal_by_agent_id TEXT",
+            "completed_against_message_id": "ALTER TABLE tasks ADD COLUMN completed_against_message_id TEXT",
         }
         for column, sql in migrations.items():
             if column not in columns:
                 conn.execute(sql)
+        conn.execute("UPDATE tasks SET root_task_id = task_id WHERE root_task_id IS NULL")
+
+    def ensure_message_columns(self, conn: sqlite3.Connection) -> None:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
+        migrations = {
+            "turn_sequence": "ALTER TABLE messages ADD COLUMN turn_sequence INTEGER",
+            "idempotency_key": "ALTER TABLE messages ADD COLUMN idempotency_key TEXT",
+        }
+        for column, sql in migrations.items():
+            if column not in columns:
+                conn.execute(sql)
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_v04_idempotency
+            ON messages (task_id, from_agent_id, idempotency_key)
+            WHERE idempotency_key IS NOT NULL
+            """
+        )
 
     def ensure_task_event_columns(self, conn: sqlite3.Connection) -> None:
         columns = {
@@ -289,6 +326,18 @@ class Store:
         }
         if "event_sequence" not in columns:
             conn.execute("ALTER TABLE task_events ADD COLUMN event_sequence INTEGER")
+        migrations = {
+            "status_version": "ALTER TABLE task_events ADD COLUMN status_version INTEGER",
+            "message_id": "ALTER TABLE task_events ADD COLUMN message_id TEXT",
+            "turn_sequence": "ALTER TABLE task_events ADD COLUMN turn_sequence INTEGER",
+            "from_status": "ALTER TABLE task_events ADD COLUMN from_status TEXT",
+            "to_status": "ALTER TABLE task_events ADD COLUMN to_status TEXT",
+            "reason": "ALTER TABLE task_events ADD COLUMN reason TEXT",
+            "actor_agent_id": "ALTER TABLE task_events ADD COLUMN actor_agent_id TEXT",
+        }
+        for column, sql in migrations.items():
+            if column not in columns:
+                conn.execute(sql)
         conn.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_task_events_task_sequence
@@ -309,6 +358,8 @@ class Store:
             "done_at": "ALTER TABLE agent_events ADD COLUMN done_at INTEGER",
             "failed_at": "ALTER TABLE agent_events ADD COLUMN failed_at INTEGER",
             "last_error": "ALTER TABLE agent_events ADD COLUMN last_error TEXT",
+            "message_id": "ALTER TABLE agent_events ADD COLUMN message_id TEXT",
+            "can_transition_task": "ALTER TABLE agent_events ADD COLUMN can_transition_task INTEGER NOT NULL DEFAULT 0",
         }
         for column, sql in migrations.items():
             if column not in columns:
@@ -319,6 +370,55 @@ class Store:
                 ON agent_events (agent_id, delivery_state, created_at, event_id)
             """
         )
+
+    def ensure_v04_storage(self, conn: sqlite3.Connection) -> None:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS task_mutations (
+                task_id TEXT NOT NULL,
+                actor_agent_id TEXT NOT NULL,
+                operation TEXT NOT NULL,
+                idempotency_key TEXT NOT NULL,
+                result_task_id TEXT NOT NULL,
+                result_message_id TEXT,
+                request_hash TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (task_id, actor_agent_id, operation, idempotency_key),
+                FOREIGN KEY (task_id) REFERENCES tasks(task_id) ON DELETE RESTRICT,
+                FOREIGN KEY (result_task_id) REFERENCES tasks(task_id) ON DELETE RESTRICT
+            );
+
+            CREATE TABLE IF NOT EXISTS task_create_requests (
+                requester_agent_id TEXT NOT NULL,
+                idempotency_key TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                source_task_id TEXT,
+                request_hash TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (requester_agent_id, idempotency_key),
+                FOREIGN KEY (task_id) REFERENCES tasks(task_id) ON DELETE RESTRICT
+            );
+
+            CREATE TRIGGER IF NOT EXISTS prevent_task_hard_delete
+            BEFORE DELETE ON tasks
+            BEGIN
+                SELECT RAISE(ABORT, 'AgentRelay protocol forbids hard deletion of tasks');
+            END;
+            """
+        )
+        for table, additions in {
+            "task_mutations": {
+                "request_hash": "ALTER TABLE task_mutations ADD COLUMN request_hash TEXT NOT NULL DEFAULT ''",
+            },
+            "task_create_requests": {
+                "source_task_id": "ALTER TABLE task_create_requests ADD COLUMN source_task_id TEXT",
+                "request_hash": "ALTER TABLE task_create_requests ADD COLUMN request_hash TEXT NOT NULL DEFAULT ''",
+            },
+        }.items():
+            columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            for column, sql in additions.items():
+                if column not in columns:
+                    conn.execute(sql)
         conn.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_events_idempotency
@@ -843,7 +943,249 @@ class Store:
                 created_at=now,
             )
 
+    def add_v04_event_conn(
+        self,
+        conn: sqlite3.Connection,
+        task_id: str,
+        event_type: str,
+        from_status: str | None,
+        to_status: str | None,
+        *,
+        actor_agent_id: str | None,
+        payload: dict[str, Any],
+        created_at: int,
+    ) -> None:
+        row = conn.execute(
+            "SELECT COALESCE(MAX(event_sequence), 0) + 1 AS next_sequence FROM task_events WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        conn.execute(
+            """
+            INSERT INTO task_events (
+                event_id, task_id, event_type, payload_json, event_sequence, created_at,
+                status_version, message_id, turn_sequence, from_status, to_status,
+                reason, actor_agent_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"evt_{uuid.uuid4().hex}", task_id, event_type, json.dumps(payload),
+                int(row["next_sequence"]), created_at, payload.get("status_version"),
+                payload.get("message_id"), payload.get("turn_sequence"), from_status,
+                to_status, payload.get("reason"), actor_agent_id,
+            ),
+        )
+
+    def create_v04_agent_event_conn(
+        self,
+        conn: sqlite3.Connection,
+        agent_id: str,
+        event_type: str,
+        task_id: str,
+        message_id: str | None,
+        payload: dict[str, Any],
+        *,
+        can_transition_task: bool,
+        idempotency_key: str,
+        created_at: int,
+    ) -> None:
+        event = self.create_agent_event_conn(
+            conn, agent_id, event_type, task_id, payload,
+            idempotency_key=idempotency_key, created_at=created_at,
+        )
+        conn.execute(
+            "UPDATE agent_events SET message_id = ?, can_transition_task = ? WHERE event_id = ?",
+            (message_id, 1 if can_transition_task else 0, event["event_id"]),
+        )
+
+    def record_v04_transition_conn(
+        self,
+        conn: sqlite3.Connection,
+        task_id: str,
+        from_status: str | None,
+        to_status: str,
+        actor_agent_id: str | None,
+        message_id: str,
+        turn_sequence: int,
+        status_version: int,
+        reason: str | None,
+        created_at: int,
+    ) -> None:
+        task = dict(conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone())
+        event_payload = {
+            "task_id": task_id,
+            "protocol_version": PROTOCOL_V04,
+            "message_id": message_id,
+            "turn_sequence": turn_sequence,
+            "status_version": status_version,
+            "from_status": from_status,
+            "to_status": to_status,
+            "reason": reason,
+            "actor_agent_id": actor_agent_id,
+        }
+        self.add_v04_event_conn(
+            conn, task_id, "task.status_changed", from_status, to_status,
+            actor_agent_id=actor_agent_id, payload=event_payload, created_at=created_at,
+        )
+        for participant in {task["requester_agent_id"], task["target_agent_id"]}:
+            self.create_v04_agent_event_conn(
+                conn, participant, "task.status_changed", task_id, message_id,
+                event_payload, can_transition_task=False,
+                idempotency_key=f"v04:{task_id}:status:{status_version}:{participant}",
+                created_at=created_at,
+            )
+        if to_status == "submitted":
+            self.create_v04_agent_event_conn(
+                conn, task["to_agent_id"], "task.message_pending", task_id, message_id,
+                {
+                    **event_payload,
+                    "from_agent_id": task["from_agent_id"],
+                    "to_agent_id": task["to_agent_id"],
+                    "parts": json.loads(conn.execute("SELECT parts_json FROM messages WHERE message_id = ?", (message_id,)).fetchone()["parts_json"]),
+                },
+                can_transition_task=True,
+                idempotency_key=f"v04:{task_id}:message:{message_id}:pending",
+                created_at=created_at,
+            )
+
+    def expire_v04_tasks_conn(self, conn: sqlite3.Connection, now: int, task_id: str | None = None) -> None:
+        params: list[Any] = [PROTOCOL_V04, now]
+        task_filter = ""
+        if task_id:
+            task_filter = "AND task_id = ?"
+            params.append(task_id)
+        rows = conn.execute(
+            f"""
+            SELECT * FROM tasks
+            WHERE protocol_version = ? AND status IN ('submitted', 'delivered')
+              AND task_expires_at <= ? {task_filter}
+            """,
+            params,
+        ).fetchall()
+        for row in rows:
+            task = dict(row)
+            next_version = int(task["status_version"]) + 1
+            cursor = conn.execute(
+                """
+                UPDATE tasks SET status = 'expired', status_version = ?, reason = 'task_timeout',
+                    terminal_by_agent_id = NULL, updated_at = ?
+                WHERE task_id = ? AND status_version = ? AND status IN ('submitted', 'delivered')
+                """,
+                (next_version, now, task["task_id"], task["status_version"]),
+            )
+            if cursor.rowcount == 1:
+                self.record_v04_transition_conn(
+                    conn, task["task_id"], task["status"], "expired", None,
+                    task["current_message_id"], task["turn_sequence"], next_version,
+                    "task_timeout", now,
+                )
+
+    def assert_v04_context(self, task: dict[str, Any], payload: dict[str, Any]) -> None:
+        if task.get("protocol_version") != PROTOCOL_V04:
+            raise ConflictError("operation requires a v0.4 task")
+        if task["status"] in {"completed", "expired", "failed"}:
+            raise ConflictError(f"task is terminal: {task['status']}")
+        if payload.get("current_message_id") != task["current_message_id"]:
+            raise ConflictError("stale_task_state: current_message_id mismatch", code="stale_task_state", current_task=task)
+        if int(payload.get("turn_sequence")) != int(task["turn_sequence"]):
+            raise ConflictError("stale_task_state: turn_sequence mismatch", code="stale_task_state", current_task=task)
+        if int(payload.get("expected_status_version")) != int(task["status_version"]):
+            raise ConflictError("stale_task_state: expected_status_version mismatch", code="stale_task_state", current_task=task)
+
+    def create_task_v04(self, payload: dict[str, Any], *, source_task_id: str | None = None) -> dict[str, Any]:
+        now = int(time.time())
+        requester = str(payload["requester_agent_id"])
+        target = str(payload["target_agent_id"])
+        idempotency_key = str(payload["idempotency_key"])
+        max_turns = int(payload.get("max_turns") or 12)
+        expires_at = int(payload.get("task_expires_at") or (now + DEFAULT_TASK_TTL_SECONDS))
+        if expires_at <= now:
+            raise ValueError("task_expires_at must be in the future")
+        message = payload["message"]
+        parts = message["parts"]
+        task_id = f"task_{uuid.uuid4().hex}"
+        message_id = message.get("message_id") or f"msg_{uuid.uuid4().hex}"
+        done_criteria_value = payload["done_criteria"]
+        done_criteria = json.dumps(done_criteria_value, sort_keys=True) if isinstance(done_criteria_value, dict) else str(done_criteria_value)
+        request_hash = request_fingerprint(payload)
+
+        with self.connect() as conn:
+            assert_agent_exists(conn, requester)
+            assert_agent_exists(conn, target)
+            existing = conn.execute(
+                "SELECT task_id, source_task_id, request_hash FROM task_create_requests WHERE requester_agent_id = ? AND idempotency_key = ?",
+                (requester, idempotency_key),
+            ).fetchone()
+            if existing:
+                if existing["source_task_id"] != source_task_id or existing["request_hash"] != request_hash:
+                    raise ConflictError("idempotency_key was already used for a different Task create request")
+                task = self.get_task_conn(conn, existing["task_id"])
+                if task:
+                    return task
+                raise ConflictError("idempotent create result is missing")
+
+            root_task_id = task_id
+            if source_task_id:
+                source = conn.execute("SELECT * FROM tasks WHERE task_id = ?", (source_task_id,)).fetchone()
+                if not source:
+                    raise ValueError("source task not found")
+                source = dict(source)
+                self.expire_v04_tasks_conn(conn, now, source_task_id)
+                source = dict(conn.execute("SELECT * FROM tasks WHERE task_id = ?", (source_task_id,)).fetchone())
+                if source.get("protocol_version") != PROTOCOL_V04:
+                    raise ConflictError("follow-up source must be a v0.4 task")
+                if source["status"] not in {"completed", "expired", "failed"}:
+                    raise ConflictError("follow-up source must be terminal")
+                if source["requester_agent_id"] != requester or source["target_agent_id"] != target:
+                    raise ConflictError("follow-up participants must match the source task")
+                root_task_id = source["root_task_id"]
+
+            conn.execute(
+                """
+                INSERT INTO tasks (
+                    task_id, root_task_id, protocol_version, context_id, status,
+                    requester_agent_id, target_agent_id, done_criteria,
+                    completion_owner_agent_id, subject, max_turns, turn_sequence,
+                    current_message_id, from_agent_id, to_agent_id, status_version,
+                    task_expires_at, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, 'submitted', ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 1, ?, ?, ?)
+                """,
+                (
+                    task_id, root_task_id, PROTOCOL_V04, f"ctx_{uuid.uuid4().hex}", requester,
+                    target, done_criteria, requester, payload.get("subject") or "AgentRelay task",
+                    max_turns, message_id, requester, target, expires_at, now, now,
+                ),
+            )
+            context_id = conn.execute("SELECT context_id FROM tasks WHERE task_id = ?", (task_id,)).fetchone()["context_id"]
+            conn.execute(
+                """
+                INSERT INTO messages (
+                    message_id, task_id, context_id, from_agent_id, to_agent_id,
+                    role, parts_json, created_at, turn_sequence, idempotency_key
+                ) VALUES (?, ?, ?, ?, ?, 'user', ?, ?, 1, ?)
+                """,
+                (message_id, task_id, context_id, requester, target, json.dumps(parts), now, idempotency_key),
+            )
+            conn.execute(
+                """
+                INSERT INTO task_create_requests (
+                    requester_agent_id, idempotency_key, task_id, source_task_id, request_hash, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (requester, idempotency_key, task_id, source_task_id, request_hash, now),
+            )
+            self.record_v04_transition_conn(conn, task_id, None, "submitted", requester, message_id, 1, 1, None, now)
+            if source_task_id:
+                self.add_v04_event_conn(
+                    conn, source_task_id, "task.followup_created", None, None,
+                    actor_agent_id=requester,
+                    payload={"source_task_id": source_task_id, "new_task_id": task_id, "root_task_id": root_task_id},
+                    created_at=now,
+                )
+            return self.get_task_conn(conn, task_id)
+
     def create_task(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if payload.get("protocol_version") == PROTOCOL_V04:
+            return self.create_task_v04(payload)
         now = int(time.time())
         normalized = normalize_task_create(payload)
         task_id = normalized["task_id"]
@@ -960,6 +1302,221 @@ class Store:
         now = int(time.time())
         with self.connect() as conn:
             self.expire_stale_tasks_conn(conn, now)
+            self.expire_v04_tasks_conn(conn, now, task_id)
+            return self.get_task_conn(conn, task_id)
+
+    def existing_v04_mutation_conn(
+        self, conn: sqlite3.Connection, task_id: str, actor: str, operation: str, key: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        row = conn.execute(
+            """
+            SELECT result_task_id, request_hash FROM task_mutations
+            WHERE task_id = ? AND actor_agent_id = ? AND operation = ? AND idempotency_key = ?
+            """,
+            (task_id, actor, operation, key),
+        ).fetchone()
+        if row and row["request_hash"] != request_fingerprint(payload):
+            raise ConflictError("idempotency_key was already used for a different mutation request")
+        return self.get_task_conn(conn, row["result_task_id"]) if row else None
+
+    def record_v04_mutation_conn(
+        self, conn: sqlite3.Connection, task_id: str, actor: str, operation: str,
+        key: str, result_task_id: str, message_id: str | None, payload: dict[str, Any], now: int
+    ) -> None:
+        conn.execute(
+            """
+            INSERT INTO task_mutations (
+                task_id, actor_agent_id, operation, idempotency_key,
+                result_task_id, result_message_id, request_hash, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (task_id, actor, operation, key, result_task_id, message_id, request_fingerprint(payload), now),
+        )
+
+    def submit_v04_message(self, task_id: str, actor: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        now = int(time.time())
+        key = str(payload["idempotency_key"])
+        with self.connect() as conn:
+            existing = self.existing_v04_mutation_conn(conn, task_id, actor, "message", key, payload)
+            if existing:
+                return existing
+            self.expire_v04_tasks_conn(conn, now, task_id)
+            row = conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+            if not row:
+                return None
+            task = dict(row)
+            self.assert_v04_context(task, payload)
+            if task["status"] != "delivered":
+                raise ConflictError("new message requires delivered status")
+            if actor != task["to_agent_id"]:
+                raise ConflictError("only the current to_agent_id may send the next message")
+            if actor == task["from_agent_id"]:
+                raise ConflictError("same Agent cannot send consecutive messages")
+            next_turn = int(task["turn_sequence"])
+            if actor == task["requester_agent_id"]:
+                if task["from_agent_id"] != task["target_agent_id"]:
+                    raise ConflictError("requester follow-up requires a delivered target response")
+                if next_turn >= int(task["max_turns"]):
+                    raise ConflictError("max_turns_reached")
+                next_turn += 1
+            elif actor != task["target_agent_id"] or task["from_agent_id"] != task["requester_agent_id"]:
+                raise ConflictError("target response requires a delivered requester message")
+
+            message_id = payload.get("message_id") or f"msg_{uuid.uuid4().hex}"
+            next_version = int(task["status_version"]) + 1
+            conn.execute(
+                """
+                INSERT INTO messages (
+                    message_id, task_id, context_id, from_agent_id, to_agent_id,
+                    role, parts_json, created_at, turn_sequence, idempotency_key
+                ) VALUES (?, ?, ?, ?, ?, 'agent', ?, ?, ?, ?)
+                """,
+                (message_id, task_id, task["context_id"], actor, task["from_agent_id"],
+                 json.dumps(payload["parts"]), now, next_turn, key),
+            )
+            cursor = conn.execute(
+                """
+                UPDATE tasks SET status = 'submitted', turn_sequence = ?, current_message_id = ?,
+                    from_agent_id = ?, to_agent_id = ?, status_version = ?, updated_at = ?
+                WHERE task_id = ? AND status_version = ? AND status = 'delivered'
+                """,
+                (next_turn, message_id, actor, task["from_agent_id"], next_version, now,
+                 task_id, task["status_version"]),
+            )
+            if cursor.rowcount != 1:
+                raise ConflictError("stale_task_state")
+            self.record_v04_transition_conn(
+                conn, task_id, "delivered", "submitted", actor, message_id,
+                next_turn, next_version, None, now,
+            )
+            self.record_v04_mutation_conn(conn, task_id, actor, "message", key, task_id, message_id, payload, now)
+            return self.get_task_conn(conn, task_id)
+
+    def ack_v04_message(self, agent_id: str, message_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        now = int(time.time())
+        task_id = str(payload.get("task_id") or "")
+        key = str(payload["idempotency_key"])
+        with self.connect() as conn:
+            existing = self.existing_v04_mutation_conn(conn, task_id, agent_id, "ack", key, payload)
+            if existing:
+                return existing
+            self.expire_v04_tasks_conn(conn, now, task_id)
+            row = conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+            if not row:
+                return None
+            task = dict(row)
+            self.assert_v04_context(task, payload)
+            if message_id != task["current_message_id"] or payload.get("message_id") != message_id:
+                raise ConflictError("stale_task_state: message_id mismatch")
+            if task["status"] != "submitted" or task["to_agent_id"] != agent_id:
+                raise ConflictError("only current to_agent_id may ACK a submitted message")
+            pending = conn.execute(
+                """
+                SELECT * FROM agent_events
+                WHERE agent_id = ? AND task_id = ? AND message_id = ?
+                  AND event_type = 'task.message_pending' AND can_transition_task = 1
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (agent_id, task_id, message_id),
+            ).fetchone()
+            if not pending:
+                raise ConflictError("current message pending event not found")
+            next_version = int(task["status_version"]) + 1
+            cursor = conn.execute(
+                """
+                UPDATE tasks SET status = 'delivered', status_version = ?, updated_at = ?
+                WHERE task_id = ? AND status = 'submitted' AND status_version = ?
+                """,
+                (next_version, now, task_id, task["status_version"]),
+            )
+            if cursor.rowcount != 1:
+                raise ConflictError("stale_task_state")
+            conn.execute(
+                """
+                UPDATE agent_events SET delivery_state = 'done', acked_at = ?, done_at = ?,
+                    failed_at = NULL, inflight_until = NULL, last_error = NULL
+                WHERE event_id = ?
+                """,
+                (now, now, pending["event_id"]),
+            )
+            self.record_v04_transition_conn(
+                conn, task_id, "submitted", "delivered", agent_id, message_id,
+                task["turn_sequence"], next_version, None, now,
+            )
+            self.record_v04_mutation_conn(conn, task_id, agent_id, "ack", key, task_id, message_id, payload, now)
+            return self.get_task_conn(conn, task_id)
+
+    def complete_v04_task(self, task_id: str, actor: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        return self.terminal_v04_task(task_id, actor, "completed", payload)
+
+    def fail_v04_task(self, task_id: str, actor: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        return self.terminal_v04_task(task_id, actor, "failed", payload)
+
+    def terminal_v04_task(
+        self, task_id: str, actor: str, terminal_status: str, payload: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        now = int(time.time())
+        key = str(payload["idempotency_key"])
+        operation = terminal_status
+        with self.connect() as conn:
+            existing = self.existing_v04_mutation_conn(conn, task_id, actor, operation, key, payload)
+            if existing:
+                return existing
+            self.expire_v04_tasks_conn(conn, now, task_id)
+            row = conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+            if not row:
+                return None
+            task = dict(row)
+            self.assert_v04_context(task, payload)
+            if terminal_status == "completed":
+                if actor != task["requester_agent_id"]:
+                    raise ConflictError("only requester may complete the task")
+                if task["status"] != "delivered" or task["from_agent_id"] != task["target_agent_id"]:
+                    raise ConflictError("completion requires a delivered target response")
+                evidence = payload["completed_against_message_id"]
+                if evidence != task["current_message_id"]:
+                    raise ConflictError("completion evidence must be the current target response")
+                reason = "goal_met"
+                completed_against = evidence
+            else:
+                reason = str(payload["reason"])
+                if reason not in FAILED_REASONS:
+                    raise ValueError(f"unsupported failed reason: {reason}")
+                relay_reasons = {"delivery_retry_exhausted", "relay_persistence_failed", "internal_consistency_error"}
+                if reason in relay_reasons:
+                    if actor != "relay":
+                        raise ConflictError(f"{reason} may only be recorded by Relay")
+                    if reason == "delivery_retry_exhausted" and task["status"] != "submitted":
+                        raise ConflictError("delivery_retry_exhausted requires submitted status")
+                elif reason == "listener_persistence_failed":
+                    if task["status"] != "submitted" or actor != task["to_agent_id"]:
+                        raise ConflictError("listener_persistence_failed requires current Listener in submitted")
+                elif reason == "agent_reported_failure":
+                    if task["status"] != "delivered" or actor != task["to_agent_id"]:
+                        raise ConflictError("agent_reported_failure requires current action owner in delivered")
+                elif reason == "max_turns_exhausted":
+                    if actor != task["requester_agent_id"] or task["status"] != "delivered" or int(task["turn_sequence"]) < int(task["max_turns"]):
+                        raise ConflictError("max_turns_exhausted requires requester at delivered max_turns")
+                completed_against = None
+            next_version = int(task["status_version"]) + 1
+            cursor = conn.execute(
+                """
+                UPDATE tasks SET status = ?, status_version = ?, reason = ?,
+                    terminal_by_agent_id = ?, completed_against_message_id = ?, updated_at = ?
+                WHERE task_id = ? AND status_version = ? AND status IN ('submitted', 'delivered')
+                """,
+                (terminal_status, next_version, reason, None if actor == "relay" else actor,
+                 completed_against, now, task_id, task["status_version"]),
+            )
+            if cursor.rowcount != 1:
+                raise ConflictError("stale_task_state")
+            self.record_v04_transition_conn(
+                conn, task_id, task["status"], terminal_status,
+                None if actor == "relay" else actor, task["current_message_id"],
+                task["turn_sequence"], next_version, reason, now,
+            )
+            self.record_v04_mutation_conn(conn, task_id, actor, operation, key, task_id, task["current_message_id"], payload, now)
             return self.get_task_conn(conn, task_id)
 
     def get_task_conn(self, conn: sqlite3.Connection, task_id: str) -> dict[str, Any] | None:
@@ -987,6 +1544,19 @@ class Store:
         task["artifacts"] = [decode_parts(row) for row in artifacts]
         task["threadBindings"] = [dict(row) for row in bindings]
         return task
+
+    def get_task_lineage(self, task_id: str) -> list[dict[str, Any]] | None:
+        now = int(time.time())
+        with self.connect() as conn:
+            self.expire_v04_tasks_conn(conn, now)
+            row = conn.execute("SELECT root_task_id FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+            if not row:
+                return None
+            rows = conn.execute(
+                "SELECT task_id FROM tasks WHERE root_task_id = ? ORDER BY created_at, task_id",
+                (row["root_task_id"],),
+            ).fetchall()
+            return [self.get_task_conn(conn, item["task_id"]) for item in rows]
 
     def get_events(self, task_id: str) -> list[dict[str, Any]] | None:
         now = int(time.time())
@@ -1989,6 +2559,11 @@ def required(payload: dict[str, Any], key: str) -> Any:
     if value is None:
         raise ValueError(f"missing required field: {key}")
     return value
+
+
+def request_fingerprint(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def read_alias(payload: dict[str, Any], snake_key: str, camel_key: str, default: Any = None) -> Any:

@@ -23,6 +23,14 @@ from server.protocol_v03 import (
     validate_task_close,
     validate_task_create,
 )
+from server.protocol_v04 import (
+    is_protocol_v04,
+    validate_ack as validate_v04_ack,
+    validate_complete as validate_v04_complete,
+    validate_fail as validate_v04_fail,
+    validate_message_submit as validate_v04_message_submit,
+    validate_task_create as validate_v04_task_create,
+)
 from server.protocol_registry import (
     CURRENT_PROTOCOL_SHORT,
     PROTOCOL_NAME,
@@ -30,7 +38,9 @@ from server.protocol_registry import (
     ensure_protocol_compatible,
     negotiation_error_detail,
     protocol_bundle,
+    protocol_bundle_v04,
     protocol_manifest,
+    protocol_manifest_v04,
     protocol_summary,
 )
 
@@ -53,7 +63,10 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         try:
             self.route_get()
         except ConflictError as exc:
-            self.respond_error(409, str(exc), error_type="conflict", code="CONFLICT")
+            self.respond_error(
+                409, str(exc), error_type="conflict", code=exc.code,
+                detail={"current_task": exc.current_task} if exc.current_task else None,
+            )
         except ProtocolNegotiationRequired as exc:
             self.respond_protocol_negotiation_required(exc)
         except ProtocolValidationError as exc:
@@ -68,7 +81,10 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         try:
             self.route_post()
         except ConflictError as exc:
-            self.respond_error(409, str(exc), error_type="conflict", code="CONFLICT")
+            self.respond_error(
+                409, str(exc), error_type="conflict", code=exc.code,
+                detail={"current_task": exc.current_task} if exc.current_task else None,
+            )
         except ProtocolNegotiationRequired as exc:
             self.respond_protocol_negotiation_required(exc)
         except ProtocolValidationError as exc:
@@ -98,6 +114,12 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         if path == f"/agentrelay/protocols/{PROTOCOL_NAME}/{CURRENT_PROTOCOL_SHORT}/bundle":
             self.respond_json(protocol_bundle(public_base_url()))
+            return
+        if path == f"/agentrelay/protocols/{PROTOCOL_NAME}/v0.4/manifest":
+            self.respond_json(protocol_manifest_v04(public_base_url()))
+            return
+        if path == f"/agentrelay/protocols/{PROTOCOL_NAME}/v0.4/bundle":
+            self.respond_json(protocol_bundle_v04(public_base_url()))
             return
         if path in {"/agentrelay/dashboard", "/agentrelay/dashboard/"}:
             self.serve_dashboard_asset("index.html")
@@ -154,6 +176,13 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 self.respond_error(404, "task not found")
                 return
             self.respond_protocol({"task": task})
+            return
+        if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/lineage", path):
+            tasks = self.store.get_task_lineage(match.group(1))
+            if tasks is None:
+                self.respond_error(404, "task not found")
+                return
+            self.respond_protocol({"tasks": tasks})
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/events", path):
             events = self.store.get_events(match.group(1))
@@ -305,10 +334,73 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             ensure_protocol_compatible(payload)
             if is_protocol_v03(payload):
                 validate_task_create(payload)
+            elif is_protocol_v04(payload):
+                validate_v04_task_create(payload)
             requester_agent_id = read_alias(payload, "requester_agent_id", "requesterAgentId", payload.get("from"))
             if not self.require_agent(auth, requester_agent_id):
                 return
             task = self.store.create_task(payload)
+            self.respond_protocol({"task": task}, status=201)
+            return
+        if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/messages", path):
+            validate_v04_message_submit(payload)
+            actor_agent_id = payload.get("actor_agent_id")
+            if not self.require_agent(auth, actor_agent_id):
+                return
+            task = self.store.submit_v04_message(match.group(1), actor_agent_id, payload)
+            if not task:
+                self.respond_error(404, "task not found")
+                return
+            self.respond_protocol({"task": task}, status=201)
+            return
+        if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/messages/([^/]+)/ack", path):
+            agent_id, message_id = match.groups()
+            validate_v04_ack(payload)
+            if not self.require_agent(auth, agent_id):
+                return
+            task = self.store.ack_v04_message(agent_id, message_id, payload)
+            if not task:
+                self.respond_error(404, "task not found")
+                return
+            self.respond_protocol({"task": task})
+            return
+        if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/complete", path):
+            validate_v04_complete(payload)
+            actor_agent_id = payload.get("actor_agent_id")
+            if not self.require_agent(auth, actor_agent_id):
+                return
+            task = self.store.complete_v04_task(match.group(1), actor_agent_id, payload)
+            if not task:
+                self.respond_error(404, "task not found")
+                return
+            self.respond_protocol({"task": task})
+            return
+        if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/fail", path):
+            validate_v04_fail(payload)
+            actor_agent_id = payload.get("actor_agent_id")
+            if not self.require_agent(auth, actor_agent_id):
+                return
+            task = self.store.fail_v04_task(match.group(1), actor_agent_id, payload)
+            if not task:
+                self.respond_error(404, "task not found")
+                return
+            self.respond_protocol({"task": task})
+            return
+        if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/followups", path):
+            source = self.store.get_task(match.group(1))
+            if not source:
+                self.respond_error(404, "task not found")
+                return
+            payload = {
+                **payload,
+                "protocol_version": "agent-collab-v0.4",
+                "requester_agent_id": source["requester_agent_id"],
+                "target_agent_id": source["target_agent_id"],
+            }
+            validate_v04_task_create(payload)
+            if not self.require_agent(auth, source["requester_agent_id"]):
+                return
+            task = self.store.create_task_v04(payload, source_task_id=source["task_id"])
             self.respond_protocol({"task": task}, status=201)
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/status", path):
@@ -630,7 +722,10 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 status=status,
             )
             return
-        self.respond_json({"error": message}, status=status)
+        body: dict[str, Any] = {"error": message, "code": code}
+        if detail is not None:
+            body["detail"] = detail
+        self.respond_json(body, status=status)
 
     def respond_protocol_error(self, exc: ProtocolValidationError) -> None:
         self.respond_error(

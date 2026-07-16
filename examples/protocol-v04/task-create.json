@@ -1,0 +1,11 @@
+{
+  "protocol_version": "agent-collab-v0.4",
+  "idempotency_key": "example-create-v04",
+  "requester_agent_id": "zac-agent",
+  "target_agent_id": "frank-agent",
+  "done_criteria": "Frank Agent returns a reviewed answer that Zac Agent accepts.",
+  "max_turns": 12,
+  "message": {
+    "parts": [{"kind": "text", "text": "Please review this proposal."}]
+  }
+}

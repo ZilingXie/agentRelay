@@ -1,8 +1,8 @@
 # Protocol v0.4 Task Lifecycle Design
 
-Status: design complete; implementation not started.
+Status: design complete; server implementation verified, MCP/Listener implementation pending.
 
-Status date: 2026-07-15.
+Status date: 2026-07-16.
 
 Protocol v0.3 remains the active contract until the server and MCP/Listener
 implementations pass the v0.4 conformance suite and advertise v0.4 support.

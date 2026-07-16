@@ -7,13 +7,14 @@ from pathlib import Path
 from typing import Any
 
 from server.protocol_v03 import PROTOCOL_V03
+from server.protocol_v04 import PROTOCOL_V04
 
 
 PROTOCOL_NAME = "agent-collab"
 CURRENT_PROTOCOL_VERSION = PROTOCOL_V03
 CURRENT_PROTOCOL_SEMVER = "0.3.0"
 CURRENT_PROTOCOL_SHORT = "v0.3"
-ACCEPTED_PROTOCOL_VERSIONS = [PROTOCOL_V03, "agent-collab-v0.2"]
+ACCEPTED_PROTOCOL_VERSIONS = [PROTOCOL_V04, PROTOCOL_V03, "agent-collab-v0.2"]
 DEPRECATED_PROTOCOL_VERSIONS = ["agent-collab-v0.2"]
 PATCHABLE_PROTOCOL_VERSIONS = ["agent-collab-v0.1"]
 REJECTED_PROTOCOL_VERSIONS = ["agent-collab-v0.1"]
@@ -27,6 +28,7 @@ PROTOCOL_FILES = [
     *sorted(SCHEMA_DIR.glob("*.schema.json")),
     DOCS_DIR / "protocol-v03.md",
     DOCS_DIR / "protocol-v03-conformance.md",
+    DOCS_DIR / "task-lifecycle-v04.md",
     *sorted(EXAMPLES_DIR.glob("*.json")),
 ]
 
@@ -122,6 +124,34 @@ def protocol_bundle(public_base_url: str | None = None) -> dict[str, Any]:
             "protocol-v03.md": read_text_if_exists(DOCS_DIR / "protocol-v03.md"),
             "protocol-v03-conformance.md": read_text_if_exists(DOCS_DIR / "protocol-v03-conformance.md"),
         },
+    }
+
+
+def protocol_manifest_v04(public_base_url: str | None = None) -> dict[str, Any]:
+    base = (public_base_url or "https://server.stellarix.space/agentrelay").rstrip("/")
+    manifest = protocol_manifest(base)
+    manifest.update(
+        {
+            "version": PROTOCOL_V04,
+            "semver": "0.4.0",
+            "status": "accepted_non_default",
+        }
+    )
+    manifest["urls"] = {
+        **manifest["urls"],
+        "manifest": f"{base}/api/protocols/{PROTOCOL_NAME}/v0.4/manifest",
+        "bundle": f"{base}/api/protocols/{PROTOCOL_NAME}/v0.4/bundle",
+        "docs": f"{base}/docs/task-lifecycle-v04.md",
+    }
+    return manifest
+
+
+def protocol_bundle_v04(public_base_url: str | None = None) -> dict[str, Any]:
+    return {
+        "manifest": protocol_manifest_v04(public_base_url),
+        "schemas": read_json_dir(SCHEMA_DIR, "*v04*.schema.json"),
+        "examples": read_json_dir(ROOT / "examples" / "protocol-v04", "*.json"),
+        "docs": {"task-lifecycle-v04.md": read_text_if_exists(DOCS_DIR / "task-lifecycle-v04.md")},
     }
 
 

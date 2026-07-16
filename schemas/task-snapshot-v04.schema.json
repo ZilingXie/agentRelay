@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/task-snapshot-v04.schema.json",
+  "title": "AgentRelay Protocol v0.4 Task Snapshot",
+  "type": "object",
+  "required": [
+    "task_id", "root_task_id", "protocol_version", "requester_agent_id", "target_agent_id",
+    "done_criteria", "status", "turn_sequence", "current_message_id", "from_agent_id",
+    "to_agent_id", "status_version", "max_turns", "task_expires_at", "created_at", "updated_at"
+  ],
+  "properties": {
+    "task_id": {"type": "string", "minLength": 1},
+    "root_task_id": {"type": "string", "minLength": 1},
+    "protocol_version": {"const": "agent-collab-v0.4"},
+    "requester_agent_id": {"type": "string", "minLength": 1},
+    "target_agent_id": {"type": "string", "minLength": 1},
+    "done_criteria": {"type": "string", "minLength": 1},
+    "status": {"enum": ["submitted", "delivered", "completed", "expired", "failed"]},
+    "turn_sequence": {"type": "integer", "minimum": 1},
+    "current_message_id": {"type": "string", "minLength": 1},
+    "from_agent_id": {"type": "string", "minLength": 1},
+    "to_agent_id": {"type": "string", "minLength": 1},
+    "status_version": {"type": "integer", "minimum": 1},
+    "max_turns": {"type": "integer", "minimum": 1},
+    "task_expires_at": {"type": "integer", "minimum": 1},
+    "reason": {"type": ["string", "null"]},
+    "terminal_by_agent_id": {"type": ["string", "null"]},
+    "completed_against_message_id": {"type": ["string", "null"]},
+    "created_at": {"type": "integer"},
+    "updated_at": {"type": "integer"}
+  }
+}
