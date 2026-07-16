@@ -4,7 +4,7 @@ Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/age
 
 Status date: 2026-07-16.
 
-Latest update: The Protocol v0.4 server implementation is complete on its task branch and passes the full server suite plus all 16 v0.4 conformance checks. Protocol v0.3 remains the default until the MCP/Listener implementation and live two-Agent E2E pass.
+Latest update: Protocol v0.4 is implemented across Relay and MCP/Listener. The full server/client suites, 16/16 conformance checks, and a production Zac-Agent/Frank-Agent create/ACK/response/ACK/complete/follow-up E2E passed. v0.4 is explicit non-default while capability advertisement remains incomplete.
 
 ## Purpose
 
@@ -76,7 +76,7 @@ Server-side workstreams:
 
 ## Protocol v0.4 Task Lifecycle Plan
 
-The design and server implementation are complete. The authoritative implementation contract is [`docs/task-lifecycle-v04.md`](docs/task-lifecycle-v04.md). MCP/Listener implementation and live two-Agent E2E remain pending, so v0.3 is still the default.
+The design, Relay, and MCP/Listener implementations are complete. The authoritative implementation contract is [`docs/task-lifecycle-v04.md`](docs/task-lifecycle-v04.md). A production two-Agent E2E passed; v0.3 remains the default only as a compatibility policy until participant capability advertisement supports automatic selection.
 
 Key decisions:
 
@@ -104,7 +104,14 @@ Implemented server behavior:
 - Add production-grade observability for event backlog, retry health, protocol negotiation frequency, install-loopback failures, and live service-agent traffic.
 - Define child-task/context continuation semantics for post-completion follow-up and revision workflows.
 - Plan a v0.2 deprecation window after enough clients advertise v0.3 capability.
-- Merge and deploy the verified Protocol v0.4 server compatibility implementation, then implement the MCP/Listener side; do not make v0.4 the default until end-to-end conformance passes.
+- Add trustworthy participant capability advertisement and negotiated automatic protocol selection; treat any default-version change as a separate rollout decision.
+
+## Protocol v0.4 Verification Record
+
+- Server implementation PR: `#42`; production metadata fixes: `#43` and `#44`.
+- Client implementation PR: `agent-relay-mcp#37`; follow-up workspace fix: `#38`; repeatable E2E runner: `#39` and `#40`.
+- Production root Task `task_255b7b51f9364697a6e599c45ea2d496` reached `completed` after both Listener ACK boundaries.
+- Follow-up Task `task_842009bd133a4a2bbe48ebde9af8e0e4` shared the root lineage and was explicitly terminated as `failed/agent_reported_failure` after verification.
 
 ## Validation Notes
 
