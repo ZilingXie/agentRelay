@@ -185,6 +185,15 @@ def format_event_message(event: dict[str, Any]) -> dict[str, Any]:
     for key in ("contextId", "status", "pendingOnAgentId", "updatedAt", "reason"):
         if key in payload:
             message[key] = payload[key]
+    for source_key, target_key in {
+        "message_id": "messageId",
+        "turn_sequence": "turnSequence",
+        "status_version": "statusVersion",
+        "from_agent_id": "fromAgentId",
+        "to_agent_id": "toAgentId",
+    }.items():
+        if source_key in payload:
+            message[target_key] = payload[source_key]
     return message
 
 
