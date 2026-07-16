@@ -134,10 +134,14 @@ def stale_acks_and_terminal_guards(store: Store) -> None:
     assert_conflict(lambda: store.ack_v04_message(B, task["current_message_id"], {**base, "turn_sequence": 2}))
     assert_conflict(lambda: store.ack_v04_message(B, task["current_message_id"], {**base, "expected_status_version": 2}))
     task = response_delivered(store, task, "stale")
+    requester_message = next(
+        item for item in task["messages"] if item["from_agent_id"] == A
+    )
+    assert requester_message["message_id"] != task["current_message_id"]
     assert_conflict(
         lambda: store.complete_v04_task(
             task["task_id"], A,
-            {**context(task, "wrong-evidence"), "completed_against_message_id": task["messages"][0]["message_id"]},
+            {**context(task, "wrong-evidence"), "completed_against_message_id": requester_message["message_id"]},
         )
     )
     terminal = store.complete_v04_task(
