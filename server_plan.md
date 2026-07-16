@@ -93,6 +93,7 @@ Implemented server behavior:
 - Additive v0.4 Task/Message/Event persistence, optimistic concurrency, idempotent mutation records, immutable Task expiry, and strict two-Agent alternation.
 - Current-message ACK semantics that alone transition `submitted` to `delivered`; informational status-event ACKs cannot recurse.
 - Completion, reason-specific failure authority, max-turn rejection, follow-up lineage query, and accepted-but-non-default protocol negotiation.
+- Store-level isolation rejects every legacy claim/status/thread/amend/artifact/delivery/close mutation against v0.4 Tasks; current-message delivery requires the versioned v0.4 Message ACK.
 - No Task deletion surface plus `ON DELETE RESTRICT` references and a SQLite `BEFORE DELETE` trigger covering raw SQL attempts.
 - Public v0.4 schemas/example/bundle and smoke/conformance runners; the full existing server suite remains green.
 
@@ -108,7 +109,7 @@ Implemented server behavior:
 
 ## Protocol v0.4 Verification Record
 
-- Server implementation PR: `#42`; production metadata fixes: `#43` and `#44`.
+- Server implementation PR: `#42`; production metadata fixes: `#43` and `#44`; deterministic conformance evidence: `#46`; legacy-mutation isolation and acceptance hardening: `#47`.
 - Client implementation PR: `agent-relay-mcp#37`; follow-up workspace fix: `#38`; repeatable E2E runner: `#39` and `#40`.
 - Production root Task `task_255b7b51f9364697a6e599c45ea2d496` reached `completed` after both Listener ACK boundaries.
 - Follow-up Task `task_842009bd133a4a2bbe48ebde9af8e0e4` shared the root lineage and was explicitly terminated as `failed/agent_reported_failure` after verification.
