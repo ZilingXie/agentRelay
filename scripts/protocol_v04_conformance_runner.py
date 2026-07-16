@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from server.store import ConflictError, Store
+from server.ws_app import format_event_message
 
 
 A = "zac-agent"
@@ -27,6 +28,7 @@ def main() -> None:
         failure_authority(store)
         lineage_and_concurrency(store)
         deletion_and_compatibility(store)
+        websocket_metadata()
     print("protocol v0.4 conformance passed (16/16)")
 
 
@@ -239,6 +241,29 @@ def deletion_and_compatibility(store: Store) -> None:
     )
     assert v03["protocol_version"] == "agent-collab-v0.3"
     assert store.get_task(v04["task_id"])["protocol_version"] == "agent-collab-v0.4"
+
+
+def websocket_metadata() -> None:
+    event = format_event_message({
+        "event_id": "aevt_v04",
+        "event_type": "task.message_pending",
+        "agent_id": B,
+        "task_id": "task_v04",
+        "created_at": 1,
+        "delivery_state": "pending",
+        "delivery_attempts": 0,
+        "payload": {
+            "message_id": "msg_v04",
+            "turn_sequence": 2,
+            "status_version": 7,
+            "from_agent_id": A,
+            "to_agent_id": B,
+            "parts": [{"kind": "text", "text": "must not enter WebSocket push"}],
+        },
+    })
+    assert event["eventType"] == "task.message_pending"
+    assert (event["messageId"], event["turnSequence"], event["statusVersion"]) == ("msg_v04", 2, 7)
+    assert "parts" not in event
 
 
 if __name__ == "__main__":
