@@ -2,9 +2,9 @@
 
 Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/agentRelay`.
 
-Status date: 2026-07-15.
+Status date: 2026-07-16.
 
-Latest update: The Protocol v0.4 Task lifecycle design is decision-complete, including transitions, fields, failure reasons, follow-up lineage, compatibility, conformance, and a protocol-level prohibition on hard-deleting Tasks. Implementation has not started.
+Latest update: The Protocol v0.4 server implementation is complete on its task branch and passes the full server suite plus all 16 v0.4 conformance checks. Protocol v0.3 remains the default until the MCP/Listener implementation and live two-Agent E2E pass.
 
 ## Purpose
 
@@ -76,7 +76,7 @@ Server-side workstreams:
 
 ## Protocol v0.4 Task Lifecycle Plan
 
-The design is complete and implementation has not started. The authoritative implementation contract is [`docs/task-lifecycle-v04.md`](docs/task-lifecycle-v04.md).
+The design and server implementation are complete. The authoritative implementation contract is [`docs/task-lifecycle-v04.md`](docs/task-lifecycle-v04.md). MCP/Listener implementation and live two-Agent E2E remain pending, so v0.3 is still the default.
 
 Key decisions:
 
@@ -88,6 +88,14 @@ Key decisions:
 - v0.4 forbids hard deletion of every Task at API, CLI, store, foreign-key, and database-trigger layers.
 - v0.3 Tasks continue under v0.3; v0.4 activates only after server and both participants advertise support and pass conformance.
 
+Implemented server behavior:
+
+- Additive v0.4 Task/Message/Event persistence, optimistic concurrency, idempotent mutation records, immutable Task expiry, and strict two-Agent alternation.
+- Current-message ACK semantics that alone transition `submitted` to `delivered`; informational status-event ACKs cannot recurse.
+- Completion, reason-specific failure authority, max-turn rejection, follow-up lineage query, and accepted-but-non-default protocol negotiation.
+- No Task deletion surface plus `ON DELETE RESTRICT` references and a SQLite `BEFORE DELETE` trigger covering raw SQL attempts.
+- Public v0.4 schemas/example/bundle and smoke/conformance runners; the full existing server suite remains green.
+
 ## Active Next Steps
 
 - Support the MCP Service Worker Kit with enough server/dashboard visibility to debug worker runs end to end.
@@ -96,7 +104,7 @@ Key decisions:
 - Add production-grade observability for event backlog, retry health, protocol negotiation frequency, install-loopback failures, and live service-agent traffic.
 - Define child-task/context continuation semantics for post-completion follow-up and revision workflows.
 - Plan a v0.2 deprecation window after enough clients advertise v0.3 capability.
-- Implement Protocol v0.4 in server-first and client-second PRs using `docs/task-lifecycle-v04.md`; do not enable v0.4 creation until end-to-end conformance passes.
+- Merge and deploy the verified Protocol v0.4 server compatibility implementation, then implement the MCP/Listener side; do not make v0.4 the default until end-to-end conformance passes.
 
 ## Validation Notes
 

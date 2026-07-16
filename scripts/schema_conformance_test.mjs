@@ -15,6 +15,32 @@ for (const fileName of readdirSync(schemaDir)) {
   ajv.addSchema(schema);
 }
 
+validate("task-create-v04.schema.json", {
+  protocol_version: "agent-collab-v0.4",
+  idempotency_key: "schema-v04-create",
+  requester_agent_id: "agent-a",
+  target_agent_id: "agent-b",
+  done_criteria: "Agent B returns an accepted response.",
+  max_turns: 4,
+  message: { parts: [{ kind: "text", text: "Please respond." }] }
+});
+
+rejects("task-create-v04.schema.json", {
+  protocol_version: "agent-collab-v0.4",
+  idempotency_key: "schema-v04-invalid",
+  requester_agent_id: "agent-a",
+  target_agent_id: "agent-b",
+  done_criteria: "Missing message"
+});
+
+validate("task-mutation-v04.schema.json", {
+  current_message_id: "msg_1",
+  turn_sequence: 1,
+  expected_status_version: 2,
+  idempotency_key: "schema-v04-mutation",
+  actor_agent_id: "agent-b"
+});
+
 validate("task-create.schema.json", {
   protocol_version: "agent-collab-v0.3",
   idempotency_key: "schema-create-1",

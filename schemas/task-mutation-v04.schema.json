@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/task-mutation-v04.schema.json",
+  "title": "AgentRelay Protocol v0.4 Mutation Context",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["current_message_id", "turn_sequence", "expected_status_version", "idempotency_key"],
+  "properties": {
+    "current_message_id": {"type": "string", "minLength": 1},
+    "message_id": {"type": "string", "minLength": 1},
+    "turn_sequence": {"type": "integer", "minimum": 1},
+    "expected_status_version": {"type": "integer", "minimum": 1},
+    "idempotency_key": {"type": "string", "minLength": 1},
+    "actor_agent_id": {"type": "string", "minLength": 1},
+    "completed_against_message_id": {"type": "string", "minLength": 1},
+    "reason": {
+      "enum": [
+        "delivery_retry_exhausted",
+        "listener_persistence_failed",
+        "relay_persistence_failed",
+        "agent_reported_failure",
+        "max_turns_exhausted",
+        "internal_consistency_error"
+      ]
+    }
+  }
+}
