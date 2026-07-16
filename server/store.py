@@ -85,6 +85,11 @@ class ConflictError(Exception):
         self.current_task = current_task
 
 
+def assert_legacy_mutation_allowed(task: dict[str, Any], operation: str) -> None:
+    if task.get("protocol_version") == PROTOCOL_V04:
+        raise ConflictError(f"{operation} is not available for Protocol v0.4 tasks")
+
+
 class Store:
     def __init__(self, db_path: str):
         self.db_path = Path(db_path)
@@ -1599,6 +1604,7 @@ class Store:
                 f"""
                 SELECT * FROM tasks
                 WHERE pending_on_agent_id = ?
+                  AND protocol_version != ?
                   AND (
                     status IN ({claimable_placeholders})
                     OR (status = 'claimed' AND claimed_by = ?)
@@ -1611,7 +1617,7 @@ class Store:
                 ORDER BY updated_at, created_at, task_id
                 LIMIT ?
                 """,
-                (agent_id, *sorted(CLAIMABLE_STATES), agent_id, agent_id, limit),
+                (agent_id, PROTOCOL_V04, *sorted(CLAIMABLE_STATES), agent_id, agent_id, limit),
             ).fetchall()
             return [summarize_task(row) for row in rows]
 
@@ -1625,6 +1631,7 @@ class Store:
                 f"""
                 SELECT task_id FROM tasks
                 WHERE pending_on_agent_id = ?
+                  AND protocol_version != ?
                   AND status IN ({claimable_placeholders})
                   AND (claimed_by IS NULL OR claimed_by = ?)
                   AND (
@@ -1634,7 +1641,7 @@ class Store:
                 ORDER BY created_at
                 LIMIT 1
                 """,
-                (agent_id, *sorted(CLAIMABLE_STATES), agent_id),
+                (agent_id, PROTOCOL_V04, *sorted(CLAIMABLE_STATES), agent_id),
             ).fetchone()
             if not row:
                 return None
@@ -1665,6 +1672,7 @@ class Store:
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
+            assert_legacy_mutation_allowed(task, "claim")
             try:
                 assert_claim_allowed(task, agent_id)
             except TransitionError as exc:
@@ -1698,6 +1706,7 @@ class Store:
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
+            assert_legacy_mutation_allowed(task, "thread binding mutation")
             allowed_agents = {
                 task.get("requester_agent_id"),
                 task.get("target_agent_id"),
@@ -1739,6 +1748,7 @@ class Store:
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
+            assert_legacy_mutation_allowed(task, "status mutation")
             assert_update_status_allowed(task, status, payload)
             terminal_reason = payload.get("terminalReason")
             next_action = payload.get("nextAction")
@@ -1809,6 +1819,7 @@ class Store:
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
+            assert_legacy_mutation_allowed(task, "goal amendment")
             if task.get("status") in TERMINAL_STATES:
                 raise ConflictError(f"cannot amend terminal task: {task.get('status')}")
             if actor_agent_id != task.get("requester_agent_id"):
@@ -1921,6 +1932,7 @@ class Store:
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
+            assert_legacy_mutation_allowed(task, "artifact submission")
             if response_to_goal_version is None:
                 response_to_goal_version = int(task.get("goal_version") or 1)
             if not to_agent:
@@ -2050,6 +2062,7 @@ class Store:
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
+            assert_legacy_mutation_allowed(task, "delivery mutation")
             assert_delivery_allowed(task, delivered_by_agent_id, thread_id)
             if delivery_status == "delivered":
                 next_status = payload.get("nextStatus") or "waiting_human"
@@ -2135,6 +2148,7 @@ class Store:
             task = self.get_task_conn(conn, task_id)
             if not task:
                 return None
+            assert_legacy_mutation_allowed(task, "legacy completion")
             if closed_against_goal_version is None:
                 closed_against_goal_version = int(task.get("goal_version") or 1)
             assert_close_allowed(task, payload)
@@ -2419,6 +2433,11 @@ class Store:
                 return None
             if expected_task_id and expected_task_id != row["task_id"]:
                 raise ValueError("taskId does not match event")
+            task = self.get_task_conn(conn, row["task_id"])
+            if task and task.get("protocol_version") == PROTOCOL_V04 and row["can_transition_task"]:
+                raise ConflictError(
+                    "Protocol v0.4 current-message delivery requires the versioned Message ACK operation"
+                )
             if row["acked_at"] is None and delivery_state == "done":
                 conn.execute(
                     """
