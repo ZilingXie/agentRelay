@@ -110,9 +110,10 @@ Implemented server behavior:
 
 ## Protocol v0.5 Two-Layer Lifecycle Plan
 
-Status: core design confirmed; specification review in progress; implementation
-not started. No v0.5 code work starts until the Server, Client, and public
-planning updates are merged and published. The authoritative design is
+Status: design complete and independently reviewed; implementation not started.
+No v0.5 code work starts until the Server, Client, and public planning updates
+are merged and published and the Hermes baseline gate is complete. The
+authoritative design is
 [`docs/task-lifecycle-v05.md`](docs/task-lifecycle-v05.md).
 
 The v0.5 direction is a direct maintenance-window upgrade:
@@ -153,7 +154,8 @@ Implementation order:
 
 1. Merge and publish Server, Client, and public v0.5 planning updates while
    preserving v0.4 as completed.
-2. Locate and record the deployed Hermes dispatcher runtime and owner.
+2. Preserve the identified Hermes dirty baseline and reconcile its unit path as
+   part of Task 0.
 3. Implement Server protocol/schema/Store/scheduler/API/archive/conformance.
 4. Implement MCP/Listener tools, durable ACK, workspace v2, and Inbox UI.
 5. Upgrade dashboard and dispatcher to the visibility contract.
@@ -187,10 +189,10 @@ Project Hermes implementation workstream:
 
 - Complete and publish Task 0 planning updates for Protocol v0.5 without
   replacing any v0.4 contract or evidence.
-- Break the approved v0.5 design into separate Server, Client, UI, dispatcher,
-  and maintenance implementation plans and PRs.
-- Locate the deployed Hermes Listener and dispatcher ownership/runtime details,
-  then execute the dedicated Hermes v0.5 workstream before cutover.
+- Review and publish the complete v0.5 Server, Client, UI, dispatcher, and
+  maintenance implementation plan before code begins.
+- Preserve the identified Hermes production baseline, then execute the
+  dedicated Hermes v0.5 workstream before cutover.
 - Support the MCP Service Worker Kit with enough server/dashboard visibility to debug worker runs end to end.
 - Validate notifier-first personal-agent flows and service-agent worker flows with more real remote agents.
 - Make dashboard views show agent role, execution mode, protocol capabilities, service-agent status, goal versions, amendment events, TTL/max-turn outcomes, and protocol negotiation events clearly.

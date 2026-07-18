@@ -1,7 +1,7 @@
 # Protocol v0.5 Two-Layer Task And Message Delivery Design
 
-Status: core design confirmed; specification review in progress; implementation
-not started.
+Status: design complete; independent specification review approved;
+implementation not started.
 
 Status date: 2026-07-19.
 
@@ -128,6 +128,7 @@ Allowed transitions:
 
 ```text
 queued -> inflight
+queued -> exhausted
 inflight -> acked
 inflight -> retry_wait
 retry_wait -> inflight
@@ -135,6 +136,14 @@ retry_wait -> acked
 inflight -> exhausted
 retry_wait -> exhausted
 ```
+
+`queued/inflight/retry_wait -> exhausted` has two meanings distinguished by
+`exhaustion_reason`: delivery exhaustion (`delivery_retry_exhausted` or
+`listener_persistence_failed`) and terminal cancellation (`task_expired` or
+`task_failed`). Terminal cancellation does not invent a transport failure:
+`last_error` remains the last real delivery error, or null when no attempt ran.
+The Task terminal `reason` and immutable audit Event remain authoritative for
+why collaboration ended.
 
 Only a `message.pending` Event for the current Message may set
 `can_transition_message=1`. Status, delivery-change, attempt-failure,
@@ -233,6 +242,8 @@ message_id
 event_id
 turn_sequence
 expected_task_version
+listener_instance_id
+readiness_epoch
 reason = listener_persistence_failed
 idempotency_key
 ```
@@ -310,6 +321,7 @@ inflight_until
 next_retry_at
 acked_at
 exhausted_at
+exhaustion_reason
 last_error
 can_transition_message
 created_at
@@ -352,12 +364,16 @@ task_id
 message_id
 turn_sequence
 expected_task_version
+listener_instance_id
+readiness_epoch
 idempotency_key
 ```
 
 Relay verifies Task protocol, open status, current Message, turn, aggregate
 version, Message ownership/direction, pending delivery, target Listener, and a
-non-exhausted transitionable pending Event.
+non-exhausted transitionable pending Event. The Listener instance and readiness
+epoch must match the current registered process; WS hello and HTTP recovery use
+the same fencing pair. A replaced process cannot claim or ACK new delivery.
 
 A successful ACK atomically:
 
@@ -387,6 +403,10 @@ AgentEvent -> exhausted
 Message.pending -> failed
 Task.open -> failed
 ```
+
+Delivery retry exhaustion sets `exhaustion_reason=delivery_retry_exhausted`;
+immediate persistence NACK sets
+`exhaustion_reason=listener_persistence_failed`.
 
 It records matching stable reason, terminal, attempt, and notification Events.
 No committed state may contain an exhausted current pending Event with an open
@@ -439,6 +459,11 @@ For Relay/internal failure, the Message uses the matching reason. If the
 current Message is already delivered, its delivery state remains delivered and
 its pending Event must already be acked. This invariant also applies to expiry
 and maintenance termination.
+
+When a non-delivery terminal transition cancels a pending Event, Relay allows
+`queued/inflight/retry_wait -> exhausted`, sets `exhaustion_reason` to
+`task_failed` or `task_expired`, and leaves `last_error` unchanged. It appends a
+terminal audit Event rather than a synthetic delivery-attempt failure.
 
 Task expiry wins through a conditional transaction. If expiry occurs while the
 current Message is pending, Relay also marks the Message failed with
@@ -546,6 +571,15 @@ Workspace v2 stores Task lifecycle and per-Message delivery separately. Legacy
 v0.3/v0.4 workspaces remain read-only. Inbox UI shows separate Task and delivery
 badges, filters, attempt details, and action guards based on visibility.
 
+Authenticated `GET /agentrelay/api/tasks/{task_id}` remains the full active
+v0.5 content endpoint. It returns the Task snapshot and every immutable Message,
+including complete parts. Messages are ordered by `turn_sequence`, with the
+requester-to-target Message before the target-to-requester Message within a
+turn; `message_id` is the final deterministic tie-breaker used only when
+reporting an invariant violation. The response conforms to
+`task-detail-v05.schema.json`. Visibility does not replace this endpoint and
+never carries the full conversation history.
+
 ## 15. Dashboard And Dispatcher Contract
 
 Dashboard shows separate Task, Message delivery, and outbox statistics and
@@ -652,8 +686,10 @@ cutover instead of active-Task continuation.
 
 Before maintenance, Task 0 updates and publishes Server, Client, and public
 plans. v0.4 remains a completed historical baseline; v0.5 is recorded as the
-implementation target. No implementation begins before those plan updates are
-merged and published.
+implementation target. Task 0 also secret-scans, reviews, and obtains user
+approval for the deployed Hermes dirty baseline, preserves it on a recoverable
+branch/commit, and reconciles the tracked worker-unit path. No v0.5 code begins
+until all plan updates are published and that Hermes baseline gate is complete.
 
 During maintenance:
 
@@ -665,16 +701,20 @@ During maintenance:
 4. Verify the backup and retirement report, then mount the entire legacy
    database as a read-only archive. Do not rewrite legacy lifecycle fields.
 5. Create a new v0.5 database from the canonical v0.5 schema and seed only the
-   validated Agent identity, authorization, capability, and readiness registry
-   required to authenticate upgraded participants. Do not copy legacy Task,
-   Message, Event, artifact, lineage, idempotency, or scheduler rows into it.
-6. Deploy Server, MCP/Listener, workspace, Inbox UI, dashboard, and the located
+   validated Agent identity, authorization, enabled flag, and capability
+   registry required to authenticate upgraded participants. Initialize the
+   readiness table empty; only a started v0.5 Listener registration creates its
+   first instance and epoch. Do not copy legacy readiness, Task, Message, Event,
+   artifact, lineage, idempotency, or scheduler rows into it.
+6. Deploy Server, MCP/Listener, workspace, Inbox UI, dashboard, and the identified
    dispatcher runtime at v0.5.
 7. Validate every enabled Agent against the capability/readiness gate; disable
    unsupported or stale Agents before opening writes.
 8. Verify health, manifest, visibility, no-legacy-task invariants, legacy
-   archive reads, 410 retirement behavior, and real two-Agent E2E.
-9. Open v0.5 writes only after every gate passes.
+   archive reads, 410 retirement behavior, empty readiness initialization, and
+   the complete E2E against a separate rehearsal database.
+9. Open production v0.5 writes only after every gate passes; the first
+   production two-Agent E2E then crosses the forward-fix rollback boundary.
 
 Legacy reads return the original v0.3/v0.4 snapshot plus archive metadata and
 may join the retirement report; they do not synthesize a v0.5 status. Every
@@ -693,10 +733,15 @@ state.
 
 ## 18. Rollback Boundary
 
-Before v0.5 writes open, rollback restores the verified database backup and old
-Server/Listener/dispatcher versions. After v0.5 writes open, rollback to the old
-database would lose new Tasks and is forbidden without a new maintenance
-window, explicit v0.5 export, and human approval. Forward-fix is the default.
+Before the first successfully committed production v0.5 collaboration mutation,
+rollback restores the verified database backup and old Server/Listener/
+dispatcher versions. Readiness/registry preflight writes do not cross this
+boundary. If mutation mode is already `v05` but collaboration tables are proven
+empty, operators may close mutation mode and roll back. After the first Task,
+Message, ACK/NACK, terminal, or follow-up mutation commits, restoring the old
+database would lose production collaboration state and is forbidden without a
+new maintenance window, explicit v0.5 export, and human approval. Forward-fix
+is the default.
 
 ## 19. Hard Delete And Security
 
@@ -719,7 +764,9 @@ At minimum, conformance must prove:
 6. Duplicate Message and ACK mutations are idempotent.
 7. Old Message, turn, and task-version ACKs are rejected.
 8. Informational Event ACK cannot mutate Task or Message.
-9. Attempts occur at immediate, +1m, +5m, and +10m boundaries.
+9. Every retry satisfies `next_retry_at = failed_at + [60, 300, 600]`; fake
+   clocks separately prove the immediate-failure and 60-second ACK-lease
+   timelines.
 10. Scheduler does not claim before `next_retry_at`.
 11. Lease expiry and ACK races have one atomic winner.
 12. Attempt four failure atomically exhausts Event and fails Message and Task.
@@ -754,6 +801,14 @@ At minimum, conformance must prove:
     seconds, expires at 300 seconds, and rejects stale readiness epochs.
 32. Attempt failures persist only stable `last_error` values; sanitized detail
     is audit-only and consumers never parse it for state.
+33. Expiry and Relay failure can exhaust a never-claimed queued Event without
+    creating a delivery error; `exhaustion_reason` and Task audit remain exact.
+34. Full v0.5 Task fetch returns complete ordered Message parts, and Listener
+    persists/verifies that response before ACK.
+35. Legacy readiness never crosses databases; v0.5 registration starts a new
+    epoch, stale WS hello is rejected, old sockets leave the delivery route,
+    and old instances cannot heartbeat, recover, NACK, or ACK. A two-process
+    replacement race proves only the current epoch receives coordinator sends.
 
 ## 21. Implementation Ownership And Order
 
@@ -763,8 +818,7 @@ The detailed component, verification, and maintenance sequence is
 [`protocol-v05-rollout-plan.md`](protocol-v05-rollout-plan.md).
 
 ```text
-Task 0 Server/Client/public plan updates
--> preserve and reconcile the deployed Hermes baseline
+Task 0 Server/Client/public plan updates plus recoverable Hermes baseline
 -> Server v0.5 protocol, schema, Store, scheduler, API, archive, dashboard
 -> MCP/Listener v0.5 tools, ACK, workspace, Inbox UI
 -> dispatcher integration
