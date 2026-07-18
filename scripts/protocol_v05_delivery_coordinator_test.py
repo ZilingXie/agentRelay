@@ -86,6 +86,8 @@ def offline_exhaustion(path: Path) -> None:
         assert visibility["outbox"]["outbox_attempts"] == expected_attempt
     visibility = store.visibility(task["task"]["task_id"], now=BASE + 960)
     assert visibility["diagnosis"] == "task_failed_delivery"
+    summary = store.admin_summary(now=BASE + 960)
+    assert {item["code"] for item in summary["alerts"]} >= {"exhausted_outbox"}
 
 
 def socket_delivery_and_lease(path: Path) -> None:
@@ -219,6 +221,9 @@ def informational_event_exhaustion(path: Path) -> None:
     assert after["task"]["status"] == "open"
     assert after["task"]["task_version"] == detail["task"]["task_version"]
     assert after["messages"][0]["delivery_status"] == "pending"
+    summary = store.admin_summary(now=attempt_time)
+    assert summary["outbox"]["exhausted"] == 1
+    assert "exhausted_outbox" not in {item["code"] for item in summary["alerts"]}
 
 
 if __name__ == "__main__":

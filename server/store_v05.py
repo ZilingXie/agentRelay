@@ -826,6 +826,12 @@ class V05Store:
                 """,
                 (timestamp, timestamp),
             ).fetchone()[0]
+            exhausted_transitionable_events = conn.execute(
+                """
+                SELECT COUNT(*) FROM agent_events
+                WHERE outbox_status = 'exhausted' AND can_transition_message = 1
+                """
+            ).fetchone()[0]
             agents = conn.execute("SELECT COUNT(*) FROM agents").fetchone()[0]
 
         invariant_violations = 0
@@ -840,7 +846,7 @@ class V05Store:
         for code, count in (
             ("invariant_violation", invariant_violations),
             ("due_work_lag", int(due_events)),
-            ("exhausted_outbox", outbox_status.get("exhausted", 0)),
+            ("exhausted_outbox", int(exhausted_transitionable_events)),
             ("stale_enabled_agent", int(stale_readiness)),
         ):
             if count:
