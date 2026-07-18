@@ -1,7 +1,7 @@
 # Protocol v0.5 Cross-Component Rollout Plan
 
-Status: complete implementation plan; independent specification review
-approved; code not started.
+Status: core implementation in progress; independent specification review
+approved. Project Hermes is deferred to a separate pre-production workstream.
 
 Status date: 2026-07-19.
 
@@ -50,24 +50,23 @@ The deployed Listener and dispatcher hashes match that dirty source, while the
 tracked worker unit contains an obsolete runtime path. These files are
 pre-existing production state, not disposable changes.
 
-## 3. Task 0: Plan And Baseline Gate
+## 3. Task 0: Core Implementation Gate
 
-No v0.5 implementation starts until this gate is complete.
+Core v0.5 implementation starts after the planning publication gate. Hermes
+baseline preservation remains mandatory before production cutover, but does not
+block Server/Client implementation or rehearsal with production mutations
+closed.
 
 1. Merge Server planning changes while preserving all v0.4 files.
 2. Merge Client planning changes while preserving v0.4 tools/tests/workspaces.
 3. Add the v0.5 section to the canonical public plan and publish it; mark v0.4
    as completed baseline and v0.5 as planned, not implemented.
-4. On tx-server, snapshot deployed Hermes script/unit hashes and current service
-   states without reading or copying secrets/runtime payloads.
-5. In `heremes-deploy`, run `scripts/check-no-secrets.sh`, review the existing
-   diff, and obtain user approval before preserving it on a task branch/commit.
-6. Reconcile the tracked worker unit and README to the verified production path.
-7. Record exact deploy, restart, health-check, dry-run, and rollback commands.
+4. Keep production mutation mode closed throughout core implementation and
+   rehearsal; do not deploy or modify Hermes in this workstream.
 
-Exit evidence: three plan PRs/updates are published; Server and Client branches
-are clean; the Hermes baseline is recoverable from Git; public pages return 200
-and show v0.4 completed plus v0.5 planned.
+Exit evidence: Server, Client, and public plan updates are published; Server and
+Client implementation branches start clean; public pages return 200 and show
+v0.4 completed plus v0.5 planned.
 
 ## 4. Server Protocol And Public Schemas
 
@@ -101,7 +100,7 @@ v0.5 as accepted but not writable until the maintenance switch.
 Primary files:
 
 ```text
-server/store.py
+server/store_v05.py
 scripts/export_protocol_retirement.py
 scripts/init_v05_database.py
 scripts/verify_v05_cutover.py
@@ -142,7 +141,7 @@ registry-only import, hard-delete rejection, and backup/restore rehearsal pass.
 Primary files:
 
 ```text
-server/store.py
+server/store_v05.py
 server/ws_app.py
 server/delivery_coordinator.py
 server/app.py
@@ -402,18 +401,18 @@ systemd unit verification, dry-run snapshot, and exact-runtime regressions pass.
 
 Merge and deploy in this order:
 
-1. Task 0 Server/Client/public plan updates plus secret-scanned, user-approved
-   Hermes baseline branch/commit and worker-unit path reconciliation.
+1. Task 0 Server/Client/public plan updates.
 2. Server schemas/storage/state machine/readiness/visibility behind closed writes.
 3. Server dashboard and cutover tooling.
 4. Client MCP/Listener/workspace v2/Inbox UI.
-5. Hermes Listener/dispatcher v0.5 upgrade from the preserved baseline.
-6. Cross-repository conformance and maintenance rehearsal.
-7. Production maintenance cutover and E2E.
+5. Core cross-repository conformance and rehearsal with production mutations closed.
+6. Preserve the user-approved Hermes baseline and upgrade its Listener/dispatcher.
+7. Full maintenance rehearsal including Hermes.
+8. Production maintenance cutover and E2E.
 
-Server and Client use separate PRs. Hermes uses its own repository PR after the
-dirty baseline is preserved. Each PR records its dependency and does not enable
-production writes by itself.
+Server and Client use separate PRs. Hermes remains a later independent repository
+PR after its dirty baseline is preserved. Each PR records its dependency and
+does not enable production writes by itself.
 
 The full acceptance set is the lifecycle contract's conformance list plus:
 

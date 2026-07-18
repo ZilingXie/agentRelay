@@ -1,0 +1,5 @@
+{
+  "idempotency_key": "v05-event-ack-example",
+  "listener_instance_id": "listener_instance_example",
+  "readiness_epoch": 1
+}

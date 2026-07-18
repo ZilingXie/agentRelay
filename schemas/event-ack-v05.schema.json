@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/event-ack-v05.schema.json",
+  "title": "AgentRelay Protocol v0.5 Informational Event ACK",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["idempotency_key", "listener_instance_id", "readiness_epoch"],
+  "properties": {
+    "idempotency_key": {"type": "string", "minLength": 1},
+    "listener_instance_id": {"type": "string", "minLength": 1},
+    "readiness_epoch": {"type": "integer", "minimum": 1}
+  }
+}

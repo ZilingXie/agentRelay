@@ -1,0 +1,10 @@
+{
+  "task_id": "task_example",
+  "event_id": "evt_example",
+  "message_id": "msg_example",
+  "turn_sequence": 1,
+  "expected_task_version": 1,
+  "idempotency_key": "v05-ack-example",
+  "listener_instance_id": "listener_instance_example",
+  "readiness_epoch": 1
+}

@@ -29,6 +29,8 @@ WorkingDirectory=/home/ubuntu/agentRelay
 AGENTRELAY_HOST=127.0.0.1
 AGENTRELAY_PORT=8787
 AGENTRELAY_DB_PATH=/home/ubuntu/agentRelay/data/agentrelay.sqlite3
+AGENTRELAY_V05_DB_PATH=/home/ubuntu/agentRelay/data/agentrelay-v05.sqlite3
+AGENTRELAY_MUTATION_MODE=legacy
 AGENTRELAY_AUTH_FILE=/home/ubuntu/agentRelay/data/agentrelay-auth.json
 ```
 
@@ -83,8 +85,20 @@ WorkingDirectory=/home/ubuntu/agentRelay
 AGENTRELAY_WS_HOST=127.0.0.1
 AGENTRELAY_WS_PORT=8788
 AGENTRELAY_DB_PATH=/home/ubuntu/agentRelay/data/agentrelay.sqlite3
+AGENTRELAY_V05_DB_PATH=/home/ubuntu/agentRelay/data/agentrelay-v05.sqlite3
+AGENTRELAY_MUTATION_MODE=legacy
 AGENTRELAY_AUTH_FILE=/home/ubuntu/agentRelay/data/agentrelay-auth.json
 ```
+
+Protocol v0.5 WebSocket connections additionally carry
+`listener_instance_id` and `readiness_epoch` query parameters. In `closed` or
+`v05` mode the sidecar runs the persisted due-Event coordinator; an offline
+Listener consumes the fixed attempt schedule instead of leaving Events queued.
+
+Changing `AGENTRELAY_MUTATION_MODE` is a maintenance-runbook action, not a
+dashboard control. Keep `legacy` until core implementation and Client rehearsal
+are complete, use `closed` for preflight, and switch to `v05` only after every
+enabled Listener passes capability/readiness admission.
 
 Public WSS endpoint:
 

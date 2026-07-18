@@ -9,6 +9,8 @@ services:
       AGENTRELAY_HOST: "0.0.0.0"
       AGENTRELAY_PORT: "8787"
       AGENTRELAY_DB_PATH: "/app/data/agentrelay.sqlite3"
+      AGENTRELAY_V05_DB_PATH: "/app/data/agentrelay-v05.sqlite3"
+      AGENTRELAY_MUTATION_MODE: "${AGENTRELAY_MUTATION_MODE:-legacy}"
       AGENTRELAY_AUTH_FILE: "/app/data/agentrelay-auth.json"
       AGENTRELAY_ADMIN_TOKEN: "${AGENTRELAY_ADMIN_TOKEN:-}"
     ports:
@@ -30,9 +32,12 @@ services:
       AGENTRELAY_WS_HOST: "0.0.0.0"
       AGENTRELAY_WS_PORT: "8788"
       AGENTRELAY_DB_PATH: "/app/data/agentrelay.sqlite3"
+      AGENTRELAY_V05_DB_PATH: "/app/data/agentrelay-v05.sqlite3"
+      AGENTRELAY_MUTATION_MODE: "${AGENTRELAY_MUTATION_MODE:-legacy}"
       AGENTRELAY_AUTH_FILE: "/app/data/agentrelay-auth.json"
       AGENTRELAY_WS_POLL_SECONDS: "2"
       AGENTRELAY_WS_HEARTBEAT_SECONDS: "30"
+      AGENTRELAY_V05_COORDINATOR_POLL_SECONDS: "1"
     ports:
       - "${AGENTRELAY_WS_BIND:-127.0.0.1:8788}:8788"
     volumes:
