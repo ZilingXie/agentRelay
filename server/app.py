@@ -347,6 +347,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_protocol(agent_events_response(events))
             return
         if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/claim", path):
+            if not self.require_legacy_writes():
+                return
             agent_id = match.group(1)
             if not self.require_agent(auth, agent_id):
                 return
@@ -528,6 +530,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_json(result)
             return
         if path == "/agentrelay/healthchecks/install":
+            if not self.require_legacy_writes():
+                return
             requester_agent_id = auth.get("agent_id")
             if not requester_agent_id:
                 self.respond_error(
@@ -764,6 +768,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_protocol({"task": task}, status=201)
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/status", path):
+            if not self.require_legacy_writes():
+                return
             status = payload.get("status")
             if not status:
                 raise ValueError("missing required field: status")
@@ -774,6 +780,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_protocol({"task": task})
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/artifacts", path):
+            if not self.require_legacy_writes():
+                return
             ensure_protocol_compatible(payload)
             if is_protocol_v03(payload):
                 validate_artifact_submit(payload)
@@ -792,6 +800,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_protocol({"task": task}, status=201)
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/amend", path):
+            if not self.require_legacy_writes():
+                return
             ensure_protocol_compatible(payload)
             if is_protocol_v03(payload):
                 validate_task_amend(payload)
@@ -805,6 +815,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_protocol({"task": task})
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/close", path):
+            if not self.require_legacy_writes():
+                return
             ensure_protocol_compatible(payload)
             if is_protocol_v03(payload):
                 validate_task_close(payload)
@@ -819,6 +831,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_protocol({"task": task})
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/deliveries", path):
+            if not self.require_legacy_writes():
+                return
             if not self.require_agent(auth, payload.get("deliveredByAgentId")):
                 return
             task = self.store.mark_delivery(match.group(1), payload)
@@ -828,6 +842,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_protocol({"task": task})
             return
         if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/tasks/([^/]+)/claim", path):
+            if not self.require_legacy_writes():
+                return
             agent_id, task_id = match.groups()
             if not self.require_agent(auth, agent_id):
                 return
@@ -886,6 +902,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_protocol({"event": event, "threadBinding": binding})
             return
         if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/tasks/([^/]+)/thread", path):
+            if not self.require_legacy_writes():
+                return
             agent_id, task_id = match.groups()
             if not self.require_agent(auth, agent_id):
                 return
@@ -1021,6 +1039,15 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             )
             return None
         return store
+
+    def require_legacy_writes(self) -> bool:
+        if self.mutation_mode == "v05":
+            self.reject_retired_protocol_mutation()
+            return False
+        if self.mutation_mode == "closed":
+            self.require_v05_writes()
+            return False
+        return True
 
     def reject_retired_protocol_mutation(self) -> None:
         self.respond_error(

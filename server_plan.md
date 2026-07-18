@@ -110,8 +110,9 @@ Implemented server behavior:
 
 ## Protocol v0.5 Two-Layer Lifecycle Plan
 
-Status: core implementation started on 2026-07-19. Project Hermes is deferred
-to a separate pre-production workstream. Production mutations remain closed
+Status: core implementation completed on the Protocol v0.5 task branch on
+2026-07-19 and is pending PR merge. Project Hermes is deferred to a separate
+pre-production workstream. Production mutations remain closed
 until Hermes and every enabled Listener pass the full cutover gate. The
 authoritative design is
 [`docs/task-lifecycle-v05.md`](docs/task-lifecycle-v05.md).
@@ -186,11 +187,10 @@ Project Hermes implementation workstream:
 
 ## Active Next Steps
 
-- Implement the Server v0.5 protocol, native storage, delivery coordinator,
-  APIs, visibility, readiness, dashboard, and cutover tooling behind closed
-  production writes.
-- Implement the Client v0.5 MCP/Listener, workspace v2, and Inbox UI after the
-  Server contract is stable.
+- Review and merge the Server and Client v0.5 PRs in dependency order while
+  keeping production mutations closed.
+- Run the maintenance rehearsal and enabled-Agent readiness preflight after the
+  exact deployment artifacts are available.
 - Preserve the identified Hermes production baseline and execute its dedicated
   v0.5 workstream before production cutover, not as a core-code prerequisite.
 - Support the MCP Service Worker Kit with enough server/dashboard visibility to debug worker runs end to end.

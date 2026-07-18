@@ -75,13 +75,65 @@ Current Phase 3 evidence proves:
   state; and
 - desktop plus 390px rendering without page-level overflow.
 
-## Pending Evidence
+## Core Client And Cross-Repository Evidence
 
-The following remain required before v0.5 can be called implemented:
+Run from the Client repository:
 
-- MCP/Listener Message-before-ACK and workspace v2 durability;
-- Inbox UI desktop/mobile verification;
-- cross-repository two-Agent create/ACK/response/ACK/complete/follow-up E2E;
-- maintenance rehearsal and later Hermes/production cutover evidence.
+```bash
+npm test
+npm run test:protocol:v05:e2e
+```
 
-Production mutation mode remains closed.
+The Client suite proves workspace v2 write/read verification, complete
+Message-before-ACK persistence, guarded NACK, stale Event rejection,
+non-recursive informational ACK, epoch-bound recovery, startup ACK/NACK endpoint
+probes, local retirement of v0.3/v0.4 mutation tools, and Server-owned Inbox UI
+diagnosis. The local cross-repository runner proves
+create -> target ACK -> response -> requester ACK -> complete -> follow-up.
+
+## Acceptance Matrix
+
+`core-pass` means deterministic local evidence exists. `window-pending` means
+the code path exists but the production maintenance environment is the required
+evidence source. `hermes-deferred` remains outside this core implementation.
+
+| # | Status | Evidence |
+| --- | --- | --- |
+| 1 | core-pass | Separate v0.4/v0.5 plans, schemas, tests, and workspace roots |
+| 2 | core-pass | Store conformance atomic create |
+| 3 | core-pass | Store/schema plus visibility tests |
+| 4 | core-pass | Store and HTTP ACK guards |
+| 5 | core-pass | Client intake and workspace v2 tests |
+| 6 | core-pass | Store concurrency/idempotency tests |
+| 7 | core-pass | Store/API stale context tests |
+| 8 | core-pass | Store/API informational Event ACK tests |
+| 9 | core-pass | Delivery fake-clock suite |
+| 10 | core-pass | Delivery scheduler suite |
+| 11 | core-pass | Store/delivery ACK lease race tests |
+| 12 | core-pass | Store/delivery attempt-four tests |
+| 13 | core-pass | Store/API guarded NACK tests |
+| 14 | core-pass | Delivery restart schedule test |
+| 15 | core-pass | Store plus Client direction guards |
+| 16 | core-pass | Store and cross-repository E2E |
+| 17 | core-pass | Store/API completion authority tests |
+| 18 | core-pass | Store max-turn terminal-choice tests |
+| 19 | core-pass | Store/delivery expiry race tests |
+| 20 | core-pass | Store/API lineage tests |
+| 21 | core-pass | Archive reads plus HTTP retirement probes for every legacy mutation |
+| 22 | core-pass | Cutover retirement-report smoke |
+| 23 | core-pass | Store, trigger, foreign-key, and surface checks |
+| 24 | partial | Dashboard passes; dispatcher is `hermes-deferred` |
+| 25 | window-pending | Local E2E passes; production two-Agent E2E is not run |
+| 26 | window-pending | Admission rules pass; production enabled-Agent preflight is not run |
+| 27 | hermes-deferred | Actual Hermes Listener/dispatcher regression is not run |
+| 28 | core-pass | Server guarded NACK and Client retryable/no-NACK tests |
+| 29 | core-pass | Cutover validated-registry-only smoke |
+| 30 | core-pass | Delivery offline four-attempt fake-clock test |
+| 31 | core-pass | Store/delivery/readiness timing and epoch tests |
+| 32 | core-pass | Stable last-error and audit-detail tests |
+| 33 | core-pass | Store/delivery exhaustion-reason audit tests |
+| 34 | core-pass | Full Task schema/API and Client persist/read-back tests |
+| 35 | core-pass | Store, WS replacement race, recovery, ACK/NACK epoch tests |
+
+Production mutation mode remains closed. Core implementation is not production
+completion: items 24-27 retain their stated release gates.

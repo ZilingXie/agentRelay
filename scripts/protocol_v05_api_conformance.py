@@ -34,7 +34,7 @@ def main() -> None:
         root = Path(tmp)
         run_v05_flow(root)
         run_closed_gate(root)
-    print("protocol v0.5 HTTP conformance passed (20/20)")
+    print("protocol v0.5 HTTP conformance passed (21/21)")
 
 
 def seed_registry(db_path: Path) -> None:
@@ -230,6 +230,7 @@ def run_v05_flow(root: Path) -> None:
             HEADERS[A],
             410,
         )
+        assert_legacy_mutations_retired(base)
     finally:
         stop_server(process)
 
@@ -260,6 +261,7 @@ def run_closed_gate(root: Path) -> None:
             HEADERS[A],
             503,
         )
+        assert_legacy_mutations_closed(base)
     finally:
         stop_server(process)
 
@@ -284,6 +286,36 @@ def start_server(legacy_db: Path, v05_db: Path, mode: str, port: int) -> subproc
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
+
+
+def assert_legacy_mutations_retired(base: str) -> None:
+    for path, payload in legacy_mutation_probes():
+        error = request(base, "POST", path, payload, HEADERS[A], 410)
+        assert error["code"] == "protocol_retired", (path, error)
+    error = request(base, "GET", f"/workers/{A}/claim", None, HEADERS[A], 410)
+    assert error["code"] == "protocol_retired", error
+
+
+def assert_legacy_mutations_closed(base: str) -> None:
+    for path, payload in legacy_mutation_probes():
+        error = request(base, "POST", path, payload, HEADERS[A], 503)
+        assert error["code"] == "mutations_closed", (path, error)
+    error = request(base, "GET", f"/workers/{A}/claim", None, HEADERS[A], 503)
+    assert error["code"] == "mutations_closed", error
+
+
+def legacy_mutation_probes() -> list[tuple[str, dict]]:
+    task_id = "task_legacy_probe"
+    return [
+        ("/healthchecks/install", {}),
+        (f"/tasks/{task_id}/status", {"status": "working"}),
+        (f"/tasks/{task_id}/artifacts", {}),
+        (f"/tasks/{task_id}/amend", {}),
+        (f"/tasks/{task_id}/close", {}),
+        (f"/tasks/{task_id}/deliveries", {}),
+        (f"/workers/{A}/tasks/{task_id}/claim", {}),
+        (f"/workers/{A}/tasks/{task_id}/thread", {}),
+    ]
 
 
 def register_and_ready(base: str, agent_id: str, instance_id: str) -> tuple[str, int]:
