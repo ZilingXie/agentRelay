@@ -98,6 +98,40 @@ def main() -> None:
                 expected_mode="v05",
             )
             assert opened["ok"] is True
+
+            store.create_task({
+                "protocol_version": PROTOCOL_V05,
+                "idempotency_key": "preflight-post-write-task",
+                "requester_agent_id": "zac-agent",
+                "target_agent_id": "frank-agent",
+                "done_criteria": "response",
+                "message": {"parts": [{"kind": "text", "text": "post-write"}]},
+            })
+            try:
+                run_preflight(
+                    base_url=base_url,
+                    admin_token="test-admin-token",
+                    legacy_db=str(legacy_path),
+                    v05_db=str(v05_path),
+                    retirement_report=str(report_path),
+                    expected_mode="v05",
+                )
+            except ValueError as exc:
+                assert "contains migrated collaboration/readiness rows" in str(exc)
+            else:
+                raise AssertionError("strict preflight accepted existing collaboration rows")
+
+            post_write = run_preflight(
+                base_url=base_url,
+                admin_token="test-admin-token",
+                legacy_db=str(legacy_path),
+                v05_db=str(v05_path),
+                retirement_report=str(report_path),
+                expected_mode="v05",
+                require_empty_collaboration=False,
+            )
+            assert post_write["ok"] is True
+            assert post_write["database_boundary"]["v05_collaboration_counts"]["tasks"] == 1
         finally:
             process.terminate()
             process.wait(timeout=5)
@@ -111,6 +145,7 @@ def main() -> None:
             legacy_db=str(legacy_path),
             v05_db=str(v05_path),
             retirement_report=str(report_path),
+            require_empty_collaboration=False,
             get_json=lambda url, _headers: response_map(broken)[url],
         )
         assert failed["ok"] is False

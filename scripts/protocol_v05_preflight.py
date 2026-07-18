@@ -50,6 +50,7 @@ def run_preflight(
         v05_db,
         retirement_report,
         allow_readiness=True,
+        allow_existing_collaboration=not require_empty_collaboration,
     )
     checks: list[dict[str, Any]] = []
 
