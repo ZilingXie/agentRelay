@@ -4,7 +4,7 @@ Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/age
 
 Status date: 2026-07-18.
 
-Latest update: A 2026-07-18 implementation audit confirms that Protocol v0.4 has all five lifecycle states implemented across Relay and MCP/Listener. The full server/client suites, 16/16 conformance checks, and a production Zac-Agent/Frank-Agent create/ACK/response/ACK/complete/follow-up E2E passed. v0.4 is explicit non-default while capability advertisement remains incomplete.
+Latest update: Protocol v0.4 is a completed, production-verified historical baseline. The next implementation target is Protocol v0.5, which separates Task lifecycle, Message delivery, and Agent Event outbox truth and will replace active writes during a maintenance-window cutover. The v0.4 contract, schemas, examples, and verification record remain preserved.
 
 ## Purpose
 
@@ -74,7 +74,7 @@ Server-side workstreams:
    - Add/maintain conformance profiles for personal agents, service agents, and unavailable-agent paths.
    - Plan the v0.2 deprecation window once v0.3 capability reporting is common enough.
 
-## Protocol v0.4 Task Lifecycle Plan
+## Protocol v0.4 Task Lifecycle Plan (Completed Baseline)
 
 The design, Relay, and MCP/Listener implementations are complete. The authoritative implementation contract is [`docs/task-lifecycle-v04.md`](docs/task-lifecycle-v04.md). A production two-Agent E2E passed; v0.3 remains the default only as a compatibility policy until participant capability advertisement supports automatic selection.
 
@@ -108,8 +108,55 @@ Implemented server behavior:
 - No Task deletion surface plus `ON DELETE RESTRICT` references and a SQLite `BEFORE DELETE` trigger covering raw SQL attempts.
 - Public v0.4 schemas/example/bundle and smoke/conformance runners; the full existing server suite remains green.
 
+## Protocol v0.5 Two-Layer Lifecycle Plan
+
+Status: design approved; implementation planned. No v0.5 code work starts until
+the Server, Client, and public planning updates are merged and published. The
+authoritative design is [`docs/task-lifecycle-v05.md`](docs/task-lifecycle-v05.md).
+
+The v0.5 direction is a direct maintenance-window upgrade:
+
+- Task truth is only `tasks.status`: `open`, `completed`, `expired`, `failed`.
+- Message truth is only `messages.delivery_status`: `pending`, `delivered`,
+  `failed`.
+- Agent Event truth is only `agent_events.outbox_status`: `queued`, `inflight`,
+  `acked`, `retry_wait`, `exhausted`.
+- Visibility diagnosis is computed and never persisted. Dashboard, dispatcher,
+  MCP, Listener, workspace, and Inbox UI consume the same visibility API.
+- One aggregate `task_version` protects current Message, turn, ACK, and terminal
+  mutations. v0.5 does not add an independent delivery version.
+- Each Message permits four total attempts: immediate delivery, then retries
+  after 1, 5, and 10 minutes. Retry wait remains Message `pending`.
+- Attempt-four failure atomically exhausts the outbox Event, fails the Message,
+  and fails the Task. Non-retryable Listener persistence failure exhausts
+  immediately.
+- v0.5 removes Task-level delivery copies and renames Event delivery fields to
+  outbox terminology to prevent multiple sources of truth.
+- Maintenance stops old writers, backs up SQLite, terminates the small number of
+  active v0.4 Tasks with auditable upgrade reasons, rebuilds the v0.5 schema,
+  upgrades all components, and verifies two-Agent E2E before opening writes.
+- v0.4 history remains readable; v0.4 mutations return `410 protocol_retired`.
+- Task hard deletion remains forbidden.
+
+Implementation order:
+
+1. Merge and publish Server, Client, and public v0.5 planning updates while
+   preserving v0.4 as completed.
+2. Implement Server protocol/schema/Store/scheduler/API/migration/conformance.
+3. Implement MCP/Listener tools, durable ACK, workspace v2, and Inbox UI.
+4. Upgrade dashboard and dispatcher to the visibility contract.
+5. Run full suites, migration rehearsal, cross-repository conformance, and
+   maintenance rollback rehearsal.
+6. Execute the maintenance-window cutover and production E2E.
+
 ## Active Next Steps
 
+- Complete and publish Task 0 planning updates for Protocol v0.5 without
+  replacing any v0.4 contract or evidence.
+- Break the approved v0.5 design into separate Server, Client, UI, dispatcher,
+  and maintenance implementation plans and PRs.
+- Locate the deployed Hermes dispatcher ownership and include it in the
+  visibility-API migration before implementation begins.
 - Support the MCP Service Worker Kit with enough server/dashboard visibility to debug worker runs end to end.
 - Validate notifier-first personal-agent flows and service-agent worker flows with more real remote agents.
 - Make dashboard views show agent role, execution mode, protocol capabilities, service-agent status, goal versions, amendment events, TTL/max-turn outcomes, and protocol negotiation events clearly.
