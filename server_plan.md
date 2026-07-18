@@ -190,6 +190,9 @@ Project Hermes implementation workstream:
 
 - Run the maintenance rehearsal and enabled-Agent readiness preflight after the
   exact deployment artifacts are available.
+- Use `scripts/protocol_v05_preflight.py` as the read-only gate in both `closed`
+  mode before opening writes and `v05` mode immediately after the switch. The
+  tool is implemented and integration-tested; it has not run against production.
 - Preserve the identified Hermes production baseline and execute its dedicated
   v0.5 workstream before production cutover, not as a core-code prerequisite.
 - Support the MCP Service Worker Kit with enough server/dashboard visibility to debug worker runs end to end.

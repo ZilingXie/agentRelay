@@ -125,7 +125,7 @@ evidence source. `hermes-deferred` remains outside this core implementation.
 | 23 | core-pass | Store, trigger, foreign-key, and surface checks |
 | 24 | partial | Dashboard passes; dispatcher is `hermes-deferred` |
 | 25 | window-pending | Local E2E passes; production two-Agent E2E is not run |
-| 26 | window-pending | Admission rules pass; production enabled-Agent preflight is not run |
+| 26 | window-pending | Read-only preflight CLI and closed/v05 integration pass; production enabled-Agent preflight is not run |
 | 27 | hermes-deferred | Actual Hermes Listener/dispatcher regression is not run |
 | 28 | core-pass | Server guarded NACK and Client retryable/no-NACK tests |
 | 29 | core-pass | Cutover validated-registry-only smoke |
@@ -148,3 +148,14 @@ completion: items 24-27 retain their stated release gates.
   E2E passed again from the merged `main` branches.
 - No production binary, database, Listener, mutation mode, or Hermes runtime
   changed during this rehearsal.
+
+## Maintenance Preflight Evidence
+
+`scripts/protocol_v05_preflight.py` now provides the read-only maintenance
+gate. It verifies the runtime health/current manifest mode, admin summary,
+zero invariant violations, the exact legacy retirement report, native v0.5
+schema and empty collaboration boundary, hard-delete trigger, restrictive
+foreign keys, and every enabled Agent's v0.5 capability, workspace-v2,
+WebSocket, instance, epoch, ready, and freshness fields. Integration coverage
+starts the same temporary database first in `closed` and then in `v05` mode.
+Production execution remains item 26's required window evidence.

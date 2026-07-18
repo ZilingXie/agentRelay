@@ -442,6 +442,12 @@ Preparation:
    closed; and
 10. run readiness preflight, disabling unsupported/stale Agents.
 
+The executable read-only gate is `scripts/protocol_v05_preflight.py`. It
+combines runtime mode/current-manifest checks, admin readiness, the retirement
+report, empty native collaboration tables, hard-delete and foreign-key
+invariants. Run it in `closed` mode before writes open, then in `v05` mode with
+`--allow-existing-collaboration` for later checks after real Tasks exist.
+
 Validation before writes:
 
 - health, protocol manifest, schemas, archive reads, and 410 legacy mutations;

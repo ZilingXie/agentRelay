@@ -17,6 +17,8 @@ def verify_v05_cutover(
     legacy_db_path: str,
     v05_db_path: str,
     retirement_report_path: str,
+    *,
+    allow_readiness: bool = False,
 ) -> dict[str, Any]:
     legacy = Path(legacy_db_path).resolve()
     v05 = Path(v05_db_path).resolve()
@@ -35,7 +37,7 @@ def verify_v05_cutover(
     if report_ids != expected_ids:
         raise ValueError("retirement report does not exactly match legacy non-terminal Tasks")
 
-    with sqlite3.connect(v05) as conn:
+    with sqlite3.connect(f"file:{v05}?mode=ro", uri=True) as conn:
         conn.row_factory = sqlite3.Row
         collaboration_counts = {
             table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
@@ -48,7 +50,10 @@ def verify_v05_cutover(
                 "agent_listener_readiness",
             )
         }
-        non_empty = {table: count for table, count in collaboration_counts.items() if count}
+        non_empty = {
+            table: count for table, count in collaboration_counts.items()
+            if count and not (allow_readiness and table == "agent_listener_readiness")
+        }
         if non_empty:
             raise ValueError(f"v0.5 database contains migrated collaboration/readiness rows: {non_empty}")
         task_columns = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
@@ -60,6 +65,30 @@ def verify_v05_cutover(
         ).fetchone()
         if not trigger:
             raise ValueError("v0.5 hard-delete trigger is missing")
+        foreign_key_violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if foreign_key_violations:
+            raise ValueError(f"v0.5 database contains foreign-key violations: {foreign_key_violations}")
+        required_foreign_keys = {
+            "agent_listener_readiness",
+            "tasks",
+            "messages",
+            "agent_events",
+            "task_audit_events",
+            "idempotency_records",
+        }
+        missing_foreign_keys = []
+        non_restrict_foreign_keys = []
+        for table in sorted(required_foreign_keys):
+            rows = conn.execute(f"PRAGMA foreign_key_list({table})").fetchall()
+            if not rows:
+                missing_foreign_keys.append(table)
+            non_restrict_foreign_keys.extend(
+                f"{table}.{row[3]}" for row in rows if str(row[6]).upper() != "RESTRICT"
+            )
+        if missing_foreign_keys:
+            raise ValueError(f"v0.5 tables are missing foreign keys: {missing_foreign_keys}")
+        if non_restrict_foreign_keys:
+            raise ValueError(f"v0.5 foreign keys are not ON DELETE RESTRICT: {non_restrict_foreign_keys}")
         agent_count = conn.execute("SELECT COUNT(*) FROM agents").fetchone()[0]
     return {
         "ok": True,
@@ -67,6 +96,7 @@ def verify_v05_cutover(
         "v05_agents": agent_count,
         "v05_collaboration_counts": collaboration_counts,
         "hard_delete_trigger": "prevent_task_hard_delete",
+        "foreign_keys_verified": sorted(required_foreign_keys),
     }
 
 
@@ -75,8 +105,14 @@ def main() -> None:
     parser.add_argument("legacy_db")
     parser.add_argument("v05_db")
     parser.add_argument("retirement_report")
+    parser.add_argument("--allow-readiness", action="store_true")
     args = parser.parse_args()
-    result = verify_v05_cutover(args.legacy_db, args.v05_db, args.retirement_report)
+    result = verify_v05_cutover(
+        args.legacy_db,
+        args.v05_db,
+        args.retirement_report,
+        allow_readiness=args.allow_readiness,
+    )
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
