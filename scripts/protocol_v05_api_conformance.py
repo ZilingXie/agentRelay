@@ -247,6 +247,33 @@ def run_closed_gate(root: Path) -> None:
     v05_db = root / "api-closed-v05.sqlite3"
     seed_registry(v05_db)
     base = "http://127.0.0.1:8799/agentrelay/api"
+    setup = start_server(root / "api-closed-legacy.sqlite3", v05_db, "v05", 8799)
+    try:
+        wait_health(base)
+        listeners = {
+            agent_id: register_and_ready(base, agent_id, f"closed-setup-{agent_id}")
+            for agent_id in (A, B)
+        }
+        created = request(
+            base,
+            "POST",
+            "/tasks",
+            {
+                "protocol_version": PROTOCOL_V05,
+                "idempotency_key": "closed-info-setup",
+                "requester_agent_id": A,
+                "target_agent_id": B,
+                "done_criteria": "exercise informational ACK while closed",
+                "message": {"parts": [{"kind": "text", "text": "setup"}]},
+            },
+            HEADERS[A],
+            201,
+        )
+        event = recover(base, B, listeners[B])
+        ack(base, B, created["task"], event, listeners[B], "closed-info-message-ack")
+    finally:
+        stop_server(setup)
+
     process = start_server(root / "api-closed-legacy.sqlite3", v05_db, "closed", 8799)
     try:
         wait_health(base)
@@ -258,7 +285,14 @@ def run_closed_gate(root: Path) -> None:
         manifest = request(base, "GET", "/protocols/agent-collab/v0.5/manifest", None, {}, 200)
         assert manifest["write_mode"] == "closed"
         readiness = register_and_ready(base, A, "closed-listener-a")
-        assert readiness[1] == 1
+        assert readiness[1] == 2
+        info_event = recover(base, A, readiness)
+        assert info_event["event_type"] == "message.delivery_changed"
+        assert info_event["can_transition_message"] is False
+        closed_info_ack = ack_info(
+            base, A, info_event, readiness, "closed-informational-ack"
+        )
+        assert closed_info_ack["outbox_status"] == "acked"
         request(
             base,
             "POST",

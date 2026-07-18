@@ -861,11 +861,11 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/events/([^/]+)/ack", path):
             agent_id, event_id = match.groups()
-            if self.mutation_mode == "v05":
+            if self.mutation_mode in {"closed", "v05"}:
                 validate_v05_event_ack(payload)
                 if not self.require_agent(auth, agent_id):
                     return
-                store = self.require_v05_writes()
+                store = self.require_v05_store()
                 if store is None:
                     return
                 event = store.ack_informational_event(agent_id, event_id, payload)
@@ -873,9 +873,6 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                     self.respond_error(404, "event not found", code="event_not_found")
                     return
                 self.respond_json({"event": event})
-                return
-            if self.mutation_mode == "closed":
-                self.require_v05_writes()
                 return
             if not self.require_agent(auth, agent_id):
                 return
