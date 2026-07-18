@@ -2,9 +2,9 @@
 
 Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/agentRelay`.
 
-Status date: 2026-07-16.
+Status date: 2026-07-18.
 
-Latest update: Protocol v0.4 is implemented across Relay and MCP/Listener. The full server/client suites, 16/16 conformance checks, and a production Zac-Agent/Frank-Agent create/ACK/response/ACK/complete/follow-up E2E passed. v0.4 is explicit non-default while capability advertisement remains incomplete.
+Latest update: A 2026-07-18 implementation audit confirms that Protocol v0.4 has all five lifecycle states implemented across Relay and MCP/Listener. The full server/client suites, 16/16 conformance checks, and a production Zac-Agent/Frank-Agent create/ACK/response/ACK/complete/follow-up E2E passed. v0.4 is explicit non-default while capability advertisement remains incomplete.
 
 ## Purpose
 
@@ -77,6 +77,17 @@ Server-side workstreams:
 ## Protocol v0.4 Task Lifecycle Plan
 
 The design, Relay, and MCP/Listener implementations are complete. The authoritative implementation contract is [`docs/task-lifecycle-v04.md`](docs/task-lifecycle-v04.md). A production two-Agent E2E passed; v0.3 remains the default only as a compatibility policy until participant capability advertisement supports automatic selection.
+
+Current implemented status snapshot (verified 2026-07-18):
+
+- `submitted`: implemented; Relay has validated and persisted the current Message and is waiting for the target Listener's durable Inbox ACK.
+- `delivered`: implemented; only the versioned current-Message ACK can enter this state after local persistence.
+- `completed`: implemented; only the requester may confirm the current delivered target response against `done_criteria`.
+- `expired`: implemented; Relay applies the immutable Task deadline to any active Task.
+- `failed`: implemented; Relay enforces the enumerated reason, actor, and source-state rules.
+- `cancelled` and `archived`: not implemented as lifecycle states; they remain reserved vocabulary and are rejected by v0.4.
+- Multi-turn `submitted`/`delivered` cycling, strict alternation, optimistic concurrency, idempotency, `max_turns`, follow-up lineage, lifecycle notifications, and the hard-delete prohibition are implemented.
+- Rollout remains explicit: v0.4 is accepted but non-default; v0.3 remains the compatibility default until trustworthy participant capability advertisement exists.
 
 Key decisions:
 
