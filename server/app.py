@@ -117,16 +117,16 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         path = clean_path(self.path)
         query = query_params(self.path)
         if path == "/health":
-            self.respond_json({"ok": True, "service": "agentrelay", "protocol": protocol_summary(public_base_url())})
+            self.respond_json({"ok": True, "service": "agentrelay", "protocol": self.current_protocol_summary()})
             return
         if path == "/agentrelay/health":
-            self.respond_json({"ok": True, "service": "agentrelay", "protocol": protocol_summary(public_base_url())})
+            self.respond_json({"ok": True, "service": "agentrelay", "protocol": self.current_protocol_summary()})
             return
         if path == "/agentrelay/protocols":
             self.respond_json({"protocols": [protocol_summary(public_base_url())]})
             return
         if path == "/agentrelay/protocols/current":
-            self.respond_json(protocol_manifest(public_base_url()))
+            self.respond_json(self.current_protocol_manifest())
             return
         if path == f"/agentrelay/protocols/{PROTOCOL_NAME}/{CURRENT_PROTOCOL_SHORT}/manifest":
             self.respond_json(protocol_manifest(public_base_url()))
@@ -208,6 +208,12 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             )
             return
         if path == "/agentrelay/agents":
+            if self.mutation_mode in {"closed", "v05"}:
+                store = self.require_v05_store()
+                if store is None:
+                    return
+                self.respond_json({"agents": store.admin_agents()})
+                return
             self.respond_json({"agents": self.store.list_agents()})
             return
         if path == "/agentrelay/agents/cards":
@@ -1025,6 +1031,16 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             )
             return None
         return self.v05_store
+
+    def current_protocol_manifest(self) -> dict[str, Any]:
+        if self.mutation_mode in {"closed", "v05"}:
+            return protocol_manifest_v05(public_base_url(), write_mode=self.mutation_mode)
+        return protocol_manifest(public_base_url())
+
+    def current_protocol_summary(self) -> dict[str, Any]:
+        if self.mutation_mode in {"closed", "v05"}:
+            return protocol_manifest_v05(public_base_url(), write_mode=self.mutation_mode)
+        return protocol_summary(public_base_url())
 
     def require_v05_writes(self) -> V05Store | None:
         store = self.require_v05_store()

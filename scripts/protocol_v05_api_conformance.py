@@ -56,12 +56,20 @@ def run_v05_flow(root: Path) -> None:
     process = start_server(root / "api-legacy.sqlite3", v05_db, "v05", 8798)
     try:
         wait_health(base)
+        health = request(base, "GET", "/health", None, {}, 200)
+        assert health["protocol"]["version"] == PROTOCOL_V05
+        assert health["protocol"]["write_mode"] == "v05"
+        current = request(base, "GET", "/protocols/current", None, {}, 200)
+        assert current["version"] == PROTOCOL_V05 and current["write_mode"] == "v05"
         manifest = request(base, "GET", "/protocols/agent-collab/v0.5/manifest", None, {}, 200)
         assert manifest["write_mode"] == "v05"
         listeners = {
             agent_id: register_and_ready(base, agent_id, f"listener-{agent_id}")
             for agent_id in (A, B, C)
         }
+        public_agents = request(base, "GET", "/agents", None, HEADERS[A], 200)["agents"]
+        assert {agent["agent_id"] for agent in public_agents} == {A, B, C}
+        assert all(PROTOCOL_V05 in agent["protocol_capabilities"] for agent in public_agents)
         created = request(
             base,
             "POST",
@@ -242,6 +250,11 @@ def run_closed_gate(root: Path) -> None:
     process = start_server(root / "api-closed-legacy.sqlite3", v05_db, "closed", 8799)
     try:
         wait_health(base)
+        health = request(base, "GET", "/health", None, {}, 200)
+        assert health["protocol"]["version"] == PROTOCOL_V05
+        assert health["protocol"]["write_mode"] == "closed"
+        current = request(base, "GET", "/protocols/current", None, {}, 200)
+        assert current["version"] == PROTOCOL_V05 and current["write_mode"] == "closed"
         manifest = request(base, "GET", "/protocols/agent-collab/v0.5/manifest", None, {}, 200)
         assert manifest["write_mode"] == "closed"
         readiness = register_and_ready(base, A, "closed-listener-a")
