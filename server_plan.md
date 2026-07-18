@@ -110,9 +110,10 @@ Implemented server behavior:
 
 ## Protocol v0.5 Two-Layer Lifecycle Plan
 
-Status: design approved; implementation planned. No v0.5 code work starts until
-the Server, Client, and public planning updates are merged and published. The
-authoritative design is [`docs/task-lifecycle-v05.md`](docs/task-lifecycle-v05.md).
+Status: core design confirmed; specification review in progress; implementation
+not started. No v0.5 code work starts until the Server, Client, and public
+planning updates are merged and published. The authoritative design is
+[`docs/task-lifecycle-v05.md`](docs/task-lifecycle-v05.md).
 
 The v0.5 direction is a direct maintenance-window upgrade:
 
@@ -132,22 +133,29 @@ The v0.5 direction is a direct maintenance-window upgrade:
   immediately.
 - v0.5 removes Task-level delivery copies and renames Event delivery fields to
   outbox terminology to prevent multiple sources of truth.
-- Maintenance stops old writers, backs up SQLite, terminates the small number of
-  active v0.4 Tasks with auditable upgrade reasons, rebuilds the v0.5 schema,
-  upgrades all components, and verifies two-Agent E2E before opening writes.
-- v0.4 history remains readable; v0.4 mutations return `410 protocol_retired`.
+- Maintenance stops old writers, backs up SQLite, exports an auditable
+  retirement report, mounts the unmodified v0.3/v0.4 database read-only, and
+  creates a clean v0.5 database. No legacy row is rewritten or copied into v0.5.
+- v0.3/v0.4 history and workspaces remain read-only; every legacy mutation
+  returns `410 protocol_retired`.
+- Every enabled Agent must advertise v0.5 and fresh Listener readiness before
+  writes open. Unsupported/stale Agents are disabled; create rejects incapable
+  participants instead of silently downgrading.
+- The actual deployed Hermes dispatcher repository, path, and owner must be
+  located in Task 0; its visibility-API regression test is a cutover blocker.
 - Task hard deletion remains forbidden.
 
 Implementation order:
 
 1. Merge and publish Server, Client, and public v0.5 planning updates while
    preserving v0.4 as completed.
-2. Implement Server protocol/schema/Store/scheduler/API/migration/conformance.
-3. Implement MCP/Listener tools, durable ACK, workspace v2, and Inbox UI.
-4. Upgrade dashboard and dispatcher to the visibility contract.
-5. Run full suites, migration rehearsal, cross-repository conformance, and
+2. Locate and record the deployed Hermes dispatcher runtime and owner.
+3. Implement Server protocol/schema/Store/scheduler/API/archive/conformance.
+4. Implement MCP/Listener tools, durable ACK, workspace v2, and Inbox UI.
+5. Upgrade dashboard and dispatcher to the visibility contract.
+6. Run full suites, cutover rehearsal, cross-repository conformance, and
    maintenance rollback rehearsal.
-6. Execute the maintenance-window cutover and production E2E.
+7. Execute the maintenance-window cutover and production E2E.
 
 ## Active Next Steps
 
