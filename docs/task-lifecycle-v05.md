@@ -154,6 +154,7 @@ Protocol constants:
 ```text
 MAX_DELIVERY_ATTEMPTS = 4
 RETRY_BACKOFF_SECONDS = [60, 300, 600]
+DELIVERY_ACK_LEASE_SECONDS = 60
 ```
 
 Attempt semantics:
@@ -181,6 +182,16 @@ it. Claim atomically changes `queued/retry_wait -> inflight`, increments
 is the first claim. HTTP polling may not expose an unclaimed queued Event as if
 it had been delivered.
 
+The WebSocket service owns a durable delivery-coordinator loop. It scans due
+`queued` and `retry_wait` Events, atomically claims them, and attempts delivery
+even when the target has no active socket. No active route fails that attempt as
+`listener_unavailable`; otherwise a successful socket write waits up to the
+fixed 60-second ACK lease. This guarantees that a fully offline Listener still
+reaches attempt four. HTTP recovery uses the same Store claim and may recover a
+current target-owned inflight Event without incrementing attempts; it cannot
+create a parallel lease. Multiple server processes are safe because the Store
+claim has one atomic winner.
+
 An attempt fails when WebSocket write fails, the connection closes before ACK,
 the lease expires without ACK, or the Listener returns a retryable error. The
 failure transaction uses the post-claim attempt count:
@@ -191,6 +202,21 @@ attempt 2 failure -> retry_wait; next_retry_at = failed_at + 300
 attempt 3 failure -> retry_wait; next_retry_at = failed_at + 600
 attempt 4 failure -> exhausted; next_retry_at = null
 ```
+
+`AgentEvent.last_error` is one stable value:
+
+```text
+listener_unavailable
+socket_write_failed
+connection_closed_before_ack
+ack_lease_expired
+listener_retryable_error
+listener_persistence_failed
+```
+
+Sanitized diagnostic text belongs only in the immutable
+`message.delivery_attempt_failed` audit Event payload. Consumers group by the
+stable value and never parse diagnostic text.
 
 Only the scheduler may reclaim `retry_wait`, and only at or after
 `next_retry_at`. A late valid ACK may transition `inflight` or `retry_wait` to
@@ -541,9 +567,25 @@ Project Hermes has two separate v0.5 responsibilities:
   fields, reads raw `agent_events` to infer product state, or maintains a fourth
   status model.
 
-Task 0 must identify and record the deployed dispatcher's executable
-repository, deployment path, owner, schedule, configuration source, and
-rollback command. Its v0.5 workstream then:
+The production inventory is:
+
+```text
+deploy source: github.com/ZilingXie/heremes-deploy
+runtime copy: /home/ubuntu/projects/hermes/project-hermes-worker
+runtime account: ubuntu user systemd
+Listener unit: project-hermes-worker.service
+dispatcher units: project-hermes-daily-dispatch.service/.timer
+schedule: Mon..Fri 10:00 Asia/Shanghai
+```
+
+The deploy repository is currently clean against upstream commits but has
+uncommitted production changes, and its tracked worker unit still references an
+older runtime path. Before v0.5 edits, Task 0 must secret-scan and review those
+changes, compare them with the deployed hashes, preserve them on a task branch,
+and reconcile the unit template to the verified production path. No automation
+may overwrite this dirty baseline.
+
+The Hermes v0.5 workstream then:
 
 1. replaces local status inference with batch visibility;
 2. reports separate counts for Completed, Failed, Expired, Delivery pending,
@@ -567,7 +609,9 @@ first real v0.5 WeCom report.
 ## 16. Listener Capability And Readiness Gate
 
 The cutover has no silent downgrade. Relay uses the enabled Agent registry as
-the complete admission set. Every enabled requester and target Agent must have:
+the complete admission set. In v0.5, `agents.enabled` is an explicit
+Relay-owned admission flag; enabled identity is separate from authentication
+credential validity. Every enabled requester and target Agent must have:
 
 ```text
 protocol_capabilities contains agent-collab-v0.5
@@ -591,6 +635,15 @@ does not keep a Task alive, and does not replace delivery retry. The deployment
 must verify that 300 seconds covers at least three configured readiness
 publication intervals. Otherwise the Listener interval or admission constant
 must be corrected before cutover rather than weakening the gate at runtime.
+
+The initial v0.5 Listener publication interval is fixed at 60 seconds. Listener
+startup registers a new process-instance id and receives a monotonically
+increasing `readiness_epoch`. All readiness writes are conditional on that
+epoch, so a replaced process cannot overwrite its successor. A Listener reports
+ready only after protocol bundle validation, workspace v2 write/read
+verification, authenticated Event recovery, and ACK/NACK endpoint checks pass.
+Graceful shutdown reports `ready=false` for its own epoch on a best-effort basis;
+the 300-second expiry remains authoritative.
 
 ## 17. Maintenance-Window Cutover
 
@@ -695,14 +748,23 @@ At minimum, conformance must prove:
     once; retryable local errors produce no NACK and remain Relay-scheduled.
 29. Only the validated Agent registry crosses into the v0.5 database; no legacy
     collaboration or outbox row is present after seeding.
+30. A fully offline Listener consumes exactly four scheduled attempts and fails
+    the current Message/Task instead of remaining queued indefinitely.
+31. ACK lease expiry is 60 seconds; Listener readiness publishes every 60
+    seconds, expires at 300 seconds, and rejects stale readiness epochs.
+32. Attempt failures persist only stable `last_error` values; sanitized detail
+    is audit-only and consumers never parse it for state.
 
 ## 21. Implementation Ownership And Order
 
 Keep Server and Client changes in separate commits and PRs:
 
+The detailed component, verification, and maintenance sequence is
+[`protocol-v05-rollout-plan.md`](protocol-v05-rollout-plan.md).
+
 ```text
 Task 0 Server/Client/public plan updates
--> locate deployed dispatcher and record repository/path/owner
+-> preserve and reconcile the deployed Hermes baseline
 -> Server v0.5 protocol, schema, Store, scheduler, API, archive, dashboard
 -> MCP/Listener v0.5 tools, ACK, workspace, Inbox UI
 -> dispatcher integration

@@ -117,6 +117,9 @@ planning updates are merged and published. The authoritative design is
 
 The v0.5 direction is a direct maintenance-window upgrade:
 
+Detailed implementation and cutover gates are maintained in
+[`docs/protocol-v05-rollout-plan.md`](docs/protocol-v05-rollout-plan.md).
+
 - Task truth is only `tasks.status`: `open`, `completed`, `expired`, `failed`.
 - Message truth is only `messages.delivery_status`: `pending`, `delivered`,
   `failed`.
@@ -141,8 +144,9 @@ The v0.5 direction is a direct maintenance-window upgrade:
 - Every enabled Agent must advertise v0.5 and fresh Listener readiness before
   writes open. Unsupported/stale Agents are disabled; create rejects incapable
   participants instead of silently downgrading.
-- The actual deployed Hermes dispatcher repository, path, and owner must be
-  located in Task 0; its visibility-API regression test is a cutover blocker.
+- The Hermes repository/runtime ownership is now identified. Task 0 must
+  preserve and reconcile its dirty production baseline; visibility-API
+  regression against that exact runtime remains a cutover blocker.
 - Task hard deletion remains forbidden.
 
 Implementation order:
@@ -159,9 +163,10 @@ Implementation order:
 
 Project Hermes implementation workstream:
 
-1. During Task 0, identify the deployed Listener and daily dispatcher
-   repository, executable path, owner, schedule/configuration source, deployment
-   command, and rollback command.
+1. During Task 0, preserve the existing dirty production baseline from
+   `ZilingXie/heremes-deploy` on a reviewed task branch after secret scanning;
+   reconcile its tracked worker unit with the verified
+   `/home/ubuntu/projects/hermes/project-hermes-worker` runtime path.
 2. Upgrade the Hermes Listener to v0.5 capability/readiness, Message-before-ACK,
    guarded non-retryable NACK, workspace v2, and v0.5 response submission.
 3. Replace dispatcher status inference and direct legacy-field reads with the
