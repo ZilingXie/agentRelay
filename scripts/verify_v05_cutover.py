@@ -19,6 +19,7 @@ def verify_v05_cutover(
     retirement_report_path: str,
     *,
     allow_readiness: bool = False,
+    allow_existing_collaboration: bool = False,
 ) -> dict[str, Any]:
     legacy = Path(legacy_db_path).resolve()
     v05 = Path(v05_db_path).resolve()
@@ -52,7 +53,10 @@ def verify_v05_cutover(
         }
         non_empty = {
             table: count for table, count in collaboration_counts.items()
-            if count and not (allow_readiness and table == "agent_listener_readiness")
+            if count and not (
+                (allow_readiness and table == "agent_listener_readiness")
+                or (allow_existing_collaboration and table != "agent_listener_readiness")
+            )
         }
         if non_empty:
             raise ValueError(f"v0.5 database contains migrated collaboration/readiness rows: {non_empty}")
@@ -106,12 +110,14 @@ def main() -> None:
     parser.add_argument("v05_db")
     parser.add_argument("retirement_report")
     parser.add_argument("--allow-readiness", action="store_true")
+    parser.add_argument("--allow-existing-collaboration", action="store_true")
     args = parser.parse_args()
     result = verify_v05_cutover(
         args.legacy_db,
         args.v05_db,
         args.retirement_report,
         allow_readiness=args.allow_readiness,
+        allow_existing_collaboration=args.allow_existing_collaboration,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
 

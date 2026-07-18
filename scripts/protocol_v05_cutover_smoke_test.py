@@ -12,6 +12,7 @@ from scripts.export_protocol_retirement import export_retirement_report
 from scripts.init_v05_database import initialize_v05_database
 from scripts.verify_v05_cutover import verify_v05_cutover
 from server.store import Store
+from server.store_v05 import V05Store
 
 
 def main() -> None:
@@ -92,6 +93,42 @@ def main() -> None:
         assert initialized["counts"]["agent_listener_readiness"] == 0
         result = verify_v05_cutover(str(legacy_path), str(v05_path), str(report_path))
         assert result["ok"] and result["v05_agents"] == 2
+        store = V05Store(str(v05_path))
+        for agent_id in ("zac-agent", "frank-agent"):
+            readiness = store.register_listener(
+                agent_id,
+                listener_instance_id=f"listener-{agent_id}",
+                client_version="0.5.0",
+                workspace_version="2",
+                transport="websocket",
+                now=20_001,
+            )
+            store.publish_readiness(
+                agent_id,
+                listener_instance_id=f"listener-{agent_id}",
+                readiness_epoch=readiness["readiness_epoch"],
+                ready=True,
+                now=20_001,
+            )
+        store.create_task(
+            {
+                "protocol_version": "agent-collab-v0.5",
+                "idempotency_key": "cutover-post-write",
+                "requester_agent_id": "zac-agent",
+                "target_agent_id": "frank-agent",
+                "done_criteria": "response",
+                "message": {"parts": [{"kind": "text", "text": "post-write"}]},
+            },
+            now=20_001,
+        )
+        post_write = verify_v05_cutover(
+            str(legacy_path),
+            str(v05_path),
+            str(report_path),
+            allow_readiness=True,
+            allow_existing_collaboration=True,
+        )
+        assert post_write["ok"] and post_write["v05_collaboration_counts"]["tasks"] == 1
     print("protocol v0.5 cutover tooling smoke passed")
 
 
