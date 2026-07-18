@@ -4,11 +4,21 @@ Date: 2026-06-25
 
 ## Runtime
 
-Current production runtime can be either the original systemd Python services or the Docker Compose stack documented in [docker-deployment.md](/home/ubuntu/agentRelay/docs/docker-deployment.md). Keep nginx on the host in both modes.
+Current production runs the Docker Compose stack from
+`/home/ubuntu/projects/agentrelay/agentRelay`, as documented in
+[`docker-deployment.md`](docker-deployment.md). Host nginx terminates TLS and
+proxies to the two loopback-bound containers. The old systemd units remain
+installed but inactive and are not the current runtime.
 
-## Original systemd runtime
+```bash
+cd /home/ubuntu/projects/agentrelay/agentRelay
+sudo docker compose ps
+sudo docker compose logs --tail=100 agentrelay-api agentrelay-ws
+```
 
-AgentRelay runs as a systemd service on the VM:
+## Inactive Legacy systemd Runtime
+
+These commands describe the retained legacy units, not current production:
 
 ```bash
 sudo systemctl status agentrelay
@@ -60,19 +70,22 @@ The reverse proxy maps:
 /agentrelay/api/* -> http://127.0.0.1:8787/agentrelay/*
 ```
 
-## WebSocket notify sidecar
+## WebSocket Notify Container
 
-Phase 2 adds a separate WebSocket notify sidecar. REST remains on `agentrelay.service`; the sidecar only streams durable `agent_events` rows to authenticated local listeners.
+The `agentrelay-ws` Compose service streams durable `agent_events` rows to
+authenticated local listeners. REST runs in the `agentrelay-api` Compose
+service.
 
 Runtime:
 
 ```bash
-sudo systemctl status agentrelay-ws
-sudo journalctl -u agentrelay-ws -f
-sudo systemctl restart agentrelay-ws
+cd /home/ubuntu/projects/agentrelay/agentRelay
+sudo docker compose ps agentrelay-ws
+sudo docker compose logs -f agentrelay-ws
+sudo docker compose restart agentrelay-ws
 ```
 
-Service file:
+The following unit file is retained only for legacy rollback reference:
 
 ```text
 /etc/systemd/system/agentrelay-ws.service
@@ -106,8 +119,8 @@ the upgraded Listeners have published fresh readiness:
 ```bash
 python3 scripts/protocol_v05_preflight.py \
   --base-url https://server.stellarix.space/agentrelay/api \
-  --legacy-db /home/ubuntu/agentRelay/data/agentrelay.sqlite3 \
-  --v05-db /home/ubuntu/agentRelay/data/agentrelay-v05.sqlite3 \
+  --legacy-db /home/ubuntu/projects/agentrelay/agentRelay/data/agentrelay.sqlite3 \
+  --v05-db /home/ubuntu/projects/agentrelay/agentRelay/data/agentrelay-v05.sqlite3 \
   --retirement-report /path/to/retirement-report.json
 ```
 
@@ -145,7 +158,7 @@ POST /agentrelay/api/workers/<agent_id>/events/<event_id>/ack
 Current token file:
 
 ```text
-/home/ubuntu/agentRelay/data/agentrelay-auth.json
+/home/ubuntu/projects/agentrelay/agentRelay/data/agentrelay-auth.json
 ```
 
 The file is intentionally not committed. Keep mode `0600`.

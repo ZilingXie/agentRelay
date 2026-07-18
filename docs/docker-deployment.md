@@ -58,7 +58,8 @@ Both bind to host loopback by default:
 
 ## Safe Test On Temporary Ports
 
-Use temporary host ports first so the current systemd services can keep running:
+Use temporary host ports and a distinct Compose project while the production
+Compose stack keeps running:
 
 ```bash
 AGENTRELAY_API_BIND=127.0.0.1:18787 \
@@ -92,24 +93,37 @@ Stop the temporary test stack:
 docker compose -p agentrelay-docker-test down
 ```
 
-## Production Cutover
+## Current Production And v0.5 Maintenance
 
-Back up runtime data:
+Production already runs this Compose stack from:
+
+```text
+/home/ubuntu/projects/agentrelay/agentRelay
+```
+
+The old `agentrelay.service` and `agentrelay-ws.service` units are inactive.
+Do not use them as the normal rollback target. Before replacing the current
+image, record its immutable image id and preserve a rollback tag according to
+the maintenance record.
+
+During the approved maintenance window, freeze Task creation, stop external
+writers/Listeners, drain requests, and stop both Compose services before
+copying SQLite state:
 
 ```bash
+cd /home/ubuntu/projects/agentrelay/agentRelay
+sudo docker image inspect agentrelay:latest --format '{{.Id}}'
+sudo docker compose stop agentrelay-api agentrelay-ws
 cp -a data "data.bak-$(date +%Y%m%d-%H%M%S)"
 ```
 
-Stop the current systemd services:
+Hash and verify the backup before continuing. Set
+`AGENTRELAY_MUTATION_MODE=closed` in the protected deployment environment, then
+rebuild both containers from the reviewed commit:
 
 ```bash
-sudo systemctl stop agentrelay agentrelay-ws
-```
-
-Start Docker on the production loopback ports:
-
-```bash
-docker compose up -d --build
+cd /home/ubuntu/projects/agentrelay/agentRelay
+sudo docker compose up -d --build
 ```
 
 Verify:
@@ -123,27 +137,32 @@ curl https://server.stellarix.space/agentrelay/api/agents \
   -H "X-AgentRelay-Username: $AGENTRELAY_USERNAME"
 ```
 
-If production is stable, disable the old services but keep the unit files for rollback:
+Before opening v0.5 writes, initialize and verify the separate v0.5 database,
+start upgraded Listeners, and run the read-only preflight documented in
+[`relay-deployment.md`](relay-deployment.md). Do not set mode to `v05` merely
+because the containers are healthy.
+
+Confirm the legacy units remain inactive so they cannot become duplicate
+writers:
 
 ```bash
-sudo systemctl disable agentrelay agentrelay-ws
+systemctl show -p ActiveState agentrelay.service agentrelay-ws.service
 ```
 
 ## Rollback
 
-```bash
-docker compose down
-sudo systemctl start agentrelay agentrelay-ws
-```
-
-Nginx does not need to change for either cutover or rollback.
+Before the first production v0.5 collaboration mutation, rollback restores the
+reviewed previous Compose image/config and verified legacy database backup.
+After the first Task, Message, ACK/NACK, terminal, or follow-up mutation commits,
+do not restore the legacy database; close writes and forward-fix. Nginx does not
+need to change for either path.
 
 ## Add A User / Agent
 
 On the relay server:
 
 ```bash
-cd /home/ubuntu/agentRelay
+cd /home/ubuntu/projects/agentrelay/agentRelay
 scripts/create_agent_identity.sh <username>
 ```
 
