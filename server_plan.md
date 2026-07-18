@@ -110,12 +110,14 @@ Implemented server behavior:
 
 ## Protocol v0.5 Two-Layer Lifecycle Plan
 
-Status: core implementation merged through Server PR #51 and Client PR #44 on
-2026-07-19. The merged `main` branches passed the full Server and Client suites
-plus the cross-repository v0.5 E2E. Project Hermes is deferred to a separate
-pre-production workstream. Production mutations remain closed
-until Hermes and every enabled Listener pass the full cutover gate. The
-authoritative design is
+Status: Protocol v0.5 is active in production as of 2026-07-19. Server PR #51
+and Client PR #44 delivered the core implementation; Server PRs #55-#57 fixed
+post-write preflight, closed-mode informational ACK, and exhausted-event alert
+semantics found during the maintenance window. Zac and Vivi are the enabled
+production Agents, both publish fresh v0.5/workspace-v2 readiness, and the
+production root/follow-up E2E completed successfully. Project Hermes remains a
+separate deferred workstream and was not changed by this cutover. The 24-hour
+observation window is still in progress. The authoritative design is
 [`docs/task-lifecycle-v05.md`](docs/task-lifecycle-v05.md).
 
 The v0.5 direction is a direct maintenance-window upgrade:
@@ -148,9 +150,23 @@ Detailed implementation and cutover gates are maintained in
   writes open. Unsupported/stale Agents are disabled; create rejects incapable
   participants instead of silently downgrading.
 - The Hermes repository/runtime ownership is identified. Its dirty production
-  baseline is deferred from core implementation but remains a production
-  cutover blocker; no current work may modify it.
+  baseline is deferred from this non-Hermes cutover and remains unchanged; its
+  future Listener/dispatcher upgrade is an independent release decision.
 - Task hard deletion remains forbidden.
+
+Production maintenance evidence:
+
+- the legacy database, deployment configuration, source bundles, and rollback
+  image were backed up and hashed before the first v0.5 write;
+- the exact 54-Task legacy retirement report matches the read-only archive;
+- post-write preflight passes with two completed Tasks, four delivered Messages,
+  zero invariant violations, restrictive foreign keys, and the hard-delete
+  trigger intact;
+- legacy mutation routes return `410 protocol_retired`;
+- two historical exhausted informational Events remain as audit history but do
+  not affect Task/Message truth and no longer raise a transitionable-event alert;
+- after the first production v0.5 write, rollback to the legacy database is
+  forbidden; incident response is `closed` plus forward-fix only.
 
 Implementation order:
 
@@ -188,13 +204,13 @@ Project Hermes implementation workstream:
 
 ## Active Next Steps
 
-- Run the maintenance rehearsal and enabled-Agent readiness preflight after the
-  exact deployment artifacts are available.
-- Use `scripts/protocol_v05_preflight.py` as the read-only gate in both `closed`
-  mode before opening writes and `v05` mode immediately after the switch. The
-  tool is implemented and integration-tested; it has not run against production.
-- Preserve the identified Hermes production baseline and execute its dedicated
-  v0.5 workstream before production cutover, not as a core-code prerequisite.
+- Complete the 24-hour production observation window and record readiness,
+  delivery backlog, invariant, dashboard, and Inbox UI results.
+- Keep `scripts/protocol_v05_preflight.py --allow-existing-collaboration` as the
+  post-write production verification gate. Any incident must first switch
+  mutations to `closed`, then be repaired forward.
+- Preserve the identified Hermes production baseline until its separately
+  authorized Listener/dispatcher workstream begins.
 - Support the MCP Service Worker Kit with enough server/dashboard visibility to debug worker runs end to end.
 - Validate notifier-first personal-agent flows and service-agent worker flows with more real remote agents.
 - Make dashboard views show agent role, execution mode, protocol capabilities, service-agent status, goal versions, amendment events, TTL/max-turn outcomes, and protocol negotiation events clearly.
