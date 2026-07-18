@@ -8,13 +8,14 @@ from typing import Any
 
 from server.protocol_v03 import PROTOCOL_V03
 from server.protocol_v04 import PROTOCOL_V04
+from server.protocol_v05 import PROTOCOL_V05
 
 
 PROTOCOL_NAME = "agent-collab"
 CURRENT_PROTOCOL_VERSION = PROTOCOL_V03
 CURRENT_PROTOCOL_SEMVER = "0.3.0"
 CURRENT_PROTOCOL_SHORT = "v0.3"
-ACCEPTED_PROTOCOL_VERSIONS = [PROTOCOL_V04, PROTOCOL_V03, "agent-collab-v0.2"]
+ACCEPTED_PROTOCOL_VERSIONS = [PROTOCOL_V05, PROTOCOL_V04, PROTOCOL_V03, "agent-collab-v0.2"]
 DEPRECATED_PROTOCOL_VERSIONS = ["agent-collab-v0.2"]
 PATCHABLE_PROTOCOL_VERSIONS = ["agent-collab-v0.1"]
 REJECTED_PROTOCOL_VERSIONS = ["agent-collab-v0.1"]
@@ -153,6 +154,48 @@ def protocol_bundle_v04(public_base_url: str | None = None) -> dict[str, Any]:
         "schemas": read_json_dir(SCHEMA_DIR, "*v04*.schema.json"),
         "examples": read_json_dir(ROOT / "examples" / "protocol-v04", "*.json"),
         "docs": {"task-lifecycle-v04.md": read_text_if_exists(DOCS_DIR / "task-lifecycle-v04.md")},
+    }
+
+
+def protocol_manifest_v05(public_base_url: str | None = None) -> dict[str, Any]:
+    base = (public_base_url or "https://server.stellarix.space/agentrelay").rstrip("/")
+    manifest = protocol_manifest(base)
+    manifest.update(
+        {
+            "version": PROTOCOL_V05,
+            "semver": "0.5.0",
+            "status": "accepted_non_default",
+            "write_mode": "closed",
+        }
+    )
+    manifest["urls"] = {
+        **manifest["urls"],
+        "manifest": f"{base}/api/protocols/{PROTOCOL_NAME}/v0.5/manifest",
+        "bundle": f"{base}/api/protocols/{PROTOCOL_NAME}/v0.5/bundle",
+        "docs": f"{base}/docs/task-lifecycle-v05.md",
+        "examples": f"{base}/examples/protocol-v05/",
+    }
+    manifest["constants"] = {
+        "max_delivery_attempts": 4,
+        "retry_backoff_seconds": [60, 300, 600],
+        "delivery_ack_lease_seconds": 60,
+        "listener_readiness_publish_interval_seconds": 60,
+        "listener_readiness_max_age_seconds": 300,
+        "max_visibility_batch_size": 100,
+    }
+    return manifest
+
+
+def protocol_bundle_v05(public_base_url: str | None = None) -> dict[str, Any]:
+    return {
+        "manifest": protocol_manifest_v05(public_base_url),
+        "schemas": read_json_dir(SCHEMA_DIR, "*v05*.schema.json"),
+        "examples": read_json_dir(ROOT / "examples" / "protocol-v05", "*.json"),
+        "docs": {
+            "task-lifecycle-v05.md": read_text_if_exists(DOCS_DIR / "task-lifecycle-v05.md"),
+            "protocol-v05-rollout-plan.md": read_text_if_exists(DOCS_DIR / "protocol-v05-rollout-plan.md"),
+            "protocol-v05-conformance.md": read_text_if_exists(DOCS_DIR / "protocol-v05-conformance.md"),
+        },
     }
 
 

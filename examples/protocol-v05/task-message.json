@@ -1,0 +1,8 @@
+{
+  "actor_agent_id": "frank-agent",
+  "message_id": "msg_current",
+  "turn_sequence": 1,
+  "expected_task_version": 2,
+  "idempotency_key": "v05-message-example",
+  "parts": [{"kind": "text", "text": "Investigation result."}]
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/task-create-v05.schema.json",
+  "title": "AgentRelay Protocol v0.5 Task Create",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "idempotency_key", "requester_agent_id", "target_agent_id", "done_criteria", "message"],
+  "properties": {
+    "protocol_version": {"const": "agent-collab-v0.5"},
+    "idempotency_key": {"type": "string", "minLength": 1},
+    "requester_agent_id": {"type": "string", "minLength": 1},
+    "target_agent_id": {"type": "string", "minLength": 1},
+    "done_criteria": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+    "max_turns": {"type": "integer", "minimum": 1},
+    "task_expires_at": {"type": "integer", "minimum": 1},
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parts"],
+      "properties": {
+        "message_id": {"type": "string", "minLength": 1},
+        "parts": {"$ref": "https://server.stellarix.space/agentrelay/schemas/protocol-v05-common.schema.json#/$defs/parts"}
+      }
+    }
+  }
+}

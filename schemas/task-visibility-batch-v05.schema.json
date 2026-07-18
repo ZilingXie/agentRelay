@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/task-visibility-batch-v05.schema.json",
+  "title": "AgentRelay Protocol v0.5 Visibility Batch Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["task_ids"],
+  "properties": {
+    "task_ids": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

@@ -5,6 +5,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 const schemaDir = new URL("../schemas/", import.meta.url);
 const exampleDir = new URL("../examples/protocol-v03/", import.meta.url);
+const v05ExampleDir = new URL("../examples/protocol-v05/", import.meta.url);
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 const schemas = new Map();
 
@@ -31,6 +32,82 @@ rejects("task-create-v04.schema.json", {
   requester_agent_id: "agent-a",
   target_agent_id: "agent-b",
   done_criteria: "Missing message"
+});
+
+const v05Task = {
+  task_id: "task_v05",
+  root_task_id: "task_v05",
+  protocol_version: "agent-collab-v0.5",
+  requester_agent_id: "zac-agent",
+  target_agent_id: "frank-agent",
+  done_criteria: "accepted response",
+  status: "open",
+  turn_sequence: 1,
+  current_message_id: "msg_v05",
+  from_agent_id: "zac-agent",
+  to_agent_id: "frank-agent",
+  task_version: 1,
+  max_turns: 4,
+  task_expires_at: 1784480000,
+  reason: null,
+  terminal_by_agent_id: null,
+  completed_against_message_id: null,
+  created_at: 1784390000,
+  updated_at: 1784390000
+};
+
+const v05Message = {
+  message_id: "msg_v05",
+  task_id: "task_v05",
+  turn_sequence: 1,
+  from_agent_id: "zac-agent",
+  to_agent_id: "frank-agent",
+  parts: [{ kind: "text", text: "Please investigate." }],
+  idempotency_key: "v05-create",
+  delivery_status: "pending",
+  max_delivery_attempts: 4,
+  delivered_at: null,
+  failed_at: null,
+  delivery_reason: null,
+  created_at: 1784390000,
+  updated_at: 1784390000
+};
+
+const v05Outbox = {
+  event_id: "evt_v05",
+  agent_id: "frank-agent",
+  event_type: "message.pending",
+  task_id: "task_v05",
+  message_id: "msg_v05",
+  idempotency_key: "v05:msg_v05:pending",
+  outbox_status: "queued",
+  outbox_attempts: 0,
+  inflight_until: null,
+  next_retry_at: null,
+  acked_at: null,
+  exhausted_at: null,
+  exhaustion_reason: null,
+  last_error: null,
+  can_transition_message: true,
+  created_at: 1784390000,
+  updated_at: 1784390000
+};
+
+validate("task-detail-v05.schema.json", { task: v05Task, messages: [v05Message] });
+validate("task-visibility-v05.schema.json", {
+  protocol_version: "agent-collab-v0.5",
+  diagnosis_version: 1,
+  generated_at: 1784390000,
+  task: v05Task,
+  current_message: v05Message,
+  outbox: v05Outbox,
+  diagnosis: "message_queued"
+});
+validate("task-visibility-batch-v05.schema.json", { task_ids: ["task_v05", "task_v05_2"] });
+rejects("task-visibility-batch-v05.schema.json", { task_ids: ["task_v05", "task_v05"] });
+rejects("task-detail-v05.schema.json", {
+  task: { ...v05Task, status: "delivered" },
+  messages: [v05Message]
 });
 
 validate("task-mutation-v04.schema.json", {
@@ -350,12 +427,26 @@ for (const [exampleFileName, schemaFileName] of Object.entries(exampleSchemaMap)
   validate(schemaFileName, example);
 }
 
+const v05ExampleSchemaMap = {
+  "task-create.json": "task-create-v05.schema.json",
+  "task-message.json": "task-message-v05.schema.json",
+  "message-ack.json": "message-ack-v05.schema.json",
+  "message-delivery-fail.json": "message-delivery-fail-v05.schema.json",
+  "task-complete.json": "task-terminal-v05.schema.json"
+};
+
+for (const [exampleFileName, schemaFileName] of Object.entries(v05ExampleSchemaMap)) {
+  const example = JSON.parse(readFileSync(new URL(exampleFileName, v05ExampleDir), "utf8"));
+  validate(schemaFileName, example);
+}
+
 console.log(
   JSON.stringify(
     {
       ok: true,
       schemas: [...schemas.keys()].sort(),
-      examples: Object.keys(exampleSchemaMap).sort()
+      examples: Object.keys(exampleSchemaMap).sort(),
+      v05_examples: Object.keys(v05ExampleSchemaMap).sort()
     },
     null,
     2

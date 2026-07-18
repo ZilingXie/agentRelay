@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/message-ack-v05.schema.json",
+  "title": "AgentRelay Protocol v0.5 Message ACK",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["task_id", "event_id", "message_id", "turn_sequence", "expected_task_version", "idempotency_key", "listener_instance_id", "readiness_epoch"],
+  "properties": {
+    "task_id": {"type": "string", "minLength": 1},
+    "event_id": {"type": "string", "minLength": 1},
+    "message_id": {"type": "string", "minLength": 1},
+    "turn_sequence": {"type": "integer", "minimum": 1},
+    "expected_task_version": {"type": "integer", "minimum": 1},
+    "idempotency_key": {"type": "string", "minLength": 1},
+    "listener_instance_id": {"type": "string", "minLength": 1},
+    "readiness_epoch": {"type": "integer", "minimum": 1}
+  }
+}

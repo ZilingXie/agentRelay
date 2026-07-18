@@ -1,0 +1,8 @@
+{
+  "actor_agent_id": "zac-agent",
+  "message_id": "msg_response",
+  "turn_sequence": 1,
+  "expected_task_version": 4,
+  "idempotency_key": "v05-complete-example",
+  "completed_against_message_id": "msg_response"
+}

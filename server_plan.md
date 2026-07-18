@@ -110,9 +110,9 @@ Implemented server behavior:
 
 ## Protocol v0.5 Two-Layer Lifecycle Plan
 
-Status: design complete and independently reviewed; implementation not started.
-No v0.5 code work starts until the Server, Client, and public planning updates
-are merged and published and the Hermes baseline gate is complete. The
+Status: core implementation started on 2026-07-19. Project Hermes is deferred
+to a separate pre-production workstream. Production mutations remain closed
+until Hermes and every enabled Listener pass the full cutover gate. The
 authoritative design is
 [`docs/task-lifecycle-v05.md`](docs/task-lifecycle-v05.md).
 
@@ -145,22 +145,21 @@ Detailed implementation and cutover gates are maintained in
 - Every enabled Agent must advertise v0.5 and fresh Listener readiness before
   writes open. Unsupported/stale Agents are disabled; create rejects incapable
   participants instead of silently downgrading.
-- The Hermes repository/runtime ownership is now identified. Task 0 must
-  preserve and reconcile its dirty production baseline; visibility-API
-  regression against that exact runtime remains a cutover blocker.
+- The Hermes repository/runtime ownership is identified. Its dirty production
+  baseline is deferred from core implementation but remains a production
+  cutover blocker; no current work may modify it.
 - Task hard deletion remains forbidden.
 
 Implementation order:
 
 1. Merge and publish Server, Client, and public v0.5 planning updates while
    preserving v0.4 as completed.
-2. Preserve the identified Hermes dirty baseline and reconcile its unit path as
-   part of Task 0.
-3. Implement Server protocol/schema/Store/scheduler/API/archive/conformance.
-4. Implement MCP/Listener tools, durable ACK, workspace v2, and Inbox UI.
-5. Upgrade dashboard and dispatcher to the visibility contract.
-6. Run full suites, cutover rehearsal, cross-repository conformance, and
-   maintenance rollback rehearsal.
+2. Implement Server protocol/schema/Store/scheduler/API/archive/conformance.
+3. Implement MCP/Listener tools, durable ACK, workspace v2, and Inbox UI.
+4. Upgrade dashboard to the visibility contract and run core rehearsal with
+   production mutations closed.
+5. Preserve and upgrade Hermes in its later independent workstream.
+6. Run the full cutover and rollback rehearsal including Hermes.
 7. Execute the maintenance-window cutover and production E2E.
 
 Project Hermes implementation workstream:
@@ -187,12 +186,13 @@ Project Hermes implementation workstream:
 
 ## Active Next Steps
 
-- Complete and publish Task 0 planning updates for Protocol v0.5 without
-  replacing any v0.4 contract or evidence.
-- Review and publish the complete v0.5 Server, Client, UI, dispatcher, and
-  maintenance implementation plan before code begins.
-- Preserve the identified Hermes production baseline, then execute the
-  dedicated Hermes v0.5 workstream before cutover.
+- Implement the Server v0.5 protocol, native storage, delivery coordinator,
+  APIs, visibility, readiness, dashboard, and cutover tooling behind closed
+  production writes.
+- Implement the Client v0.5 MCP/Listener, workspace v2, and Inbox UI after the
+  Server contract is stable.
+- Preserve the identified Hermes production baseline and execute its dedicated
+  v0.5 workstream before production cutover, not as a core-code prerequisite.
 - Support the MCP Service Worker Kit with enough server/dashboard visibility to debug worker runs end to end.
 - Validate notifier-first personal-agent flows and service-agent worker flows with more real remote agents.
 - Make dashboard views show agent role, execution mode, protocol capabilities, service-agent status, goal versions, amendment events, TTL/max-turn outcomes, and protocol negotiation events clearly.

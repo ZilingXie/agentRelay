@@ -39,8 +39,10 @@ from server.protocol_registry import (
     negotiation_error_detail,
     protocol_bundle,
     protocol_bundle_v04,
+    protocol_bundle_v05,
     protocol_manifest,
     protocol_manifest_v04,
+    protocol_manifest_v05,
     protocol_summary,
 )
 
@@ -120,6 +122,12 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         if path == f"/agentrelay/protocols/{PROTOCOL_NAME}/v0.4/bundle":
             self.respond_json(protocol_bundle_v04(public_base_url()))
+            return
+        if path == f"/agentrelay/protocols/{PROTOCOL_NAME}/v0.5/manifest":
+            self.respond_json(protocol_manifest_v05(public_base_url()))
+            return
+        if path == f"/agentrelay/protocols/{PROTOCOL_NAME}/v0.5/bundle":
+            self.respond_json(protocol_bundle_v05(public_base_url()))
             return
         if path in {"/agentrelay/dashboard", "/agentrelay/dashboard/"}:
             self.serve_dashboard_asset("index.html")

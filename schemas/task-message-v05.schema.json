@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/task-message-v05.schema.json",
+  "title": "AgentRelay Protocol v0.5 Send Message",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["actor_agent_id", "message_id", "turn_sequence", "expected_task_version", "idempotency_key", "parts"],
+  "properties": {
+    "actor_agent_id": {"type": "string", "minLength": 1},
+    "message_id": {"type": "string", "minLength": 1},
+    "turn_sequence": {"type": "integer", "minimum": 1},
+    "expected_task_version": {"type": "integer", "minimum": 1},
+    "idempotency_key": {"type": "string", "minLength": 1},
+    "parts": {"$ref": "https://server.stellarix.space/agentrelay/schemas/protocol-v05-common.schema.json#/$defs/parts"}
+  }
+}

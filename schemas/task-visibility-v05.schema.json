@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/task-visibility-v05.schema.json",
+  "title": "AgentRelay Protocol v0.5 Task Visibility",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "diagnosis_version", "generated_at", "task", "current_message", "outbox", "diagnosis"],
+  "properties": {
+    "protocol_version": {"const": "agent-collab-v0.5"},
+    "diagnosis_version": {"const": 1},
+    "generated_at": {"type": "integer"},
+    "task": {"$ref": "https://server.stellarix.space/agentrelay/schemas/protocol-v05-common.schema.json#/$defs/task"},
+    "current_message": {"$ref": "https://server.stellarix.space/agentrelay/schemas/protocol-v05-common.schema.json#/$defs/message"},
+    "outbox": {"$ref": "https://server.stellarix.space/agentrelay/schemas/protocol-v05-common.schema.json#/$defs/outbox"},
+    "diagnosis": {
+      "enum": [
+        "task_completed", "task_expired", "task_failed_delivery", "task_failed",
+        "message_queued", "message_inflight", "message_pending_retry",
+        "waiting_target_response", "waiting_requester_decision", "invariant_violation"
+      ]
+    }
+  }
+}
