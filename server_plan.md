@@ -110,8 +110,9 @@ Implemented server behavior:
 
 ## Protocol v0.5 Two-Layer Lifecycle Plan
 
-Status: core implementation completed on the Protocol v0.5 task branch on
-2026-07-19 and is pending PR merge. Project Hermes is deferred to a separate
+Status: core implementation merged through Server PR #51 and Client PR #44 on
+2026-07-19. The merged `main` branches passed the full Server and Client suites
+plus the cross-repository v0.5 E2E. Project Hermes is deferred to a separate
 pre-production workstream. Production mutations remain closed
 until Hermes and every enabled Listener pass the full cutover gate. The
 authoritative design is
@@ -187,8 +188,6 @@ Project Hermes implementation workstream:
 
 ## Active Next Steps
 
-- Review and merge the Server and Client v0.5 PRs in dependency order while
-  keeping production mutations closed.
 - Run the maintenance rehearsal and enabled-Agent readiness preflight after the
   exact deployment artifacts are available.
 - Preserve the identified Hermes production baseline and execute its dedicated

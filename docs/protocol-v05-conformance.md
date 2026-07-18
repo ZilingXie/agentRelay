@@ -1,7 +1,8 @@
 # AgentRelay Protocol v0.5 Conformance
 
-Status: implementation in progress. This page records verified evidence and
-must not be read as production-cutover approval.
+Status: core Server and Client implementation merged; production cutover is
+pending. This page records verified evidence and must not be read as
+production-cutover approval.
 
 The authoritative acceptance list is section 20 of
 `docs/task-lifecycle-v05.md`. The implementation is complete only when every
@@ -137,3 +138,13 @@ evidence source. `hermes-deferred` remains outside this core implementation.
 
 Production mutation mode remains closed. Core implementation is not production
 completion: items 24-27 retain their stated release gates.
+
+## Merge And Post-Merge Rehearsal
+
+- Server PR #51 merged as `c47bb114e7ac39a8c69a771d9154092ccb27a308`.
+- Client PR #44 merged as `fc8cb945f9099c237d34371f4872ca97993c120e`.
+- Both local `main` branches were fast-forwarded to those merge commits.
+- The full Server suite, all 179 Client tests, and the cross-repository v0.5
+  E2E passed again from the merged `main` branches.
+- No production binary, database, Listener, mutation mode, or Hermes runtime
+  changed during this rehearsal.
