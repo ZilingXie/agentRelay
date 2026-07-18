@@ -2,7 +2,7 @@
 
 Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/agentRelay`.
 
-Status date: 2026-07-18.
+Status date: 2026-07-19.
 
 Latest update: Protocol v0.4 is a completed, production-verified historical baseline. The next implementation target is Protocol v0.5, which separates Task lifecycle, Message delivery, and Agent Event outbox truth and will replace active writes during a maintenance-window cutover. The v0.4 contract, schemas, examples, and verification record remain preserved.
 
@@ -157,14 +157,35 @@ Implementation order:
    maintenance rollback rehearsal.
 7. Execute the maintenance-window cutover and production E2E.
 
+Project Hermes implementation workstream:
+
+1. During Task 0, identify the deployed Listener and daily dispatcher
+   repository, executable path, owner, schedule/configuration source, deployment
+   command, and rollback command.
+2. Upgrade the Hermes Listener to v0.5 capability/readiness, Message-before-ACK,
+   guarded non-retryable NACK, workspace v2, and v0.5 response submission.
+3. Replace dispatcher status inference and direct legacy-field reads with the
+   Server batch visibility contract. Keep the dispatcher read-only with respect
+   to Task lifecycle.
+4. Report Completed, Failed, Expired, Delivery pending, Waiting for target
+   response, and Waiting for requester decision separately. Surface stable
+   diagnosis/reason and safe retry details; classify API/partial-batch failures
+   as report errors, never Task failures.
+5. Add dry-run output, per-window dispatch idempotency, duplicate-send
+   prevention, and metrics/alerts for visibility, WeCom send, and stale Listener
+   readiness failures.
+6. Gate cutover on Zac/Vivi, exhaustion, completed, expired, partial-batch, and
+   duplicate-dispatch regressions against the exact deployed runtime, followed
+   by one maintenance dry-run and the production two-Agent E2E.
+
 ## Active Next Steps
 
 - Complete and publish Task 0 planning updates for Protocol v0.5 without
   replacing any v0.4 contract or evidence.
 - Break the approved v0.5 design into separate Server, Client, UI, dispatcher,
   and maintenance implementation plans and PRs.
-- Locate the deployed Hermes dispatcher ownership and include it in the
-  visibility-API migration before implementation begins.
+- Locate the deployed Hermes Listener and dispatcher ownership/runtime details,
+  then execute the dedicated Hermes v0.5 workstream before cutover.
 - Support the MCP Service Worker Kit with enough server/dashboard visibility to debug worker runs end to end.
 - Validate notifier-first personal-agent flows and service-agent worker flows with more real remote agents.
 - Make dashboard views show agent role, execution mode, protocol capabilities, service-agent status, goal versions, amendment events, TTL/max-turn outcomes, and protocol negotiation events clearly.

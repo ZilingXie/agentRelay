@@ -3,7 +3,7 @@
 Status: core design confirmed; specification review in progress; implementation
 not started.
 
-Status date: 2026-07-18.
+Status date: 2026-07-19.
 
 Protocol v0.4 is a completed, immutable historical baseline. Protocol v0.5 is
 the next implementation target and replaces every v0.3/v0.4 write path during
@@ -528,11 +528,41 @@ Expired, Delivery pending, Waiting for target response, and Waiting for
 requester decision. It must never report a delivered current Message awaiting
 a response as a failed Task.
 
-The deployed Project Hermes daily dispatcher is an external integration until
-its executable repository, deployment path, and owner are identified. Task 0
-must record those facts. Opening v0.5 writes is blocked until that exact runtime
-consumes the batch visibility API and passes the Zac delivered-but-waiting and
-Vivi not-delivered regression cases.
+### Project Hermes Upgrade
+
+Project Hermes has two separate v0.5 responsibilities:
+
+- The Hermes Listener participates in Message delivery. It advertises v0.5,
+  reports readiness, persists the complete Message before ACK, uses the guarded
+  NACK only for confirmed non-retryable persistence failures, stores workspace
+  v2, and submits its reply through the normal v0.5 Message transaction.
+- The Hermes daily dispatcher is a read-only reporting integration. It consumes
+  Server batch visibility and diagnosis; it never queries legacy Task delivery
+  fields, reads raw `agent_events` to infer product state, or maintains a fourth
+  status model.
+
+Task 0 must identify and record the deployed dispatcher's executable
+repository, deployment path, owner, schedule, configuration source, and
+rollback command. Its v0.5 workstream then:
+
+1. replaces local status inference with batch visibility;
+2. reports separate counts for Completed, Failed, Expired, Delivery pending,
+   Waiting for target response, and Waiting for requester decision;
+3. includes stable diagnosis/reason plus attempt, next-retry, and last-error
+   details where relevant, without exposing Message content;
+4. makes a partial batch/API failure explicit instead of classifying the
+   affected Task as Failed;
+5. adds a dry-run mode that produces the report without sending WeCom;
+6. preserves one idempotent dispatch record per schedule window so retries do
+   not send duplicate reports; and
+7. adds metrics and alerts for visibility failures, report-send failures, and
+   stale Hermes Listener readiness.
+
+Opening v0.5 writes is blocked until the exact deployed Listener and dispatcher
+runtime pass the Zac delivered-but-waiting, Vivi not-delivered, delivery
+exhaustion, completed, expired, partial-batch, and duplicate-dispatch regression
+cases. A maintenance rehearsal must run the dispatcher in dry-run before the
+first real v0.5 WeCom report.
 
 ## 16. Listener Capability And Readiness Gate
 
@@ -553,6 +583,14 @@ when either participant is not v0.5-capable with `409 protocol_v05_required`,
 or when either participant's Listener is not fresh and ready with
 `409 listener_not_ready`. Once a Task is admitted, later Listener unavailability
 uses the normal four-attempt delivery policy rather than changing capability.
+
+This gate prevents Relay from accepting a new v0.5 Task for a participant that
+is still running an incompatible Listener. The 300-second check is only a
+cutover/create admission snapshot; it does not mean a Message was delivered,
+does not keep a Task alive, and does not replace delivery retry. The deployment
+must verify that 300 seconds covers at least three configured readiness
+publication intervals. Otherwise the Listener interval or admission constant
+must be corrected before cutover rather than weakening the gate at runtime.
 
 ## 17. Maintenance-Window Cutover
 
@@ -590,6 +628,15 @@ may join the retirement report; they do not synthesize a v0.5 status. Every
 v0.3/v0.4 mutation route returns `410 protocol_retired`. Old local workspaces
 are read-only. This intentionally avoids mixed-protocol rows and does not
 attempt to continue old active Tasks.
+
+The separate archive/new-database boundary prevents legacy fields from becoming
+a second interpretation of v0.5 truth. It trades active legacy continuation for
+a simpler invariant: every writable collaboration row is natively v0.5. The
+retirement report preserves the operational outcome for unfinished legacy work,
+while the original database remains the audit source. Only identity and access
+records cross the boundary because the upgraded participants must still
+authenticate; those records are validated before import and do not carry Task
+state.
 
 ## 18. Rollback Boundary
 
@@ -640,8 +687,10 @@ At minimum, conformance must prove:
 25. Production two-Agent create/ACK/response/ACK/complete/follow-up E2E passes.
 26. Every enabled Agent passes the v0.5 capability/readiness gate before writes
     open; unsupported and stale participants receive the specified 409 errors.
-27. The actual deployed Hermes dispatcher passes delivered-but-waiting and
-    not-delivered regression cases.
+27. The actual deployed Hermes Listener and dispatcher pass delivered-but-
+    waiting, not-delivered, exhaustion, completed, expired, partial-batch, stale
+    readiness, and duplicate-dispatch regression cases; dry-run sends no WeCom
+    message and a retried schedule window sends at most one real report.
 28. A guarded non-retryable Listener NACK is idempotent and exhausts exactly
     once; retryable local errors produce no NACK and remain Relay-scheduled.
 29. Only the validated Agent registry crosses into the v0.5 database; no legacy
