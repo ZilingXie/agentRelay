@@ -157,7 +157,11 @@ def protocol_bundle_v04(public_base_url: str | None = None) -> dict[str, Any]:
     }
 
 
-def protocol_manifest_v05(public_base_url: str | None = None) -> dict[str, Any]:
+def protocol_manifest_v05(
+    public_base_url: str | None = None,
+    *,
+    write_mode: str = "closed",
+) -> dict[str, Any]:
     base = (public_base_url or "https://server.stellarix.space/agentrelay").rstrip("/")
     manifest = protocol_manifest(base)
     manifest.update(
@@ -165,7 +169,7 @@ def protocol_manifest_v05(public_base_url: str | None = None) -> dict[str, Any]:
             "version": PROTOCOL_V05,
             "semver": "0.5.0",
             "status": "accepted_non_default",
-            "write_mode": "closed",
+            "write_mode": write_mode,
         }
     )
     manifest["urls"] = {
@@ -186,9 +190,13 @@ def protocol_manifest_v05(public_base_url: str | None = None) -> dict[str, Any]:
     return manifest
 
 
-def protocol_bundle_v05(public_base_url: str | None = None) -> dict[str, Any]:
+def protocol_bundle_v05(
+    public_base_url: str | None = None,
+    *,
+    write_mode: str = "closed",
+) -> dict[str, Any]:
     return {
-        "manifest": protocol_manifest_v05(public_base_url),
+        "manifest": protocol_manifest_v05(public_base_url, write_mode=write_mode),
         "schemas": read_json_dir(SCHEMA_DIR, "*v05*.schema.json"),
         "examples": read_json_dir(ROOT / "examples" / "protocol-v05", "*.json"),
         "docs": {

@@ -13,10 +13,26 @@ The container image does not include runtime state. Keep these files on the host
 
 ```text
 data/agentrelay.sqlite3
+data/agentrelay-v05.sqlite3
 data/agentrelay-auth.json
 ```
 
 Do not commit `data/`, `.env`, tokens, sqlite files, or logs.
+
+The Compose template defaults `AGENTRELAY_MUTATION_MODE=legacy`; rebuilding the
+image does not switch collaboration writes. Protocol v0.5 uses the separate
+`agentrelay-v05.sqlite3` path.
+
+Valid mutation modes are:
+
+```text
+legacy  current v0.3/v0.4 behavior
+closed  readiness and read-only inspection only; collaboration writes return 503
+v05     native v0.5 writes; legacy mutations return 410
+```
+
+Use `closed` for maintenance preflight. Do not use `v05` until the complete
+cross-component cutover gate passes.
 
 ## Files
 

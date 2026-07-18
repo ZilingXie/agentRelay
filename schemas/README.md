@@ -17,6 +17,7 @@ the v0.5 maintenance-window target without changing the default protocol.
 - `task-message-v05.schema.json`: strict alternating next-Message mutation.
 - `message-ack-v05.schema.json`: versioned durable Listener ACK.
 - `message-delivery-fail-v05.schema.json`: guarded non-retryable persistence NACK.
+- `event-ack-v05.schema.json`: non-recursive informational outbox ACK.
 - `task-terminal-v05.schema.json`: requester completion or authorized failure.
 - `task-detail-v05.schema.json`: full Task plus ordered immutable Messages.
 - `task-visibility-v05.schema.json`: Server-computed diagnosis projection.

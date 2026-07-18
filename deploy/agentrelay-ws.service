@@ -12,9 +12,12 @@ Environment=PYTHONUNBUFFERED=1
 Environment=AGENTRELAY_WS_HOST=127.0.0.1
 Environment=AGENTRELAY_WS_PORT=8788
 Environment=AGENTRELAY_DB_PATH=/home/ubuntu/agentRelay/data/agentrelay.sqlite3
+Environment=AGENTRELAY_V05_DB_PATH=/home/ubuntu/agentRelay/data/agentrelay-v05.sqlite3
+Environment=AGENTRELAY_MUTATION_MODE=legacy
 Environment=AGENTRELAY_AUTH_FILE=/home/ubuntu/agentRelay/data/agentrelay-auth.json
 Environment=AGENTRELAY_WS_POLL_SECONDS=2
 Environment=AGENTRELAY_WS_HEARTBEAT_SECONDS=30
+Environment=AGENTRELAY_V05_COORDINATOR_POLL_SECONDS=1
 ExecStart=/usr/bin/python3 -m server.ws_app
 Restart=on-failure
 RestartSec=3

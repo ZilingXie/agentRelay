@@ -117,7 +117,7 @@ function renderSummary() {
   els.metricAgents.textContent = summary.agents ?? "-";
   els.metricActiveTasks.textContent = summary.tasks?.active ?? "-";
   els.metricTotalTasks.textContent = summary.tasks?.total ?? "-";
-  els.metricUnackedEvents.textContent = summary.agent_events?.unacked ?? "-";
+  els.metricUnackedEvents.textContent = summary.outbox?.unacked ?? summary.agent_events?.unacked ?? "-";
 
   els.activityList.innerHTML = "";
   for (const event of summary.recent_task_events || []) {
@@ -127,7 +127,7 @@ function renderSummary() {
         <span class="event-type">${escapeHtml(event.event_type)}</span>
         <span class="event-meta">${formatTime(event.created_at)}</span>
       </div>
-      <div>${escapeHtml(event.subject || event.task_id)}</div>
+      <div>${escapeHtml(event.subject || event.payload?.reason || event.task_id)}</div>
       <div class="event-meta mono">${escapeHtml(event.task_id)}</div>
     `;
     li.addEventListener("click", () => loadTaskDetail(event.task_id));
@@ -143,9 +143,9 @@ function renderAgents() {
     tr.innerHTML = `
       <td><strong>${escapeHtml(agent.agent_id)}</strong><div class="muted">${escapeHtml(agent.name || "")}</div></td>
       <td>${escapeHtml(agent.owner || "")}</td>
-      <td>${agent.pending_task_count ?? 0}</td>
+      <td>${agent.readiness_protocol_version ? badge(agent.readiness_fresh ? "ready" : "stale") : (agent.pending_task_count ?? 0)}</td>
       <td>${agent.active_task_count ?? 0}</td>
-      <td>${agent.unacked_event_count ?? 0}</td>
+      <td>${agent.pending_event_count ?? agent.unacked_event_count ?? 0}</td>
     `;
     tr.addEventListener("click", () => {
       els.agentFilter.value = agent.agent_id;
@@ -159,14 +159,18 @@ function renderTasks() {
   els.taskCount.textContent = `${state.tasks.length} shown`;
   els.tasksBody.innerHTML = "";
   for (const task of state.tasks) {
+    const message = task.current_message || {};
+    const direction = task.from_agent_id && task.to_agent_id
+      ? `${task.from_agent_id} -> ${task.to_agent_id}`
+      : task.pending_on_agent_id || "none";
     const tr = document.createElement("tr");
     if (task.task_id === state.selectedTaskId) tr.classList.add("selected");
     tr.innerHTML = `
-      <td class="subject">${escapeHtml(task.subject || "(no subject)")}<div class="muted mono">${escapeHtml(task.task_id)}</div></td>
+      <td class="subject">${escapeHtml(task.subject || task.done_criteria || "Task")}<div class="muted mono">${escapeHtml(task.task_id)}</div></td>
       <td>${badge(task.status)}</td>
-      <td class="mono">${escapeHtml(task.requester_agent_id || "")}</td>
-      <td class="mono">${escapeHtml(task.target_agent_id || "")}</td>
-      <td class="mono">${escapeHtml(task.pending_on_agent_id || "none")}</td>
+      <td>${badge(message.delivery_status || task.delivery_status || "-")}</td>
+      <td>${badge(task.diagnosis || "-")}</td>
+      <td class="mono direction">${escapeHtml(direction)}</td>
       <td>${formatTime(task.updated_at)}</td>
     `;
     tr.addEventListener("click", () => loadTaskDetail(task.task_id));
@@ -175,6 +179,10 @@ function renderTasks() {
 }
 
 function renderTaskDetail(payload) {
+  if (payload.visibility) {
+    renderV05TaskDetail(payload);
+    return;
+  }
   const task = payload.task;
   els.selectedTaskId.textContent = task.task_id;
   const timeline = payload.timeline?.entries || [];
@@ -208,6 +216,51 @@ function renderTaskDetail(payload) {
       <h2>Messages / Artifacts</h2>
       <pre>${escapeHtml(JSON.stringify({ messages: task.messages || [], artifacts: task.artifacts || [] }, null, 2))}</pre>
     </section>
+  `;
+}
+
+function renderV05TaskDetail(payload) {
+  const task = payload.task;
+  const visibility = payload.visibility;
+  const message = visibility.current_message;
+  const outbox = visibility.outbox;
+  const auditEvents = payload.audit_events || [];
+  els.selectedTaskId.textContent = task.task_id;
+  els.taskDetail.className = "detail";
+  els.taskDetail.innerHTML = `
+    <dl class="kv">
+      <dt>Lifecycle</dt><dd>${badge(task.status)}</dd>
+      <dt>Delivery</dt><dd>${badge(message.delivery_status)}</dd>
+      <dt>Diagnosis</dt><dd>${badge(visibility.diagnosis)}</dd>
+      <dt>Outbox</dt><dd>${badge(outbox.outbox_status)}</dd>
+      <dt>Direction</dt><dd class="mono">${escapeHtml(`${task.from_agent_id} -> ${task.to_agent_id}`)}</dd>
+      <dt>Turn / Version</dt><dd>${task.turn_sequence} / ${task.task_version}</dd>
+      <dt>Attempts</dt><dd>${outbox.outbox_attempts} / ${message.max_delivery_attempts}</dd>
+      <dt>Next Retry</dt><dd>${formatTime(outbox.next_retry_at)}</dd>
+      <dt>Last Error</dt><dd class="mono">${escapeHtml(outbox.last_error || "none")}</dd>
+      <dt>Task Deadline</dt><dd>${formatTime(task.task_expires_at)}</dd>
+      <dt>Root Task</dt><dd class="mono">${escapeHtml(task.root_task_id)}</dd>
+    </dl>
+    <section>
+      <h2>Audit</h2>
+      <ol class="timeline">${auditEvents.map(renderAuditItem).join("") || "<li>No audit events.</li>"}</ol>
+    </section>
+    <section>
+      <h2>Messages</h2>
+      <pre>${escapeHtml(JSON.stringify(payload.messages || [], null, 2))}</pre>
+    </section>
+  `;
+}
+
+function renderAuditItem(entry) {
+  return `
+    <li>
+      <div class="event-line">
+        <span class="event-type">${escapeHtml(entry.event_type)}</span>
+        <span class="event-meta">${formatTime(entry.created_at)}</span>
+      </div>
+      <div class="event-meta mono">${escapeHtml(entry.message_id || entry.task_id || "")}</div>
+    </li>
   `;
 }
 

@@ -93,7 +93,7 @@ def main() -> None:
             if task_event_schema["title"] != "AgentRelay Protocol v0.3 Task Event":
                 raise AssertionError("task-event schema endpoint did not serve the public schema")
             schema_index = get_text("http://127.0.0.1:8797/agentrelay/schemas/")
-            if "AgentRelay Protocol v0.3 Schemas" not in schema_index:
+            if "AgentRelay Protocol Schemas" not in schema_index:
                 raise AssertionError("schema catalog endpoint did not serve README.md")
             protocol_doc = get_text("http://127.0.0.1:8797/agentrelay/docs/protocol-v03.md")
             if "AgentRelay Protocol v0.3" not in protocol_doc:

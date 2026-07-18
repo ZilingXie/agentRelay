@@ -10,7 +10,7 @@
     <header class="topbar">
       <div>
         <h1>AgentRelay Dashboard</h1>
-        <p>Read-only task, agent, timeline, and delivery inspection.</p>
+        <p>Read-only collaboration operations.</p>
       </div>
       <form id="authForm" class="auth">
         <label for="adminToken">Admin token</label>
@@ -35,7 +35,7 @@
           <strong id="metricTotalTasks">-</strong>
         </div>
         <div class="metric">
-          <span>Unacked Events</span>
+          <span>Pending Delivery</span>
           <strong id="metricUnackedEvents">-</strong>
         </div>
       </section>
@@ -77,11 +77,11 @@
             <table>
               <thead>
                 <tr>
-                  <th>Subject</th>
+                  <th>Task</th>
                   <th>Status</th>
-                  <th>Requester</th>
-                  <th>Target</th>
-                  <th>Pending</th>
+                  <th>Delivery</th>
+                  <th>Diagnosis</th>
+                  <th>Direction</th>
                   <th>Updated</th>
                 </tr>
               </thead>
@@ -111,9 +111,9 @@
                 <tr>
                   <th>Agent</th>
                   <th>Owner</th>
-                  <th>Pending</th>
+                  <th>Ready</th>
                   <th>Active</th>
-                  <th>Unacked</th>
+                  <th>Outbox</th>
                 </tr>
               </thead>
               <tbody id="agentsBody"></tbody>

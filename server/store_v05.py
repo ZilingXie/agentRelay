@@ -484,11 +484,13 @@ class V05Store:
                 SELECT e.*
                 FROM agent_events e
                 JOIN tasks t ON t.task_id = e.task_id
-                WHERE e.agent_id = ? AND t.status = 'open' AND (
+                WHERE e.agent_id = ?
+                  AND (e.can_transition_message = 0 OR t.status = 'open') AND (
                     e.outbox_status = 'queued'
                     OR (e.outbox_status = 'retry_wait' AND e.next_retry_at <= ?)
                 )
-                ORDER BY COALESCE(e.next_retry_at, e.created_at), e.created_at, e.event_id
+                ORDER BY e.can_transition_message DESC,
+                         COALESCE(e.next_retry_at, e.created_at), e.created_at, e.event_id
                 LIMIT 1
                 """,
                 (agent_id, timestamp),
@@ -526,7 +528,7 @@ class V05Store:
                 SELECT * FROM agent_events
                 WHERE agent_id = ? AND outbox_status = 'inflight'
                   AND inflight_until > ?
-                ORDER BY created_at, event_id LIMIT 1
+                ORDER BY can_transition_message DESC, created_at, event_id LIMIT 1
                 """,
                 (agent_id, timestamp),
             ).fetchone()
@@ -588,6 +590,55 @@ class V05Store:
     ) -> dict[str, Any] | None:
         return self._finish_delivery(agent_id, payload, failed=True, now=now)
 
+    def ack_informational_event(
+        self,
+        agent_id: str,
+        event_id: str,
+        payload: dict[str, Any],
+        *,
+        now: int | None = None,
+    ) -> dict[str, Any] | None:
+        timestamp = _now(now)
+        key = str(payload["idempotency_key"])
+        request_hash = _fingerprint(payload)
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT * FROM agent_events WHERE event_id = ?", (event_id,)
+            ).fetchone()
+            if not row:
+                return None
+            existing = self._idempotent_result_conn(
+                conn, "event_ack", agent_id, event_id, key, request_hash
+            )
+            if existing:
+                return self._event_dict(row)
+            self._assert_listener_epoch_conn(
+                conn,
+                agent_id,
+                str(payload["listener_instance_id"]),
+                int(payload["readiness_epoch"]),
+            )
+            if row["agent_id"] != agent_id or row["can_transition_message"]:
+                raise ConflictError("Event is not an informational Event for this Agent")
+            if row["outbox_status"] not in {"inflight", "retry_wait"}:
+                raise ConflictError("informational Event is not ACK eligible")
+            conn.execute(
+                """
+                UPDATE agent_events SET outbox_status = 'acked', inflight_until = NULL,
+                    next_retry_at = NULL, acked_at = ?, updated_at = ?
+                WHERE event_id = ?
+                """,
+                (timestamp, timestamp, event_id),
+            )
+            self._record_idempotency_conn(
+                conn, "event_ack", agent_id, event_id, key, request_hash,
+                row["task_id"], row["message_id"], timestamp,
+            )
+            return self._event_dict(
+                conn.execute("SELECT * FROM agent_events WHERE event_id = ?", (event_id,)).fetchone()
+            )
+
     def complete_task(
         self,
         task_id: str,
@@ -626,6 +677,47 @@ class V05Store:
         with self.connect() as conn:
             return self._task_detail_conn(conn, task_id)
 
+    def get_agent(self, agent_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT agent_id FROM agents WHERE agent_id = ?", (agent_id,)).fetchone()
+            return self._agent_conn(conn, agent_id) if row else None
+
+    def get_readiness(self, agent_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT agent_id FROM agent_listener_readiness WHERE agent_id = ?", (agent_id,)
+            ).fetchone()
+            return self._readiness_conn(conn, agent_id) if row else None
+
+    def assert_listener_epoch(
+        self,
+        agent_id: str,
+        listener_instance_id: str,
+        readiness_epoch: int,
+    ) -> None:
+        with self.connect() as conn:
+            self._assert_listener_epoch_conn(
+                conn, agent_id, listener_instance_id, readiness_epoch
+            )
+
+    def list_due_agent_ids(self, *, now: int | None = None) -> list[str]:
+        timestamp = _now(now)
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT e.agent_id
+                FROM agent_events e
+                JOIN tasks t ON t.task_id = e.task_id
+                WHERE (e.can_transition_message = 0 OR t.status = 'open') AND (
+                    e.outbox_status = 'queued'
+                    OR (e.outbox_status = 'retry_wait' AND e.next_retry_at <= ?)
+                )
+                ORDER BY e.agent_id
+                """,
+                (timestamp,),
+            ).fetchall()
+            return [str(row["agent_id"]) for row in rows]
+
     def get_lineage(self, task_id: str) -> list[dict[str, Any]] | None:
         with self.connect() as conn:
             task = self._task_row_conn(conn, task_id)
@@ -660,6 +752,255 @@ class V05Store:
                 "outbox": event,
                 "diagnosis": diagnosis,
             }
+
+    def visibility_batch(
+        self,
+        task_ids: list[str],
+        *,
+        now: int | None = None,
+    ) -> dict[str, Any]:
+        items: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
+        for task_id in task_ids:
+            item = self.visibility(task_id, now=now)
+            if item is None:
+                errors.append({"task_id": task_id, "code": "task_not_found"})
+            else:
+                items.append(item)
+        return {"items": items, "errors": errors}
+
+    def admin_summary(self, *, now: int | None = None) -> dict[str, Any]:
+        timestamp = _now(now)
+        with self.connect() as conn:
+            task_status = {
+                str(row["status"]): int(row["count"])
+                for row in conn.execute(
+                    "SELECT status, COUNT(*) AS count FROM tasks GROUP BY status"
+                ).fetchall()
+            }
+            delivery_status = {
+                str(row["delivery_status"]): int(row["count"])
+                for row in conn.execute(
+                    "SELECT delivery_status, COUNT(*) AS count FROM messages GROUP BY delivery_status"
+                ).fetchall()
+            }
+            outbox_status = {
+                str(row["outbox_status"]): int(row["count"])
+                for row in conn.execute(
+                    "SELECT outbox_status, COUNT(*) AS count FROM agent_events GROUP BY outbox_status"
+                ).fetchall()
+            }
+            recent = [
+                {
+                    **dict(row),
+                    "payload": json.loads(row["payload_json"]),
+                }
+                for row in conn.execute(
+                    """
+                    SELECT audit_id, task_id, event_type, actor_agent_id, message_id,
+                           payload_json, created_at
+                    FROM task_audit_events
+                    ORDER BY created_at DESC, audit_id DESC LIMIT 50
+                    """
+                ).fetchall()
+            ]
+            for item in recent:
+                item.pop("payload_json", None)
+            task_ids = [row["task_id"] for row in conn.execute("SELECT task_id FROM tasks")]
+            stale_readiness = conn.execute(
+                """
+                SELECT COUNT(*) FROM agents a
+                LEFT JOIN agent_listener_readiness r ON r.agent_id = a.agent_id
+                WHERE a.enabled = 1 AND (
+                    r.agent_id IS NULL OR r.ready = 0 OR r.observed_at < ?
+                )
+                """,
+                (timestamp - LISTENER_READINESS_MAX_AGE_SECONDS,),
+            ).fetchone()[0]
+            due_events = conn.execute(
+                """
+                SELECT COUNT(*) FROM agent_events
+                WHERE outbox_status = 'queued'
+                   OR (outbox_status = 'retry_wait' AND next_retry_at <= ?)
+                   OR (outbox_status = 'inflight' AND inflight_until <= ?)
+                """,
+                (timestamp, timestamp),
+            ).fetchone()[0]
+            agents = conn.execute("SELECT COUNT(*) FROM agents").fetchone()[0]
+
+        invariant_violations = 0
+        for task_id in task_ids:
+            try:
+                if self.visibility(task_id, now=timestamp)["diagnosis"] == "invariant_violation":
+                    invariant_violations += 1
+            except ConflictError:
+                invariant_violations += 1
+        total_tasks = sum(task_status.values())
+        alerts = []
+        for code, count in (
+            ("invariant_violation", invariant_violations),
+            ("due_work_lag", int(due_events)),
+            ("exhausted_outbox", outbox_status.get("exhausted", 0)),
+            ("stale_enabled_agent", int(stale_readiness)),
+        ):
+            if count:
+                alerts.append({"code": code, "count": count})
+        return {
+            "protocol_version": PROTOCOL_V05,
+            "generated_at": timestamp,
+            "agents": int(agents),
+            "tasks": {
+                "total": total_tasks,
+                "active": task_status.get("open", 0),
+                "by_status": task_status,
+            },
+            "messages": {"by_delivery_status": delivery_status},
+            "outbox": {
+                "by_status": outbox_status,
+                "unacked": sum(outbox_status.get(key, 0) for key in ("queued", "inflight", "retry_wait")),
+                "due": int(due_events),
+                "exhausted": outbox_status.get("exhausted", 0),
+            },
+            "readiness": {"stale_enabled_agents": int(stale_readiness)},
+            "invariant_violations": invariant_violations,
+            "alerts": alerts,
+            "recent_task_events": recent,
+        }
+
+    def admin_agents(self, *, now: int | None = None) -> list[dict[str, Any]]:
+        timestamp = _now(now)
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT a.*, r.protocol_version AS readiness_protocol_version,
+                       r.client_version, r.workspace_version, r.listener_instance_id,
+                       r.readiness_epoch, r.transport, r.ready, r.observed_at,
+                       (SELECT COUNT(*) FROM tasks t
+                        WHERE t.status = 'open'
+                          AND (t.requester_agent_id = a.agent_id OR t.target_agent_id = a.agent_id)) AS active_task_count,
+                       (SELECT COUNT(*) FROM agent_events e
+                        WHERE e.agent_id = a.agent_id
+                          AND e.outbox_status IN ('queued', 'inflight', 'retry_wait')) AS pending_event_count
+                FROM agents a
+                LEFT JOIN agent_listener_readiness r ON r.agent_id = a.agent_id
+                ORDER BY a.agent_id
+                """
+            ).fetchall()
+        values = []
+        for row in rows:
+            value = dict(row)
+            value["enabled"] = bool(value["enabled"])
+            value["protocol_capabilities"] = json.loads(value.pop("protocol_capabilities_json"))
+            value["ready"] = bool(value["ready"]) if value["ready"] is not None else False
+            value["readiness_fresh"] = bool(
+                value["ready"]
+                and value["observed_at"] is not None
+                and int(value["observed_at"]) >= timestamp - LISTENER_READINESS_MAX_AGE_SECONDS
+            )
+            values.append(value)
+        return values
+
+    def admin_tasks(
+        self,
+        *,
+        agent_id: str | None = None,
+        status: str | None = None,
+        active: bool | None = None,
+        limit: int = 100,
+        now: int | None = None,
+    ) -> list[dict[str, Any]]:
+        where: list[str] = []
+        params: list[Any] = []
+        if agent_id:
+            where.append("(requester_agent_id = ? OR target_agent_id = ?)")
+            params.extend((agent_id, agent_id))
+        if status:
+            where.append("status = ?")
+            params.append(status)
+        if active is True:
+            where.append("status = 'open'")
+        elif active is False:
+            where.append("status != 'open'")
+        sql = "SELECT task_id FROM tasks"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY updated_at DESC, task_id LIMIT ?"
+        params.append(limit)
+        with self.connect() as conn:
+            task_ids = [row["task_id"] for row in conn.execute(sql, params).fetchall()]
+        values = []
+        for task_id in task_ids:
+            visibility = self.visibility(task_id, now=now)
+            if visibility:
+                values.append(
+                    {
+                        **visibility["task"],
+                        "current_message": visibility["current_message"],
+                        "outbox": visibility["outbox"],
+                        "diagnosis": visibility["diagnosis"],
+                    }
+                )
+        return values
+
+    def admin_task_detail(self, task_id: str, *, now: int | None = None) -> dict[str, Any] | None:
+        detail = self.get_task_detail(task_id)
+        if not detail:
+            return None
+        visibility = self.visibility(task_id, now=now)
+        with self.connect() as conn:
+            audit_events = []
+            for row in conn.execute(
+                """
+                SELECT * FROM task_audit_events
+                WHERE task_id = ? ORDER BY created_at, audit_id
+                """,
+                (task_id,),
+            ).fetchall():
+                item = dict(row)
+                item["payload"] = json.loads(item.pop("payload_json"))
+                audit_events.append(item)
+        return {
+            **detail,
+            "visibility": visibility,
+            "audit_events": audit_events,
+        }
+
+    def admin_outbox_events(
+        self,
+        *,
+        agent_id: str | None = None,
+        outbox_status: str | None = None,
+        task_id: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        where: list[str] = []
+        params: list[Any] = []
+        if agent_id:
+            where.append("e.agent_id = ?")
+            params.append(agent_id)
+        if outbox_status:
+            where.append("e.outbox_status = ?")
+            params.append(outbox_status)
+        if task_id:
+            where.append("e.task_id = ?")
+            params.append(task_id)
+        sql = """
+            SELECT e.*, t.status AS task_status
+            FROM agent_events e JOIN tasks t ON t.task_id = e.task_id
+        """
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY e.created_at DESC, e.event_id DESC LIMIT ?"
+        params.append(limit)
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        values = []
+        for row in rows:
+            value = dict(row)
+            value["payload"] = json.loads(value.pop("payload_json"))
+            value["can_transition_message"] = bool(value["can_transition_message"])
+            values.append(value)
+        return values
 
     def _finish_delivery(
         self,
@@ -766,6 +1107,24 @@ class V05Store:
                 conn, task_id, audit_type, agent_id, message["message_id"],
                 {"task_version": next_version}, timestamp,
             )
+            delivery_status = "failed" if failed else "delivered"
+            self._insert_info_event_conn(
+                conn,
+                agent_id=message["from_agent_id"],
+                event_type="message.delivery_changed",
+                task_id=task_id,
+                message_id=message["message_id"],
+                payload={
+                    "delivery_status": delivery_status,
+                    "task_version": next_version,
+                },
+                idempotency_key=f"v05:{message['message_id']}:delivery:{delivery_status}",
+                now=timestamp,
+            )
+            if failed:
+                self._notify_task_status_conn(
+                    conn, task, "failed", reason, agent_id, next_version, timestamp
+                )
             self._record_idempotency_conn(
                 conn, operation, agent_id, task_id, key, request_hash,
                 task_id, message["message_id"], timestamp,
@@ -860,6 +1219,9 @@ class V05Store:
                 None if actor == "relay" else actor, message["message_id"],
                 {"reason": reason, "task_version": next_version}, timestamp,
             )
+            self._notify_task_status_conn(
+                conn, task, terminal_status, reason, actor, next_version, timestamp
+            )
             self._record_idempotency_conn(
                 conn, operation, actor, task_id, key, request_hash,
                 task_id, message["message_id"], timestamp,
@@ -916,6 +1278,23 @@ class V05Store:
                         conn, task["task_id"], "task.failed", None, message["message_id"],
                         {"reason": "delivery_retry_exhausted", "task_version": next_version}, now,
                     )
+                    self._insert_info_event_conn(
+                        conn,
+                        agent_id=message["from_agent_id"],
+                        event_type="message.delivery_changed",
+                        task_id=task["task_id"],
+                        message_id=message["message_id"],
+                        payload={
+                            "delivery_status": "failed",
+                            "task_version": next_version,
+                        },
+                        idempotency_key=f"v05:{message['message_id']}:delivery:failed",
+                        now=now,
+                    )
+                    self._notify_task_status_conn(
+                        conn, task, "failed", "delivery_retry_exhausted", None,
+                        next_version, now,
+                    )
             return
         backoff = RETRY_BACKOFF_SECONDS[attempts - 1]
         conn.execute(
@@ -930,6 +1309,23 @@ class V05Store:
             event["message_id"],
             {"attempt": attempts, "last_error": error, "next_retry_at": now + backoff}, now,
         )
+        if event["can_transition_message"]:
+            message = self._message_row_conn(conn, event["message_id"])
+            if message:
+                self._insert_info_event_conn(
+                    conn,
+                    agent_id=message["from_agent_id"],
+                    event_type="message.delivery_attempt_failed",
+                    task_id=event["task_id"],
+                    message_id=event["message_id"],
+                    payload={
+                        "attempt": attempts,
+                        "last_error": error,
+                        "next_retry_at": now + backoff,
+                    },
+                    idempotency_key=f"v05:{event['event_id']}:attempt:{attempts}:failed",
+                    now=now,
+                )
 
     def _expire_task_conn(self, conn: sqlite3.Connection, task: dict[str, Any], now: int) -> None:
         message = self._message_row_conn(conn, task["current_message_id"])
@@ -964,6 +1360,9 @@ class V05Store:
             self._audit_conn(
                 conn, task["task_id"], "task.expired", None, task["current_message_id"],
                 {"reason": "task_timeout", "task_version": next_version}, now,
+            )
+            self._notify_task_status_conn(
+                conn, task, "expired", "task_timeout", None, next_version, now
             )
 
     def _assert_failure_authority(
@@ -1102,6 +1501,63 @@ class V05Store:
                 f"v05:{message_id}:pending", now, now,
             ),
         )
+
+    def _insert_info_event_conn(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        agent_id: str,
+        event_type: str,
+        task_id: str,
+        message_id: str | None,
+        payload: dict[str, Any],
+        idempotency_key: str,
+        now: int,
+    ) -> None:
+        conn.execute(
+            """
+            INSERT INTO agent_events (
+                event_id, agent_id, event_type, task_id, message_id, payload_json,
+                idempotency_key, outbox_status, outbox_attempts, inflight_until,
+                next_retry_at, acked_at, exhausted_at, exhaustion_reason, last_error,
+                can_transition_message, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', 0, NULL, NULL, NULL, NULL,
+                NULL, NULL, 0, ?, ?)
+            """,
+            (
+                f"evt_{uuid.uuid4().hex}", agent_id, event_type, task_id, message_id,
+                json.dumps({"protocol_version": PROTOCOL_V05, **payload}, sort_keys=True),
+                idempotency_key, now, now,
+            ),
+        )
+
+    def _notify_task_status_conn(
+        self,
+        conn: sqlite3.Connection,
+        task: sqlite3.Row | dict[str, Any],
+        status: str,
+        reason: str,
+        actor_agent_id: str | None,
+        task_version: int,
+        now: int,
+    ) -> None:
+        participants = {str(task["requester_agent_id"]), str(task["target_agent_id"])}
+        recipients = participants - {actor_agent_id} if actor_agent_id in participants else participants
+        for recipient in sorted(recipients):
+            self._insert_info_event_conn(
+                conn,
+                agent_id=recipient,
+                event_type="task.status_changed",
+                task_id=task["task_id"],
+                message_id=task["current_message_id"],
+                payload={
+                    "status": status,
+                    "reason": reason,
+                    "task_version": task_version,
+                },
+                idempotency_key=f"v05:{task['task_id']}:status:{task_version}:{recipient}",
+                now=now,
+            )
 
     def _audit_conn(
         self,

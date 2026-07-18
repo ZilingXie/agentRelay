@@ -224,3 +224,29 @@ def validate_visibility_batch(payload: dict[str, Any]) -> list[str]:
     if len(set(task_ids)) != len(task_ids):
         raise ValueError("task_ids must be de-duplicated")
     return task_ids
+
+
+def validate_readiness_register(payload: dict[str, Any]) -> None:
+    reject_unknown(
+        payload,
+        {"listener_instance_id", "client_version", "workspace_version", "transport"},
+    )
+    require_string(payload, "listener_instance_id")
+    require_string(payload, "client_version")
+    require_string(payload, "workspace_version")
+    require_string(payload, "transport")
+
+
+def validate_readiness_publish(payload: dict[str, Any]) -> None:
+    reject_unknown(payload, {"listener_instance_id", "readiness_epoch", "ready"})
+    require_string(payload, "listener_instance_id")
+    require_positive_int(payload, "readiness_epoch")
+    if not isinstance(payload.get("ready"), bool):
+        raise ValueError("ready must be a boolean")
+
+
+def validate_event_ack(payload: dict[str, Any]) -> None:
+    reject_unknown(payload, {"idempotency_key", "listener_instance_id", "readiness_epoch"})
+    require_string(payload, "idempotency_key")
+    require_string(payload, "listener_instance_id")
+    require_positive_int(payload, "readiness_epoch")

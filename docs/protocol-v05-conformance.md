@@ -46,15 +46,39 @@ The cutover smoke currently proves:
 
 All pre-existing v0.3/v0.4 and Server tests remain green at this checkpoint.
 
+## Phase 3 Evidence
+
+Run:
+
+```bash
+npm run test:protocol:v05:api
+npm run test:protocol:v05:delivery
+npm run test:protocol:v05:ws
+npm run test:admin-dashboard
+```
+
+Current Phase 3 evidence proves:
+
+- `legacy`, `closed`, and `v05` mutation-mode separation;
+- authenticated full Task, lineage, single/batch visibility, readiness,
+  Message, ACK/NACK, terminal, and follow-up HTTP behavior;
+- participant authorization and per-item batch errors;
+- legacy mutation 410 behavior in v0.5 mode;
+- no-socket and successful-write/no-ACK four-attempt fake-clock timelines;
+- persisted lease expiry, retry scheduling, process-restart continuity, and
+  attempt-four atomic failure;
+- non-recursive informational Event recovery and idempotent ACK behavior;
+- informational Event retry exhaustion without Task or Message mutation;
+- epoch-fenced WS hello, metadata-only Message delivery, old-socket closure,
+  and replacement-socket routing;
+- dashboard projections sourced from Server diagnosis, readiness, and outbox
+  state; and
+- desktop plus 390px rendering without page-level overflow.
+
 ## Pending Evidence
 
 The following remain required before v0.5 can be called implemented:
 
-- HTTP authorization, versioned ACK/NACK, visibility, readiness, lineage, and
-  retired-protocol API conformance;
-- WS due-Event coordinator, no-socket attempts, lease expiry, recovery, restart,
-  and stale-socket fencing;
-- dashboard diagnosis and operational alert verification;
 - MCP/Listener Message-before-ACK and workspace v2 durability;
 - Inbox UI desktop/mobile verification;
 - cross-repository two-Agent create/ACK/response/ACK/complete/follow-up E2E;

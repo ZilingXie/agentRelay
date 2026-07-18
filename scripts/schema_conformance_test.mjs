@@ -428,6 +428,7 @@ for (const [exampleFileName, schemaFileName] of Object.entries(exampleSchemaMap)
 }
 
 const v05ExampleSchemaMap = {
+  "event-ack.json": "event-ack-v05.schema.json",
   "task-create.json": "task-create-v05.schema.json",
   "task-message.json": "task-message-v05.schema.json",
   "message-ack.json": "message-ack-v05.schema.json",
