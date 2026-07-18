@@ -100,6 +100,24 @@ dashboard control. Keep `legacy` until core implementation and Client rehearsal
 are complete, use `closed` for preflight, and switch to `v05` only after every
 enabled Listener passes capability/readiness admission.
 
+Run the read-only preflight after the Server is deployed in `closed` mode and
+the upgraded Listeners have published fresh readiness:
+
+```bash
+python3 scripts/protocol_v05_preflight.py \
+  --base-url https://server.stellarix.space/agentrelay/api \
+  --legacy-db /home/ubuntu/agentRelay/data/agentrelay.sqlite3 \
+  --v05-db /home/ubuntu/agentRelay/data/agentrelay-v05.sqlite3 \
+  --retirement-report /path/to/retirement-report.json
+```
+
+The command reads the admin token only from `AGENTRELAY_ADMIN_TOKEN`, performs
+GET requests only, opens the legacy database read-only, and fails unless the
+Server is publishing v0.5 in `closed` mode, the native collaboration tables are
+empty, the retirement report is exact, and every enabled Agent has fresh v0.5
+WebSocket/workspace-v2 readiness. After writes open, use
+`--expected-mode v05 --allow-existing-collaboration` for a read-only recheck.
+
 Public WSS endpoint:
 
 ```text
