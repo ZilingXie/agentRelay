@@ -217,10 +217,10 @@ Project Hermes implementation workstream:
 
 ## Protocol Automatic Upgrade
 
-Status: implementation and verification complete in Server PR
-[`#61`](https://github.com/ZilingXie/agentRelay/pull/61); merge and production
-rollout remain pending. The dependent Client implementation is PR
-[`agent-relay-mcp#50`](https://github.com/ZilingXie/agent-relay-mcp/pull/50).
+Status: implementation merged in Server PR
+[`#61`](https://github.com/ZilingXie/agentRelay/pull/61) at `2a8c789` and Client
+PR [`agent-relay-mcp#50`](https://github.com/ZilingXie/agent-relay-mcp/pull/50)
+at `087bd2c`. Production rollout and verification remain pending.
 
 - Relay publishes version-specific schema and canonical bundle digests, stable
   authority/origin metadata, bundle revision, and non-programmable semantic
