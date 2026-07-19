@@ -246,9 +246,14 @@ The detailed contract is [`docs/protocol-auto-upgrade.md`](docs/protocol-auto-up
 
 ## Guardrail Hardening
 
-Status: Server and Client implementation is complete on task branches; full
-verification, separate PRs, deployment, and Zac/Hermes production evidence are
-still pending. Automatic protocol upgrade is one Guardrail subsystem.
+Status: Server PR [`#64`](https://github.com/ZilingXie/agentRelay/pull/64) and
+Client PR
+[`agent-relay-mcp#54`](https://github.com/ZilingXie/agent-relay-mcp/pull/54)
+are merged. Relay and Zac are deployed on adapter v2 revision `2`. The full
+Server suite, Client 204-test suite plus MCP smoke, and cross-repository HTTP
+hot-patch/up-to-date E2E passed. Hermes policy deployment and its production
+positive/negative evidence remain pending preservation of the dirty canonical
+Hermes baseline. Automatic protocol upgrade is one Guardrail subsystem.
 
 - Server publishes adapter contract v2, `local_authorization_v1`, immutable
   revision `2`, schema/bundle digests, and a bounded publication/expiration
@@ -275,8 +280,11 @@ still pending. Automatic protocol upgrade is one Guardrail subsystem.
 
 ## Active Next Steps
 
-- Merge and deploy Guardrail hardening in dependency order, then record the
-  Zac/Hermes production verification results and revision-2 digest.
+- Preserve the Hermes dirty canonical baseline, integrate and deploy its service
+  policy, then record Zac/Hermes positive and negative production evidence.
+- Production Relay publishes revision `2` with digest
+  `sha256:ba842be162628c7cc137914220dca2582dd2259db28e9192e3dce8c0afcc7f36`;
+  Zac is `up_to_date` and passed `doctor` after service restart.
 - Complete the 24-hour production observation window and record readiness,
   delivery backlog, invariant, dashboard, and Inbox UI results.
 - Keep `scripts/protocol_v05_preflight.py --allow-existing-collaboration` as the
