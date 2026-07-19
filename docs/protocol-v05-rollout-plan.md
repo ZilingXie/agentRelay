@@ -1,7 +1,8 @@
 # Protocol v0.5 Cross-Component Rollout Plan
 
-Status: core implementation in progress; independent specification review
-approved. Project Hermes is deferred to a separate pre-production workstream.
+Status: core implementation and production cutover complete; independent
+specification review approved. Project Hermes Listener/worker is deployed; its
+daily dispatcher migration remains separate.
 
 Status date: 2026-07-19.
 
@@ -374,6 +375,14 @@ Listener work:
 5. keep execution/dead-letter progress local; and
 6. add service startup, restart, stale readiness, and rollback checks.
 
+Listener status: complete on 2026-07-19 through
+[`heremes-deploy#1`](https://github.com/ZilingXie/heremes-deploy/pull/1).
+Production Task `task_c2265c1f935f43738d522b22bccc4b46` proved native v0.5
+Message-before-ACK intake, workspace-v2 persistence, Hermes execution, v0.5
+reply Message, requester Listener ACK, requester completion, and fully acked
+outbox Events. Source/runtime hashes matched after deployment. The existing
+dirty deploy baseline was not overwritten.
+
 Dispatcher work:
 
 1. replace hard-coded v0.3 payloads with v0.5 create and Relay-generated opaque
@@ -410,8 +419,9 @@ Merge and deploy in this order:
 7. Full maintenance rehearsal including Hermes.
 8. Production maintenance cutover and E2E.
 
-Server and Client use separate PRs. Hermes remains a later independent repository
-PR after its dirty baseline is preserved. Each PR records its dependency and
+Server and Client use separate PRs. The Hermes Listener/worker is merged through
+its independent repository PR after preserving the dirty baseline. The Hermes
+dispatcher remains a later independent PR. Each PR records its dependency and
 does not enable production writes by itself.
 
 The full acceptance set is the lifecycle contract's conformance list plus:
