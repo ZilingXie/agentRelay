@@ -220,7 +220,9 @@ Project Hermes implementation workstream:
 Status: implementation merged in Server PR
 [`#61`](https://github.com/ZilingXie/agentRelay/pull/61) at `2a8c789` and Client
 PR [`agent-relay-mcp#50`](https://github.com/ZilingXie/agent-relay-mcp/pull/50)
-at `087bd2c`. Production rollout and verification remain pending.
+at `087bd2c`. Deployed to production on 2026-07-19; health, current manifest,
+v0.5 bundle, authenticated negotiation, authority/origin, revision, and digest
+were verified with mutation mode preserved at `v05`.
 
 - Relay publishes version-specific schema and canonical bundle digests, stable
   authority/origin metadata, bundle revision, and non-programmable semantic
@@ -237,6 +239,8 @@ at `087bd2c`. Production rollout and verification remain pending.
 - Verified 2026-07-19 with the full Server and Client suites plus a real HTTP
   negotiation that activated the v0.5 bundle and assembled all five semantic
   operation payloads.
+- Production verification returned bundle revision `1` and digest
+  `sha256:f7467985fe7444a96f4699d155d0d4a2cd64f64c8f07f813deff2e9d2bf6eb9d`.
 
 The detailed contract is [`docs/protocol-auto-upgrade.md`](docs/protocol-auto-upgrade.md).
 
