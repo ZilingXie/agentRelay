@@ -21,43 +21,52 @@ DEPRECATED_PROTOCOL_VERSIONS = ["agent-collab-v0.2"]
 PATCHABLE_PROTOCOL_VERSIONS = ["agent-collab-v0.1"]
 REJECTED_PROTOCOL_VERSIONS = ["agent-collab-v0.1"]
 PATCH_CAPABILITY = "dynamic_protocol_bundle_v0.1"
-ADAPTER_CAPABILITY = "semantic_protocol_adapter_v1"
+ADAPTER_CAPABILITY = "semantic_protocol_adapter_v2"
+AUTHORIZATION_CAPABILITY = "local_authorization_v1"
+ADAPTER_CONTRACT_VERSION = 1
 PROTOCOL_AUTHORITY_ID = "server.stellarix.space/agentrelay"
 BUNDLE_REVISION_V03 = 1
 BUNDLE_REVISION_V04 = 1
-BUNDLE_REVISION_V05 = 1
+BUNDLE_REVISION_V05 = 2
+BUNDLE_PUBLISHED_AT_V05 = "2026-07-19T00:00:00Z"
+BUNDLE_EXPIRES_AT_V05 = "2027-07-19T00:00:00Z"
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "schemas"
 DOCS_DIR = ROOT / "docs"
 EXAMPLES_DIR = ROOT / "examples" / "protocol-v03"
-PROTECTED_BINDING_TARGETS = [
-    "/actor_agent_id",
-    "/requester_agent_id",
-    "/target_agent_id",
-    "/idempotency_key",
-    "/confirmation_ref",
+PROTECTED_BINDING_SLOTS = [
+    "actor_agent_id",
+    "requester_agent_id",
+    "target_agent_id",
+    "idempotency_key",
+    "message_id",
+    "turn_sequence",
+    "expected_task_version",
+    "completed_against_message_id",
+    "failure_reason",
 ]
 
 V05_OPERATION_ADAPTERS: dict[str, Any] = {
     "engine": ADAPTER_CAPABILITY,
+    "contract_version": ADAPTER_CONTRACT_VERSION,
     "allowed_binding_sources": ["input", "identity", "task", "runtime"],
-    "protected_targets": PROTECTED_BINDING_TARGETS,
+    "protected_slots": PROTECTED_BINDING_SLOTS,
     "operations": {
         "create_task": {
             "method": "POST",
             "path": "/tasks",
             "request_schema": "task-create-v05.schema.json",
             "bindings": [
-                {"to": "/protocol_version", "value": PROTOCOL_V05},
-                {"to": "/idempotency_key", "from": "runtime.idempotency_key"},
-                {"to": "/requester_agent_id", "from": "identity.agent_id"},
-                {"to": "/target_agent_id", "from": "input.targetAgentId"},
-                {"to": "/done_criteria", "from": "input.doneCriteria"},
-                {"to": "/max_turns", "from": "input.maxTurns", "optional": True},
-                {"to": "/task_expires_at", "from": "input.taskExpiresAt", "optional": True},
-                {"to": "/message/parts/0/kind", "value": "text"},
-                {"to": "/message/parts/0/text", "from": "input.requestText"},
+                {"slot": "protocol_version", "to": "/protocol_version", "value": PROTOCOL_V05},
+                {"slot": "idempotency_key", "to": "/idempotency_key", "from": "runtime.idempotency_key"},
+                {"slot": "requester_agent_id", "to": "/requester_agent_id", "from": "identity.agent_id"},
+                {"slot": "target_agent_id", "to": "/target_agent_id", "from": "input.targetAgentId"},
+                {"slot": "done_criteria", "to": "/done_criteria", "from": "input.doneCriteria"},
+                {"slot": "max_turns", "to": "/max_turns", "from": "input.maxTurns", "optional": True},
+                {"slot": "task_expires_at", "to": "/task_expires_at", "from": "input.taskExpiresAt", "optional": True},
+                {"slot": "message_kind", "to": "/message/parts/0/kind", "value": "text"},
+                {"slot": "request_text", "to": "/message/parts/0/text", "from": "input.requestText"},
             ],
         },
         "reply": {
@@ -65,13 +74,13 @@ V05_OPERATION_ADAPTERS: dict[str, Any] = {
             "path": "/tasks/{task_id}/messages",
             "request_schema": "task-message-v05.schema.json",
             "bindings": [
-                {"to": "/actor_agent_id", "from": "identity.agent_id"},
-                {"to": "/message_id", "from": "task.current_message_id"},
-                {"to": "/turn_sequence", "from": "task.turn_sequence"},
-                {"to": "/expected_task_version", "from": "task.task_version"},
-                {"to": "/idempotency_key", "from": "runtime.idempotency_key"},
-                {"to": "/parts/0/kind", "value": "text"},
-                {"to": "/parts/0/text", "from": "input.text"},
+                {"slot": "actor_agent_id", "to": "/actor_agent_id", "from": "identity.agent_id"},
+                {"slot": "message_id", "to": "/message_id", "from": "task.current_message_id"},
+                {"slot": "turn_sequence", "to": "/turn_sequence", "from": "task.turn_sequence"},
+                {"slot": "expected_task_version", "to": "/expected_task_version", "from": "task.task_version"},
+                {"slot": "idempotency_key", "to": "/idempotency_key", "from": "runtime.idempotency_key"},
+                {"slot": "message_kind", "to": "/parts/0/kind", "value": "text"},
+                {"slot": "reply_text", "to": "/parts/0/text", "from": "input.text"},
             ],
         },
         "complete_task": {
@@ -79,12 +88,12 @@ V05_OPERATION_ADAPTERS: dict[str, Any] = {
             "path": "/tasks/{task_id}/complete",
             "request_schema": "task-terminal-v05.schema.json",
             "bindings": [
-                {"to": "/actor_agent_id", "from": "identity.agent_id"},
-                {"to": "/message_id", "from": "task.current_message_id"},
-                {"to": "/turn_sequence", "from": "task.turn_sequence"},
-                {"to": "/expected_task_version", "from": "task.task_version"},
-                {"to": "/idempotency_key", "from": "runtime.idempotency_key"},
-                {"to": "/completed_against_message_id", "from": "task.current_message_id"},
+                {"slot": "actor_agent_id", "to": "/actor_agent_id", "from": "identity.agent_id"},
+                {"slot": "message_id", "to": "/message_id", "from": "task.current_message_id"},
+                {"slot": "turn_sequence", "to": "/turn_sequence", "from": "task.turn_sequence"},
+                {"slot": "expected_task_version", "to": "/expected_task_version", "from": "task.task_version"},
+                {"slot": "idempotency_key", "to": "/idempotency_key", "from": "runtime.idempotency_key"},
+                {"slot": "completed_against_message_id", "to": "/completed_against_message_id", "from": "task.current_message_id"},
             ],
         },
         "fail_task": {
@@ -92,12 +101,12 @@ V05_OPERATION_ADAPTERS: dict[str, Any] = {
             "path": "/tasks/{task_id}/fail",
             "request_schema": "task-terminal-v05.schema.json",
             "bindings": [
-                {"to": "/actor_agent_id", "from": "identity.agent_id"},
-                {"to": "/message_id", "from": "task.current_message_id"},
-                {"to": "/turn_sequence", "from": "task.turn_sequence"},
-                {"to": "/expected_task_version", "from": "task.task_version"},
-                {"to": "/idempotency_key", "from": "runtime.idempotency_key"},
-                {"to": "/reason", "from": "input.reason"},
+                {"slot": "actor_agent_id", "to": "/actor_agent_id", "from": "identity.agent_id"},
+                {"slot": "message_id", "to": "/message_id", "from": "task.current_message_id"},
+                {"slot": "turn_sequence", "to": "/turn_sequence", "from": "task.turn_sequence"},
+                {"slot": "expected_task_version", "to": "/expected_task_version", "from": "task.task_version"},
+                {"slot": "idempotency_key", "to": "/idempotency_key", "from": "runtime.idempotency_key"},
+                {"slot": "failure_reason", "to": "/reason", "from": "input.reason"},
             ],
         },
         "create_followup": {
@@ -105,12 +114,12 @@ V05_OPERATION_ADAPTERS: dict[str, Any] = {
             "path": "/tasks/{task_id}/followups",
             "request_schema": "task-followup-v05.schema.json",
             "bindings": [
-                {"to": "/idempotency_key", "from": "runtime.idempotency_key"},
-                {"to": "/done_criteria", "from": "input.doneCriteria"},
-                {"to": "/max_turns", "from": "input.maxTurns", "optional": True},
-                {"to": "/task_expires_at", "from": "input.taskExpiresAt", "optional": True},
-                {"to": "/message/parts/0/kind", "value": "text"},
-                {"to": "/message/parts/0/text", "from": "input.requestText"},
+                {"slot": "idempotency_key", "to": "/idempotency_key", "from": "runtime.idempotency_key"},
+                {"slot": "done_criteria", "to": "/done_criteria", "from": "input.doneCriteria"},
+                {"slot": "max_turns", "to": "/max_turns", "from": "input.maxTurns", "optional": True},
+                {"slot": "task_expires_at", "to": "/task_expires_at", "from": "input.taskExpiresAt", "optional": True},
+                {"slot": "message_kind", "to": "/message/parts/0/kind", "value": "text"},
+                {"slot": "request_text", "to": "/message/parts/0/text", "from": "input.requestText"},
             ],
         },
     },
@@ -271,10 +280,14 @@ def negotiate_protocol(
     target_revision = int(target["bundle_revision"])
     required_capabilities = list(target["required_client_capabilities"])
     missing_capabilities = sorted(set(required_capabilities) - set(capabilities))
+    hot_update_enabled = os.environ.get("AGENTRELAY_HOT_UPDATE_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
 
     if active_version == target["version"] and active_digest == target["bundle_digest"]:
         action = "up_to_date"
         reason = "The active protocol bundle matches the Relay authority."
+    elif not hot_update_enabled:
+        action = "client_release_required"
+        reason = "Protocol hot update is disabled by the Relay operator."
     elif active_version == target["version"] and active_revision is not None and active_revision > target_revision:
         action = "hot_rollback" if not missing_capabilities else "client_release_required"
         reason = "The Relay authority rolled back to an earlier verified bundle revision."
@@ -299,6 +312,9 @@ def negotiate_protocol(
             "schema_digest": target["schema_digest"],
             "bundle_digest": target["bundle_digest"],
             "bundle_url": target["urls"]["bundle"],
+            "adapter_contract_version": target.get("adapter_contract_version"),
+            "published_at": target.get("published_at"),
+            "expires_at": target.get("expires_at"),
             "required_client_capabilities": required_capabilities,
         },
         "retry_policy": {
@@ -356,16 +372,21 @@ def protocol_manifest_v05(
             "bundle_revision": BUNDLE_REVISION_V05,
             "schema_digest": schema_digest,
             "bundle_digest": bundle_digest,
+            "adapter_contract_version": ADAPTER_CONTRACT_VERSION,
+            "published_at": BUNDLE_PUBLISHED_AT_V05,
+            "expires_at": BUNDLE_EXPIRES_AT_V05,
             "status": "accepted_non_default",
             "write_mode": write_mode,
         }
     )
     manifest["compatibility"]["current"] = PROTOCOL_V05
-    manifest["required_client_capabilities"] = [PATCH_CAPABILITY, ADAPTER_CAPABILITY]
+    manifest["required_client_capabilities"] = [PATCH_CAPABILITY, ADAPTER_CAPABILITY, AUTHORIZATION_CAPABILITY]
     manifest["hot_update"] = {
         "engine": ADAPTER_CAPABILITY,
+        "contract_version": ADAPTER_CONTRACT_VERSION,
+        "enabled": os.environ.get("AGENTRELAY_HOT_UPDATE_ENABLED", "1").strip().lower() not in {"0", "false", "no"},
         "hot_patch_from": [PROTOCOL_V05],
-        "protected_targets": PROTECTED_BINDING_TARGETS,
+        "protected_slots": PROTECTED_BINDING_SLOTS,
     }
     manifest["urls"] = {
         **manifest["urls"],

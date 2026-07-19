@@ -37,9 +37,16 @@ allowlists, and local side effects remain in the non-hot-updatable MCP core.
 Bundle bindings may read only stable tool input, local identity, normalized Task
 context, and MCP runtime idempotency context. They cannot contain scripts,
 templates, functions, loops, commands, file access, arbitrary URLs, or dynamic
-tool registration. MCP validates the bundle digest, authority/origin, operation
-allowlist, binding sources, protected targets, and JSON Schema before activation
-and again before use.
+tool registration. Adapter v2 requires the exact compiled operation and semantic
+slot contracts. MCP rejects unknown or duplicate slots and targets, unsafe JSON
+Pointers, prototype-property names, protected-slot rebinding, and unknown adapter
+fields.
+
+MCP validates the authority id and configured Relay path, schema digest, bundle
+digest, immutable revision, adapter contract, bundle size, and publication and
+expiration window before activation and again before use. Relay remains the
+trusted publisher; these controls do not defend against a fully compromised
+Relay host. Independent bundle signing is deferred.
 
 ## Activation And Recovery
 
@@ -49,5 +56,19 @@ active pointer under an inter-process lock. The prior verified pointer becomes
 last-known-good. A mutation may retry once with its original idempotency key.
 Failure to verify never changes the active pointer.
 
+Only an explicit Relay `hot_rollback` action may reduce the active revision. The
+client rejects a different digest under the same revision. Operators can set
+`AGENTRELAY_DISABLE_HOT_UPDATE=1` on MCP or
+`AGENTRELAY_HOT_UPDATE_ENABLED=0` on Relay as independent emergency stops.
+
 Protocol documents and examples are cached for inspection only. They are never
 automatically inserted into Local Agent context.
+
+## Guardrail relationship
+
+Automatic upgrade is a Guardrail subsystem, not a replacement for authorization.
+The non-hot-updatable MCP Core still requires a trusted Local Inbox approval or
+a narrowly scoped service-policy grant, resyncs current Task context, preserves
+the idempotency key, and validates the local transition. Relay then independently
+enforces authenticated identity, schema, permission, idempotency, and state-machine
+rules before persistence.
