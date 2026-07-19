@@ -215,6 +215,31 @@ Project Hermes implementation workstream:
    duplicate-dispatch regressions against the exact deployed runtime, followed
    by one maintenance dry-run and the production two-Agent E2E.
 
+## Protocol Automatic Upgrade
+
+Status: implementation and verification complete in Server PR
+[`#61`](https://github.com/ZilingXie/agentRelay/pull/61); merge and production
+rollout remain pending. The dependent Client implementation is PR
+[`agent-relay-mcp#50`](https://github.com/ZilingXie/agent-relay-mcp/pull/50).
+
+- Relay publishes version-specific schema and canonical bundle digests, stable
+  authority/origin metadata, bundle revision, and non-programmable semantic
+  operation adapters.
+- `POST /agentrelay/api/protocols/negotiate` returns `up_to_date`, `hot_patch`,
+  `client_release_required`, or `hot_rollback` from registry-owned compatibility
+  and runtime capability data. Clients do not compare version strings.
+- Hot adapters are restricted data mappings. Identity, approval, authorization,
+  idempotency, endpoint allowlists, and local side effects remain in MCP core.
+- Lifecycle, transport, persistence, approval, or local execution changes still
+  require an MCP code release; bundle updates cover compatible wire changes.
+- Server schema, negotiation smoke, Client runtime/MCP smoke, and a cross-repo
+  HTTP negotiation check gate rollout before any bundle is required.
+- Verified 2026-07-19 with the full Server and Client suites plus a real HTTP
+  negotiation that activated the v0.5 bundle and assembled all five semantic
+  operation payloads.
+
+The detailed contract is [`docs/protocol-auto-upgrade.md`](docs/protocol-auto-upgrade.md).
+
 ## Active Next Steps
 
 - Complete the 24-hour production observation window and record readiness,

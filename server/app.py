@@ -50,6 +50,7 @@ from server.protocol_registry import (
     PROTOCOL_NAME,
     ProtocolNegotiationRequired,
     ensure_protocol_compatible,
+    negotiate_protocol,
     negotiation_error_detail,
     protocol_bundle,
     protocol_bundle_v04,
@@ -466,6 +467,15 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         payload = self.read_json()
         self.protocol_v03_response = is_protocol_v03(payload)
+        if path == "/agentrelay/protocols/negotiate":
+            self.respond_json(
+                negotiate_protocol(
+                    payload,
+                    public_base_url(),
+                    write_mode=self.mutation_mode,
+                )
+            )
+            return
         if path == "/agentrelay/protocols/validate":
             protocol_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else payload
             ensure_protocol_compatible(protocol_payload)
@@ -1212,7 +1222,11 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             error_type="protocol_negotiation",
             code=exc.code,
             hint=exc.hint,
-            detail=negotiation_error_detail(exc, public_base_url()),
+            detail=negotiation_error_detail(
+                exc,
+                public_base_url(),
+                manifest=self.current_protocol_manifest(),
+            ),
         )
 
     def wants_envelope(self) -> bool:

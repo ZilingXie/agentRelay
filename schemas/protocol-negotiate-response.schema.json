@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/protocol-negotiate-response.schema.json",
+  "title": "AgentRelay protocol negotiation response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["action", "reason", "runtime_version", "missing_capabilities", "authority", "target", "retry_policy"],
+  "properties": {
+    "action": {"enum": ["up_to_date", "hot_patch", "client_release_required", "hot_rollback"]},
+    "reason": {"type": "string", "minLength": 1},
+    "runtime_version": {"type": "string", "minLength": 1},
+    "missing_capabilities": {"type": "array", "items": {"type": "string"}},
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "origin"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "origin": {"type": "string", "format": "uri"}
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol", "version", "semver", "bundle_revision", "schema_digest", "bundle_digest", "bundle_url", "required_client_capabilities"],
+      "properties": {
+        "protocol": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "semver": {"type": "string", "minLength": 1},
+        "bundle_revision": {"type": "integer", "minimum": 0},
+        "schema_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "bundle_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "bundle_url": {"type": "string", "format": "uri"},
+        "required_client_capabilities": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "retry_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_automatic_retries", "preserve_idempotency_key"],
+      "properties": {
+        "max_automatic_retries": {"const": 1},
+        "preserve_idempotency_key": {"const": true}
+      }
+    }
+  }
+}
