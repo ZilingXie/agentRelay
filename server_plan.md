@@ -251,9 +251,13 @@ Client PR
 [`agent-relay-mcp#54`](https://github.com/ZilingXie/agent-relay-mcp/pull/54)
 are merged. Relay and Zac are deployed on adapter v2 revision `2`. The full
 Server suite, Client 204-test suite plus MCP smoke, and cross-repository HTTP
-hot-patch/up-to-date E2E passed. Hermes policy deployment and its production
-positive/negative evidence remain pending preservation of the dirty canonical
-Hermes baseline. Automatic protocol upgrade is one Guardrail subsystem.
+hot-patch/up-to-date E2E passed. Hermes policy enforcement merged in
+[`heremes-deploy#4`](https://github.com/ZilingXie/heremes-deploy/pull/4), with
+worker-process positive/negative coverage in
+[`#5`](https://github.com/ZilingXie/heremes-deploy/pull/5) and
+[`#6`](https://github.com/ZilingXie/heremes-deploy/pull/6). Relay, Zac, and
+Hermes are deployed and verified. Automatic protocol upgrade is one Guardrail
+subsystem.
 
 - Server publishes adapter contract v2, `local_authorization_v1`, immutable
   revision `2`, schema/bundle digests, and a bounded publication/expiration
@@ -278,13 +282,23 @@ Hermes baseline. Automatic protocol upgrade is one Guardrail subsystem.
   includes positive/negative authorization, hot patch, malicious-bundle reject,
   last-known-good, authorized rollback, and both emergency-disable switches.
 
-## Active Next Steps
+## Guardrail Verification Record
 
-- Preserve the Hermes dirty canonical baseline, integrate and deploy its service
-  policy, then record Zac/Hermes positive and negative production evidence.
+- Hermes was deployed from an isolated clean worktree without changing the
+  dirty canonical Agent overlay baseline. Runtime worker/policy hashes match
+  merged source; the service is active with zero restarts and Relay reports it
+  ready/fresh on client `0.5.0`, workspace `2`.
+- Production Task `task_da25ff6e44ca41d981a7182afd4b0e06` completed at
+  version `5` after delivered Zac request, exact Hermes
+  `HERMES_GUARDRAIL_ACK_20260719`, and Zac completion through the one-time Local
+  Inbox approval path. Worker-process E2E proves allowed reply/failure and zero
+  Relay POSTs for close, legacy-complete replay, and actor-tampered replay.
 - Production Relay publishes revision `2` with digest
   `sha256:ba842be162628c7cc137914220dca2582dd2259db28e9192e3dce8c0afcc7f36`;
   Zac is `up_to_date` and passed `doctor` after service restart.
+
+## Active Next Steps
+
 - Complete the 24-hour production observation window and record readiness,
   delivery backlog, invariant, dashboard, and Inbox UI results.
 - Keep `scripts/protocol_v05_preflight.py --allow-existing-collaboration` as the
