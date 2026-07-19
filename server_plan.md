@@ -120,8 +120,12 @@ Hermes Listener/worker upgrade is deployed through
 [`heremes-deploy#1`](https://github.com/ZilingXie/heremes-deploy/pull/1) and
 passed a production v0.5 two-Agent flow. Task
 `task_c2265c1f935f43738d522b22bccc4b46` completed Zac -> Hermes ACK -> Zac ACK
--> requester complete with both Messages and every outbox Event acked. The
-daily dispatcher migration remains separate. The 24-hour
+-> requester complete with both Messages and every outbox Event acked. The daily dispatcher protocol migration is deployed
+through
+[`heremes-deploy#3`](https://github.com/ZilingXie/heremes-deploy/pull/3), using
+native v0.5 create, Server batch visibility, and an atomic local Task-id journal.
+Its offline exact-runtime E2E and production read-only visibility probe passed.
+The 24-hour
 observation window is still in progress. The authoritative design is
 [`docs/task-lifecycle-v05.md`](docs/task-lifecycle-v05.md).
 
@@ -155,9 +159,10 @@ Detailed implementation and cutover gates are maintained in
   writes open. Unsupported/stale Agents are disabled; create rejects incapable
   participants instead of silently downgrading.
 - The Hermes repository/runtime ownership is identified. Its dirty production
-  baseline remains preserved. The v0.5 Listener/worker is deployed from a
-  reviewed isolated worktree without overwriting that baseline; the dispatcher
-  migration remains an independent release decision.
+  baseline remains preserved. The v0.5 Listener/worker and daily dispatcher are
+  deployed from reviewed isolated worktrees without overwriting that baseline.
+  The remaining WeCom send-journal work is operational hardening, not protocol
+  compatibility.
 - Task hard deletion remains forbidden.
 
 Production maintenance evidence:
@@ -195,17 +200,17 @@ Project Hermes implementation workstream:
 2. **Complete in `heremes-deploy#1`.** Upgrade the Hermes Listener to v0.5
    capability/readiness, Message-before-ACK,
    guarded non-retryable NACK, workspace v2, and v0.5 response submission.
-3. **Pending.** Replace dispatcher status inference and direct legacy-field
-   reads with the
-   Server batch visibility contract. Keep the dispatcher read-only with respect
-   to Task lifecycle.
-4. Report Completed, Failed, Expired, Delivery pending, Waiting for target
+3. **Complete in `heremes-deploy#3`.** Replace dispatcher status inference
+   and direct legacy-field reads with the Server batch visibility contract. Use
+   native v0.5 create with Server-generated Task ids and stable idempotency.
+4. **Complete in `heremes-deploy#3`.** Report Completed, Failed, Expired,
+   Delivery pending, Waiting for target
    response, and Waiting for requester decision separately. Surface stable
    diagnosis/reason and safe retry details; classify API/partial-batch failures
    as report errors, never Task failures.
-5. Add dry-run output, per-window dispatch idempotency, duplicate-send
-   prevention, and metrics/alerts for visibility, WeCom send, and stale Listener
-   readiness failures.
+5. **Partially complete.** Dry-run output, full-content idempotency, atomic
+   Task-id journal, and visibility report errors are implemented. The explicit
+   WeCom `send_started/sent` journal and production metrics remain hardening work.
 6. Gate cutover on Zac/Vivi, exhaustion, completed, expired, partial-batch, and
    duplicate-dispatch regressions against the exact deployed runtime, followed
    by one maintenance dry-run and the production two-Agent E2E.
@@ -217,8 +222,8 @@ Project Hermes implementation workstream:
 - Keep `scripts/protocol_v05_preflight.py --allow-existing-collaboration` as the
   post-write production verification gate. Any incident must first switch
   mutations to `closed`, then be repaired forward.
-- Monitor the deployed Hermes v0.5 Listener/readiness and migrate the daily
-  dispatcher separately to native v0.5 create plus Server visibility contracts.
+- Observe the first scheduled Hermes v0.5 daily dispatch and add the remaining
+  WeCom at-most-once send journal plus production visibility/readiness metrics.
 - Support the MCP Service Worker Kit with enough server/dashboard visibility to debug worker runs end to end.
 - Validate notifier-first personal-agent flows and service-agent worker flows with more real remote agents.
 - Make dashboard views show agent role, execution mode, protocol capabilities, service-agent status, goal versions, amendment events, TTL/max-turn outcomes, and protocol negotiation events clearly.
