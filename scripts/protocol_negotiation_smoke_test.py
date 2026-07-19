@@ -4,14 +4,19 @@ import json
 import hashlib
 import os
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from server.protocol_registry import negotiate_protocol
+
+
 BASE_URL = "http://127.0.0.1:8802/agentrelay/api"
 HEADERS = {
     "Authorization": "Bearer zac-token",
@@ -117,12 +122,63 @@ def main() -> None:
             if v05_manifest["bundle_digest"] != canonical_digest({key: value for key, value in v05_bundle.items() if key != "manifest"}):
                 raise AssertionError("manifest bundle digest does not match the served v0.5 bundle")
             adapters = v05_bundle.get("adapters", {}).get("operations", {})
+            if v05_bundle.get("adapters", {}).get("engine") != "semantic_protocol_adapter_v2":
+                raise AssertionError("v0.5 bundle must use the hardened adapter v2 engine")
+            if v05_manifest.get("adapter_contract_version") != 1:
+                raise AssertionError("v0.5 manifest must publish adapter contract version 1")
+            if not v05_manifest.get("published_at") or not v05_manifest.get("expires_at"):
+                raise AssertionError("v0.5 manifest must publish a bounded validity window")
             expected_operations = {"create_task", "reply", "complete_task", "fail_task", "create_followup"}
             if set(adapters) != expected_operations:
                 raise AssertionError(f"v0.5 bundle semantic operations are incomplete: {sorted(adapters)}")
             for operation, adapter in adapters.items():
                 if adapter.get("request_schema") not in v05_bundle["schemas"]:
                     raise AssertionError(f"{operation} references an unpublished request schema")
+                slots = [binding.get("slot") for binding in adapter.get("bindings", [])]
+                if not all(slots) or len(slots) != len(set(slots)):
+                    raise AssertionError(f"{operation} must publish unique semantic slots")
+
+            v05_negotiated = negotiate_protocol(
+                {
+                    "runtime_version": "0.3.0",
+                    "runtime_capabilities": [
+                        "dynamic_protocol_bundle_v0.1",
+                        "semantic_protocol_adapter_v2",
+                        "local_authorization_v1",
+                    ],
+                    "supported_protocol_versions": ["agent-collab-v0.5"],
+                },
+                "https://example.test/agentrelay",
+                write_mode="v05",
+            )
+            if v05_negotiated["action"] != "hot_patch":
+                raise AssertionError(f"hardened runtime should receive v0.5 hot patch: {v05_negotiated}")
+            if v05_negotiated["target"].get("adapter_contract_version") != 1:
+                raise AssertionError("negotiation target must include adapter contract version")
+            if v05_negotiated["target"].get("published_at") != v05_manifest["published_at"]:
+                raise AssertionError("negotiation target must bind the manifest publication time")
+            if v05_negotiated["target"].get("expires_at") != v05_manifest["expires_at"]:
+                raise AssertionError("negotiation target must bind the manifest expiration time")
+
+            previous_hot_update = os.environ.get("AGENTRELAY_HOT_UPDATE_ENABLED")
+            os.environ["AGENTRELAY_HOT_UPDATE_ENABLED"] = "0"
+            try:
+                disabled = negotiate_protocol(
+                    {
+                        "runtime_version": "0.3.0",
+                        "runtime_capabilities": ["dynamic_protocol_bundle_v0.1", "semantic_protocol_adapter_v2"],
+                        "supported_protocol_versions": ["agent-collab-v0.5"],
+                    },
+                    "https://example.test/agentrelay",
+                    write_mode="v05",
+                )
+                if disabled["action"] != "client_release_required":
+                    raise AssertionError(f"disabled hot update must not activate a bundle: {disabled}")
+            finally:
+                if previous_hot_update is None:
+                    os.environ.pop("AGENTRELAY_HOT_UPDATE_ENABLED", None)
+                else:
+                    os.environ["AGENTRELAY_HOT_UPDATE_ENABLED"] = previous_hot_update
 
             valid = post_json(
                 f"{BASE_URL}/protocols/validate",

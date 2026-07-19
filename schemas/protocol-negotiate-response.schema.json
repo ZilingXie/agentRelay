@@ -22,7 +22,7 @@
     "target": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocol", "version", "semver", "bundle_revision", "schema_digest", "bundle_digest", "bundle_url", "required_client_capabilities"],
+      "required": ["protocol", "version", "semver", "bundle_revision", "schema_digest", "bundle_digest", "bundle_url", "adapter_contract_version", "published_at", "expires_at", "required_client_capabilities"],
       "properties": {
         "protocol": {"type": "string", "minLength": 1},
         "version": {"type": "string", "minLength": 1},
@@ -31,6 +31,9 @@
         "schema_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
         "bundle_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
         "bundle_url": {"type": "string", "format": "uri"},
+        "adapter_contract_version": {"type": ["integer", "null"], "minimum": 1},
+        "published_at": {"type": ["string", "null"], "format": "date-time"},
+        "expires_at": {"type": ["string", "null"], "format": "date-time"},
         "required_client_capabilities": {"type": "array", "items": {"type": "string"}}
       }
     },

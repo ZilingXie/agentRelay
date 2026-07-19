@@ -211,7 +211,7 @@ Project Hermes implementation workstream:
 5. **Partially complete.** Dry-run output, full-content idempotency, atomic
    Task-id journal, and visibility report errors are implemented. The explicit
    WeCom `send_started/sent` journal and production metrics remain hardening work.
-6. Gate cutover on Zac/Vivi, exhaustion, completed, expired, partial-batch, and
+6. Gate cutover on Zac/Hermes, exhaustion, completed, expired, partial-batch, and
    duplicate-dispatch regressions against the exact deployed runtime, followed
    by one maintenance dry-run and the production two-Agent E2E.
 
@@ -244,8 +244,39 @@ were verified with mutation mode preserved at `v05`.
 
 The detailed contract is [`docs/protocol-auto-upgrade.md`](docs/protocol-auto-upgrade.md).
 
+## Guardrail Hardening
+
+Status: Server and Client implementation is complete on task branches; full
+verification, separate PRs, deployment, and Zac/Hermes production evidence are
+still pending. Automatic protocol upgrade is one Guardrail subsystem.
+
+- Server publishes adapter contract v2, `local_authorization_v1`, immutable
+  revision `2`, schema/bundle digests, and a bounded publication/expiration
+  window. Negotiation returns `client_release_required` when Server hot update
+  is disabled or the client lacks any compiled capability.
+- MCP Core, not Relay data, owns identity, Task context, authorization,
+  idempotency, routes, lifecycle transitions, persistence, and local side
+  effects. Adapter mappings must match the Core's exact operation and slot
+  contract and cannot contain executable behavior.
+- Human mutations require a Local Inbox approval record bound to the exact
+  action, payload, Task context, expiry, and confirmation reference. Direct v0.5
+  create is disabled by default and uses reviewed-draft Send.
+- Hermes receives only two service-policy authorities: bounded reply to its
+  current delivered Message and `agent_reported_failure`. Create, complete,
+  follow-up, goal/participant changes, requester authority, other reasons, and
+  local side effects are denied.
+- Relay remains the trusted protocol publisher; independent signing/KMS is
+  deferred. Local approval does not claim protection from a malicious process
+  with same-user filesystem write access.
+- Release order is Server then Client then the independently preserved Hermes
+  deploy source. Production verification covers Zac and Hermes, not Vivi, and
+  includes positive/negative authorization, hot patch, malicious-bundle reject,
+  last-known-good, authorized rollback, and both emergency-disable switches.
+
 ## Active Next Steps
 
+- Merge and deploy Guardrail hardening in dependency order, then record the
+  Zac/Hermes production verification results and revision-2 digest.
 - Complete the 24-hour production observation window and record readiness,
   delivery backlog, invariant, dashboard, and Inbox UI results.
 - Keep `scripts/protocol_v05_preflight.py --allow-existing-collaboration` as the
