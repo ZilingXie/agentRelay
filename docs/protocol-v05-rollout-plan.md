@@ -1,8 +1,8 @@
 # Protocol v0.5 Cross-Component Rollout Plan
 
 Status: core implementation and production cutover complete; independent
-specification review approved. Project Hermes Listener/worker is deployed; its
-daily dispatcher migration remains separate.
+specification review approved. Project Hermes Listener/worker and daily
+dispatcher protocol migration are deployed; the WeCom at-most-once send journal remains operational hardening.
 
 Status date: 2026-07-19.
 
@@ -398,6 +398,16 @@ Dispatcher work:
    automatically; it requires operator reconciliation. This is intentional
    at-most-once behavior because the webhook has no idempotency contract.
 
+Dispatcher protocol status: items 1-5 complete on 2026-07-19 through
+[`heremes-deploy#3`](https://github.com/ZilingXie/heremes-deploy/pull/3).
+The deployed dispatcher uses strict v0.5 create payloads, Server-generated Task
+ids, full-content idempotency keys, an atomic local Task-id journal, and batch
+visibility as its only status source. Thirteen Node tests include a fully offline
+fake-Relay create/visibility/journal-replay E2E; a production read-only batch
+probe returned `task_completed / delivered / acked`. A real private-workspace
+Hermes dry-run was intentionally not executed without separate authorization.
+Item 6 remains operational hardening.
+
 Required regression fixtures: Zac delivered-but-waiting, Vivi not-delivered,
 queued/inflight/retry wait, exhaustion, completed, expired, business failure,
 partial batch, stale readiness, duplicate process start, uncertain WeCom result,
@@ -420,9 +430,9 @@ Merge and deploy in this order:
 8. Production maintenance cutover and E2E.
 
 Server and Client use separate PRs. The Hermes Listener/worker is merged through
-its independent repository PR after preserving the dirty baseline. The Hermes
-dispatcher remains a later independent PR. Each PR records its dependency and
-does not enable production writes by itself.
+its independent repository PR after preserving the dirty baseline. The Hermes dispatcher protocol migration is merged through
+its independent repository PR. The remaining WeCom send journal is a later hardening PR. Each
+PR records its dependency and does not enable production writes by itself.
 
 The full acceptance set is the lifecycle contract's conformance list plus:
 
