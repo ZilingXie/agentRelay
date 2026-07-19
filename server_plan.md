@@ -115,8 +115,13 @@ and Client PR #44 delivered the core implementation; Server PRs #55-#57 fixed
 post-write preflight, closed-mode informational ACK, and exhausted-event alert
 semantics found during the maintenance window. Zac and Vivi are the enabled
 production Agents, both publish fresh v0.5/workspace-v2 readiness, and the
-production root/follow-up E2E completed successfully. Project Hermes remains a
-separate deferred workstream and was not changed by this cutover. The 24-hour
+production root/follow-up E2E completed successfully. The independent Project
+Hermes Listener/worker upgrade is deployed through
+[`heremes-deploy#1`](https://github.com/ZilingXie/heremes-deploy/pull/1) and
+passed a production v0.5 two-Agent flow. Task
+`task_c2265c1f935f43738d522b22bccc4b46` completed Zac -> Hermes ACK -> Zac ACK
+-> requester complete with both Messages and every outbox Event acked. The
+daily dispatcher migration remains separate. The 24-hour
 observation window is still in progress. The authoritative design is
 [`docs/task-lifecycle-v05.md`](docs/task-lifecycle-v05.md).
 
@@ -150,8 +155,9 @@ Detailed implementation and cutover gates are maintained in
   writes open. Unsupported/stale Agents are disabled; create rejects incapable
   participants instead of silently downgrading.
 - The Hermes repository/runtime ownership is identified. Its dirty production
-  baseline is deferred from this non-Hermes cutover and remains unchanged; its
-  future Listener/dispatcher upgrade is an independent release decision.
+  baseline remains preserved. The v0.5 Listener/worker is deployed from a
+  reviewed isolated worktree without overwriting that baseline; the dispatcher
+  migration remains an independent release decision.
 - Task hard deletion remains forbidden.
 
 Production maintenance evidence:
@@ -182,13 +188,15 @@ Implementation order:
 
 Project Hermes implementation workstream:
 
-1. During Task 0, preserve the existing dirty production baseline from
+1. **Complete.** Preserve the existing dirty production baseline from
    `ZilingXie/heremes-deploy` on a reviewed task branch after secret scanning;
    reconcile its tracked worker unit with the verified
    `/home/ubuntu/projects/hermes/project-hermes-worker` runtime path.
-2. Upgrade the Hermes Listener to v0.5 capability/readiness, Message-before-ACK,
+2. **Complete in `heremes-deploy#1`.** Upgrade the Hermes Listener to v0.5
+   capability/readiness, Message-before-ACK,
    guarded non-retryable NACK, workspace v2, and v0.5 response submission.
-3. Replace dispatcher status inference and direct legacy-field reads with the
+3. **Pending.** Replace dispatcher status inference and direct legacy-field
+   reads with the
    Server batch visibility contract. Keep the dispatcher read-only with respect
    to Task lifecycle.
 4. Report Completed, Failed, Expired, Delivery pending, Waiting for target
@@ -209,8 +217,8 @@ Project Hermes implementation workstream:
 - Keep `scripts/protocol_v05_preflight.py --allow-existing-collaboration` as the
   post-write production verification gate. Any incident must first switch
   mutations to `closed`, then be repaired forward.
-- Preserve the identified Hermes production baseline until its separately
-  authorized Listener/dispatcher workstream begins.
+- Monitor the deployed Hermes v0.5 Listener/readiness and migrate the daily
+  dispatcher separately to native v0.5 create plus Server visibility contracts.
 - Support the MCP Service Worker Kit with enough server/dashboard visibility to debug worker runs end to end.
 - Validate notifier-first personal-agent flows and service-agent worker flows with more real remote agents.
 - Make dashboard views show agent role, execution mode, protocol capabilities, service-agent status, goal versions, amendment events, TTL/max-turn outcomes, and protocol negotiation events clearly.
