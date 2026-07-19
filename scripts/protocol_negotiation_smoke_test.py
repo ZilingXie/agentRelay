@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import subprocess
 import tempfile
@@ -64,6 +65,64 @@ def main() -> None:
                 raise AssertionError("protocol bundle missing meeting task create example")
             if "AgentRelay Protocol v0.3" not in bundle["docs"]["protocol-v03.md"]:
                 raise AssertionError("protocol bundle missing protocol doc")
+            if manifest["bundle_digest"] != canonical_digest({key: value for key, value in bundle.items() if key != "manifest"}):
+                raise AssertionError("manifest bundle digest does not match the served v0.3 bundle")
+
+            negotiated_current = post_json(
+                f"{BASE_URL}/protocols/negotiate",
+                {
+                    "runtime_version": "0.2.0",
+                    "runtime_capabilities": ["dynamic_protocol_bundle_v0.1"],
+                    "supported_protocol_versions": ["agent-collab-v0.3"],
+                    "active": {
+                        "version": manifest["version"],
+                        "semver": manifest["semver"],
+                        "bundle_revision": manifest["bundle_revision"],
+                        "bundle_digest": manifest["bundle_digest"],
+                    },
+                },
+                HEADERS,
+            )
+            if negotiated_current["action"] != "up_to_date":
+                raise AssertionError(f"matching bundle should be current: {negotiated_current}")
+
+            negotiated_patch = post_json(
+                f"{BASE_URL}/protocols/negotiate",
+                {
+                    "runtime_version": "0.2.0",
+                    "runtime_capabilities": ["dynamic_protocol_bundle_v0.1"],
+                    "supported_protocol_versions": ["agent-collab-v0.3"],
+                },
+                HEADERS,
+            )
+            if negotiated_patch["action"] != "hot_patch":
+                raise AssertionError(f"capable runtime should receive hot patch: {negotiated_patch}")
+
+            negotiated_upgrade = post_json(
+                f"{BASE_URL}/protocols/negotiate",
+                {
+                    "runtime_version": "0.1.0",
+                    "runtime_capabilities": [],
+                    "supported_protocol_versions": ["agent-collab-v0.2"],
+                },
+                HEADERS,
+            )
+            if negotiated_upgrade["action"] != "client_release_required":
+                raise AssertionError(f"incapable runtime should require release: {negotiated_upgrade}")
+
+            v05_manifest = get_json(f"{BASE_URL}/protocols/agent-collab/v0.5/manifest")
+            if v05_manifest["compatibility"]["current"] != "agent-collab-v0.5":
+                raise AssertionError("v0.5 compatibility.current must match its manifest version")
+            v05_bundle = get_json(f"{BASE_URL}/protocols/agent-collab/v0.5/bundle")
+            if v05_manifest["bundle_digest"] != canonical_digest({key: value for key, value in v05_bundle.items() if key != "manifest"}):
+                raise AssertionError("manifest bundle digest does not match the served v0.5 bundle")
+            adapters = v05_bundle.get("adapters", {}).get("operations", {})
+            expected_operations = {"create_task", "reply", "complete_task", "fail_task", "create_followup"}
+            if set(adapters) != expected_operations:
+                raise AssertionError(f"v0.5 bundle semantic operations are incomplete: {sorted(adapters)}")
+            for operation, adapter in adapters.items():
+                if adapter.get("request_schema") not in v05_bundle["schemas"]:
+                    raise AssertionError(f"{operation} references an unpublished request schema")
 
             valid = post_json(
                 f"{BASE_URL}/protocols/validate",
@@ -125,6 +184,11 @@ def valid_task_payload() -> dict:
             "parts": [{"kind": "text", "text": "Please ACK this protocol check."}],
         },
     }
+
+
+def canonical_digest(value: object) -> str:
+    encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
 def assert_protocol_negotiation_error(payload: dict, code: str) -> None:

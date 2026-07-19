@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/protocol-negotiate-request.schema.json",
+  "title": "AgentRelay protocol negotiation request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["runtime_version", "runtime_capabilities", "supported_protocol_versions"],
+  "properties": {
+    "runtime_version": {"type": "string", "minLength": 1},
+    "runtime_capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "supported_protocol_versions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "active": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {"type": "string", "minLength": 1},
+        "semver": {"type": "string", "minLength": 1},
+        "bundle_revision": {"type": "integer", "minimum": 0},
+        "bundle_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "last_known_good": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {"type": "string", "minLength": 1},
+        "bundle_revision": {"type": "integer", "minimum": 0},
+        "bundle_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    }
+  }
+}
