@@ -212,7 +212,10 @@ Project Hermes implementation workstream:
 
 ## Protocol Automatic Upgrade
 
-Status: implementation in progress on `codex/protocol-auto-upgrade`.
+Status: implementation and verification complete in Server PR
+[`#61`](https://github.com/ZilingXie/agentRelay/pull/61); merge and production
+rollout remain pending. The dependent Client implementation is PR
+[`agent-relay-mcp#50`](https://github.com/ZilingXie/agent-relay-mcp/pull/50).
 
 - Relay publishes version-specific schema and canonical bundle digests, stable
   authority/origin metadata, bundle revision, and non-programmable semantic
@@ -226,6 +229,9 @@ Status: implementation in progress on `codex/protocol-auto-upgrade`.
   require an MCP code release; bundle updates cover compatible wire changes.
 - Server schema, negotiation smoke, Client runtime/MCP smoke, and a cross-repo
   HTTP negotiation check gate rollout before any bundle is required.
+- Verified 2026-07-19 with the full Server and Client suites plus a real HTTP
+  negotiation that activated the v0.5 bundle and assembled all five semantic
+  operation payloads.
 
 The detailed contract is [`docs/protocol-auto-upgrade.md`](docs/protocol-auto-upgrade.md).
 
