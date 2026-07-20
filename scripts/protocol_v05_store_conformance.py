@@ -29,12 +29,13 @@ def main() -> None:
             (guarded_nack_and_expiry, BASE + 1500),
             (followup_and_hard_delete, BASE + 1600),
             (concurrent_idempotency_and_ack, BASE + 2000),
+            (install_healthcheck, BASE + 2300),
         )
         for index, (scenario, readiness_time) in enumerate(scenarios):
             store = V05Store(f"{tmp}/v05-{index}.sqlite3")
             listener_state = prepare_agents(store, readiness_time)
             scenario(store, listener_state)
-    print("protocol v0.5 native Store conformance passed (20/20)")
+    print("protocol v0.5 native Store conformance passed (21/21)")
 
 
 def prepare_agents(store: V05Store, readiness_time: int) -> dict[str, tuple[str, int]]:
@@ -173,6 +174,51 @@ def assert_conflict(callable_, code: str | None = None) -> None:
             assert exc.code == code, (exc.code, code)
         return
     raise AssertionError("expected ConflictError")
+
+
+def install_healthcheck(
+    store: V05Store, listeners: dict[str, tuple[str, int]]
+) -> None:
+    detail = store.create_install_healthcheck(
+        A,
+        idempotency_key="install-health-v05",
+        now=BASE + 2301,
+    )
+    task = detail["task"]
+    assert task["target_agent_id"] == "agentrelay-healthcheck"
+    assert task["task_version"] == 3
+    assert len(detail["messages"]) == 2
+    assert detail["messages"][0]["delivery_status"] == "delivered"
+    assert detail["messages"][1]["delivery_status"] == "pending"
+    assert "ACK from agentrelay-healthcheck" in detail["messages"][1]["parts"][0]["text"]
+    repeated = store.create_install_healthcheck(
+        A,
+        idempotency_key="install-health-v05",
+        now=BASE + 2301,
+    )
+    assert repeated["task"]["task_id"] == task["task_id"]
+
+    event = claim(store, A, BASE + 2301)
+    delivered = ack(
+        store,
+        detail,
+        event,
+        A,
+        listeners[A],
+        "install-health-v05-ack",
+        BASE + 2302,
+    )
+    completed = store.complete_task(
+        task["task_id"],
+        {
+            **context(delivered, "install-health-v05-complete"),
+            "actor_agent_id": A,
+            "completed_against_message_id": delivered["task"]["current_message_id"],
+        },
+        now=BASE + 2303,
+    )
+    assert completed["task"]["status"] == "completed"
+    assert store.claim_due_event("agentrelay-healthcheck", now=BASE + 2304) is None
 
 
 def native_schema_and_admission(

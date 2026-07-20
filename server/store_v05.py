@@ -22,6 +22,8 @@ from server.store import ConflictError
 
 
 DEFAULT_TASK_TTL_SECONDS = 24 * 60 * 60
+INSTALL_HEALTHCHECK_AGENT_ID = "agentrelay-healthcheck"
+INSTALL_HEALTHCHECK_TTL_SECONDS = 10 * 60
 
 
 class V05Store:
@@ -394,6 +396,184 @@ class V05Store:
             self._record_idempotency_conn(
                 conn, "create", requester, scope, key, request_hash,
                 task_id, message_id, timestamp,
+            )
+            return self._task_detail_conn(conn, task_id)
+
+    def create_install_healthcheck(
+        self,
+        requester_agent_id: str,
+        *,
+        idempotency_key: str,
+        now: int | None = None,
+    ) -> dict[str, Any]:
+        timestamp = _now(now)
+        requester = str(requester_agent_id)
+        key = str(idempotency_key)
+        request_hash = _fingerprint({"requester_agent_id": requester})
+        scope = "__install_healthcheck__"
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            existing = self._idempotent_result_conn(
+                conn, "install_healthcheck", requester, scope, key, request_hash
+            )
+            if existing:
+                return self._task_detail_conn(conn, existing)
+            self._assert_admission_conn(conn, requester, timestamp)
+            conn.execute(
+                """
+                INSERT INTO agents (
+                    agent_id, name, owner, enabled, protocol_capabilities_json,
+                    created_at, updated_at
+                ) VALUES (?, ?, 'AgentRelay', 1, ?, ?, ?)
+                ON CONFLICT(agent_id) DO UPDATE SET
+                    name = excluded.name,
+                    enabled = 1,
+                    protocol_capabilities_json = excluded.protocol_capabilities_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    INSTALL_HEALTHCHECK_AGENT_ID,
+                    "AgentRelay Install Healthcheck",
+                    json.dumps([PROTOCOL_V05]),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+
+            task_id = f"task_{uuid.uuid4().hex}"
+            request_message_id = f"msg_{uuid.uuid4().hex}"
+            request_event_id = f"evt_{uuid.uuid4().hex}"
+            ack_message_id = f"msg_{uuid.uuid4().hex}"
+            ack_event_id = f"evt_{uuid.uuid4().hex}"
+            expires_at = timestamp + INSTALL_HEALTHCHECK_TTL_SECONDS
+            conn.execute(
+                """
+                INSERT INTO tasks (
+                    task_id, root_task_id, protocol_version, requester_agent_id,
+                    target_agent_id, done_criteria, status, turn_sequence,
+                    current_message_id, from_agent_id, to_agent_id, task_version,
+                    max_turns, task_expires_at, reason, terminal_by_agent_id,
+                    completed_against_message_id, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'open', 1, ?, ?, ?, 3, 1, ?,
+                    NULL, NULL, NULL, ?, ?)
+                """,
+                (
+                    task_id,
+                    task_id,
+                    PROTOCOL_V05,
+                    requester,
+                    INSTALL_HEALTHCHECK_AGENT_ID,
+                    json.dumps("Requester receives the synthetic ACK in the Local Inbox."),
+                    ack_message_id,
+                    INSTALL_HEALTHCHECK_AGENT_ID,
+                    requester,
+                    expires_at,
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            self._insert_message_conn(
+                conn,
+                message_id=request_message_id,
+                task_id=task_id,
+                turn_sequence=1,
+                from_agent_id=requester,
+                to_agent_id=INSTALL_HEALTHCHECK_AGENT_ID,
+                subject="AgentRelay install loopback health check",
+                parts=[{"kind": "text", "text": "Return the synthetic install ACK."}],
+                idempotency_key=f"{key}:request",
+                now=timestamp,
+            )
+            self._insert_pending_event_conn(
+                conn,
+                event_id=request_event_id,
+                task_id=task_id,
+                message_id=request_message_id,
+                target_agent_id=INSTALL_HEALTHCHECK_AGENT_ID,
+                turn_sequence=1,
+                task_version=1,
+                now=timestamp,
+            )
+            conn.execute(
+                """
+                UPDATE messages SET delivery_status = 'delivered', delivered_at = ?, updated_at = ?
+                WHERE message_id = ?
+                """,
+                (timestamp, timestamp, request_message_id),
+            )
+            conn.execute(
+                """
+                UPDATE agent_events SET outbox_status = 'acked', acked_at = ?, updated_at = ?
+                WHERE event_id = ?
+                """,
+                (timestamp, timestamp, request_event_id),
+            )
+            ack_text = "\n".join(
+                [
+                    f"ACK from {INSTALL_HEALTHCHECK_AGENT_ID}",
+                    f"requester={requester}",
+                    f"task={task_id}",
+                    "scope=agentrelay-install-loopback",
+                ]
+            )
+            self._insert_message_conn(
+                conn,
+                message_id=ack_message_id,
+                task_id=task_id,
+                turn_sequence=1,
+                from_agent_id=INSTALL_HEALTHCHECK_AGENT_ID,
+                to_agent_id=requester,
+                parts=[{"kind": "text", "text": ack_text}],
+                idempotency_key=f"{key}:ack",
+                now=timestamp,
+            )
+            self._insert_pending_event_conn(
+                conn,
+                event_id=ack_event_id,
+                task_id=task_id,
+                message_id=ack_message_id,
+                target_agent_id=requester,
+                turn_sequence=1,
+                task_version=3,
+                now=timestamp,
+            )
+            self._audit_conn(
+                conn,
+                task_id,
+                "task.created",
+                requester,
+                request_message_id,
+                {"status": "open", "task_version": 1, "install_healthcheck": True},
+                timestamp,
+            )
+            self._audit_conn(
+                conn,
+                task_id,
+                "message.delivery_changed",
+                INSTALL_HEALTHCHECK_AGENT_ID,
+                request_message_id,
+                {"delivery_status": "delivered", "task_version": 2, "install_healthcheck": True},
+                timestamp,
+            )
+            self._audit_conn(
+                conn,
+                task_id,
+                "message.created",
+                INSTALL_HEALTHCHECK_AGENT_ID,
+                ack_message_id,
+                {"turn_sequence": 1, "task_version": 3, "install_healthcheck": True},
+                timestamp,
+            )
+            self._record_idempotency_conn(
+                conn,
+                "install_healthcheck",
+                requester,
+                scope,
+                key,
+                request_hash,
+                task_id,
+                ack_message_id,
+                timestamp,
             )
             return self._task_detail_conn(conn, task_id)
 
@@ -1131,19 +1311,20 @@ class V05Store:
                 {"task_version": next_version}, timestamp,
             )
             delivery_status = "failed" if failed else "delivered"
-            self._insert_info_event_conn(
-                conn,
-                agent_id=message["from_agent_id"],
-                event_type="message.delivery_changed",
-                task_id=task_id,
-                message_id=message["message_id"],
-                payload={
-                    "delivery_status": delivery_status,
-                    "task_version": next_version,
-                },
-                idempotency_key=f"v05:{message['message_id']}:delivery:{delivery_status}",
-                now=timestamp,
-            )
+            if message["from_agent_id"] != INSTALL_HEALTHCHECK_AGENT_ID:
+                self._insert_info_event_conn(
+                    conn,
+                    agent_id=message["from_agent_id"],
+                    event_type="message.delivery_changed",
+                    task_id=task_id,
+                    message_id=message["message_id"],
+                    payload={
+                        "delivery_status": delivery_status,
+                        "task_version": next_version,
+                    },
+                    idempotency_key=f"v05:{message['message_id']}:delivery:{delivery_status}",
+                    now=timestamp,
+                )
             if failed:
                 self._notify_task_status_conn(
                     conn, task, "failed", reason, agent_id, next_version, timestamp
@@ -1301,19 +1482,20 @@ class V05Store:
                         conn, task["task_id"], "task.failed", None, message["message_id"],
                         {"reason": "delivery_retry_exhausted", "task_version": next_version}, now,
                     )
-                    self._insert_info_event_conn(
-                        conn,
-                        agent_id=message["from_agent_id"],
-                        event_type="message.delivery_changed",
-                        task_id=task["task_id"],
-                        message_id=message["message_id"],
-                        payload={
-                            "delivery_status": "failed",
-                            "task_version": next_version,
-                        },
-                        idempotency_key=f"v05:{message['message_id']}:delivery:failed",
-                        now=now,
-                    )
+                    if message["from_agent_id"] != INSTALL_HEALTHCHECK_AGENT_ID:
+                        self._insert_info_event_conn(
+                            conn,
+                            agent_id=message["from_agent_id"],
+                            event_type="message.delivery_changed",
+                            task_id=task["task_id"],
+                            message_id=message["message_id"],
+                            payload={
+                                "delivery_status": "failed",
+                                "task_version": next_version,
+                            },
+                            idempotency_key=f"v05:{message['message_id']}:delivery:failed",
+                            now=now,
+                        )
                     self._notify_task_status_conn(
                         conn, task, "failed", "delivery_retry_exhausted", None,
                         next_version, now,
@@ -1569,6 +1751,7 @@ class V05Store:
     ) -> None:
         participants = {str(task["requester_agent_id"]), str(task["target_agent_id"])}
         recipients = participants - {actor_agent_id} if actor_agent_id in participants else participants
+        recipients.discard(INSTALL_HEALTHCHECK_AGENT_ID)
         for recipient in sorted(recipients):
             self._insert_info_event_conn(
                 conn,

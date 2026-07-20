@@ -34,7 +34,7 @@ def main() -> None:
         root = Path(tmp)
         run_v05_flow(root)
         run_closed_gate(root)
-    print("protocol v0.5 HTTP conformance passed (22/22)")
+    print("protocol v0.5 HTTP conformance passed (23/23)")
 
 
 def seed_registry(db_path: Path) -> None:
@@ -70,6 +70,42 @@ def run_v05_flow(root: Path) -> None:
         public_agents = request(base, "GET", "/agents", None, HEADERS[A], 200)["agents"]
         assert {agent["agent_id"] for agent in public_agents} == {A, B, C}
         assert all(PROTOCOL_V05 in agent["protocol_capabilities"] for agent in public_agents)
+        healthcheck = request(
+            base,
+            "POST",
+            "/healthchecks/install",
+            {"idempotency_key": "api-v05-install-health"},
+            HEADERS[A],
+            201,
+        )
+        health_task = healthcheck["task"]
+        assert health_task["target_agent_id"] == "agentrelay-healthcheck"
+        assert health_task["task_version"] == 3
+        assert len(healthcheck["messages"]) == 2
+        assert "ACK from agentrelay-healthcheck" in healthcheck["messages"][1]["parts"][0]["text"]
+        health_event = recover(base, A, listeners[A])
+        healthcheck = ack(
+            base,
+            A,
+            health_task,
+            health_event,
+            listeners[A],
+            "api-v05-install-health-ack",
+        )
+        health_task = healthcheck["task"]
+        completed_healthcheck = request(
+            base,
+            "POST",
+            f"/tasks/{health_task['task_id']}/complete",
+            {
+                **context(health_task, "api-v05-install-health-complete"),
+                "actor_agent_id": A,
+                "completed_against_message_id": health_task["current_message_id"],
+            },
+            HEADERS[A],
+            200,
+        )
+        assert completed_healthcheck["task"]["status"] == "completed"
         created = request(
             base,
             "POST",
@@ -225,10 +261,15 @@ def run_v05_flow(root: Path) -> None:
 
         summary = request(base, "GET", "/admin/api/summary", None, ADMIN_HEADERS, 200)
         assert summary["protocol_version"] == PROTOCOL_V05
-        assert summary["tasks"]["total"] == 2
+        assert summary["tasks"]["total"] == 3
         assert "by_delivery_status" in summary["messages"]
         agents = request(base, "GET", "/admin/api/agents", None, ADMIN_HEADERS, 200)
-        assert len(agents["agents"]) == 3
+        assert {agent["agent_id"] for agent in agents["agents"]} == {
+            A,
+            B,
+            C,
+            "agentrelay-healthcheck",
+        }
         admin_tasks = request(base, "GET", "/admin/api/tasks", None, ADMIN_HEADERS, 200)
         assert all("diagnosis" in item and "current_message" in item for item in admin_tasks["tasks"])
         admin_detail = request(
@@ -387,7 +428,6 @@ def assert_legacy_mutations_closed(base: str) -> None:
 def legacy_mutation_probes() -> list[tuple[str, dict]]:
     task_id = "task_legacy_probe"
     return [
-        ("/healthchecks/install", {}),
         (f"/tasks/{task_id}/status", {"status": "working"}),
         (f"/tasks/{task_id}/artifacts", {}),
         (f"/tasks/{task_id}/amend", {}),
