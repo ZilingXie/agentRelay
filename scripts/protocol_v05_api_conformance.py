@@ -263,6 +263,11 @@ def run_v05_flow(root: Path) -> None:
         assert summary["protocol_version"] == PROTOCOL_V05
         assert summary["tasks"]["total"] == 3
         assert "by_delivery_status" in summary["messages"]
+        assert summary["readiness"]["stale_enabled_agents"] == 0
+        assert all(
+            alert["code"] != "stale_enabled_agent"
+            for alert in summary["alerts"]
+        )
         agents = request(base, "GET", "/admin/api/agents", None, ADMIN_HEADERS, 200)
         assert {agent["agent_id"] for agent in agents["agents"]} == {
             A,
@@ -270,6 +275,11 @@ def run_v05_flow(root: Path) -> None:
             C,
             "agentrelay-healthcheck",
         }
+        healthcheck_agent = next(
+            agent for agent in agents["agents"]
+            if agent["agent_id"] == "agentrelay-healthcheck"
+        )
+        assert healthcheck_agent["enabled"] is False
         admin_tasks = request(base, "GET", "/admin/api/tasks", None, ADMIN_HEADERS, 200)
         assert all("diagnosis" in item and "current_message" in item for item in admin_tasks["tasks"])
         admin_detail = request(

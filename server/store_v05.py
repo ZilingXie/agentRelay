@@ -192,6 +192,13 @@ class V05Store:
                 conn.execute("ALTER TABLE messages ADD COLUMN subject TEXT")
             if "metadata_json" not in message_columns:
                 conn.execute("ALTER TABLE messages ADD COLUMN metadata_json TEXT")
+            conn.execute(
+                """
+                UPDATE agents SET enabled = 0, updated_at = ?
+                WHERE agent_id = ? AND enabled != 0
+                """,
+                (int(time.time()), INSTALL_HEALTHCHECK_AGENT_ID),
+            )
 
     def upsert_agent(
         self,
@@ -424,10 +431,10 @@ class V05Store:
                 INSERT INTO agents (
                     agent_id, name, owner, enabled, protocol_capabilities_json,
                     created_at, updated_at
-                ) VALUES (?, ?, 'AgentRelay', 1, ?, ?, ?)
+                ) VALUES (?, ?, 'AgentRelay', 0, ?, ?, ?)
                 ON CONFLICT(agent_id) DO UPDATE SET
                     name = excluded.name,
-                    enabled = 1,
+                    enabled = 0,
                     protocol_capabilities_json = excluded.protocol_capabilities_json,
                     updated_at = excluded.updated_at
                 """,
