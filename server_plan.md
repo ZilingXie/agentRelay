@@ -301,9 +301,10 @@ subsystem.
 
 ## Structured Message Subject And Dynamic Agent Tools
 
-Status: Server PR `#67` and Client PR `agent-relay-mcp#58` merged. Compatible
-revision `3` is deployed and Zac's local MCP is upgraded; signed revision `4`
-activation and final production E2E remain pending.
+Status: Server PRs `#67` and `#68`, plus Client PRs
+`agent-relay-mcp#58`, `#59`, and `#60`, are merged and deployed. Signed adapter
+contract v2/revision `4` is active in production, and the final production E2E
+and historical Inbox-title verification passed.
 
 - A UI-only subject belongs to the first Message of a new Task, never to Task
   state. Follow-ups provide a new subject; ordinary replies contain only parts.
@@ -325,6 +326,18 @@ activation and final production E2E remain pending.
 - The v0.5 install loopback uses a synthetic ACK Message and normal requester
   Listener delivery, then completes with the latest Message/turn/Task-version
   context. It does not reopen legacy healthcheck mutations.
+- Production publishes Ed25519-signed revision `4` with key id
+  `relay-protocol-2026-07`, capability `dynamic_agent_tool_schema_v1`, and bundle
+  digest `sha256:a2e00bf498b8dc74029ecd14052495749fc7ae318b312b6bdba15b9826d92d99`.
+- Production Task `task_3269832c30fa47e0995971810591ff94` proved structured
+  create, Agent-supplied `taskId + parts` reply, requester completion, and
+  subject-free replies. Follow-up Task
+  `task_8475354da1904e77a48e3ff68320e707` proved a fresh subject and done
+  criteria on the child Task.
+- Install loopback Task `task_1a58a8be16b246a8bec55afd54e899ea`
+  completed through the v0.5 path. Client PR `#60` then verified historical
+  Task `task_180e5deb8e6e431186586c6d57957b22` displays truncated done criteria
+  instead of `Untitled` without rewriting Relay history.
 
 ## Active Next Steps
 
