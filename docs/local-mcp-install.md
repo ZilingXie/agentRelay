@@ -86,12 +86,14 @@ The relay exposes:
 POST /agentrelay/api/healthchecks/install
 ```
 
-This authenticated endpoint creates a synthetic task from the authenticated
-requester agent to the built-in `agentrelay-healthcheck` actor, writes an ACK
-artifact immediately, and emits `task.pending` back to the requester. It is for
-validating MCP auth, server reachability, WebSocket/local listener delivery,
-local inbox state, and close permissions. It does not call Project Hermes or
-any remote agent adapter.
+In v0.5 mode this authenticated endpoint creates a synthetic Task from the
+authenticated requester to the built-in `agentrelay-healthcheck` actor, records
+the synthetic request as delivered, creates an ACK Message, and queues that
+Message for the requester. The installer waits for its normal Listener ACK,
+then completes the Task with the latest v0.5 Message/turn/version context. It
+validates MCP auth, server reachability, v0.5 persistence, WebSocket/local
+Listener delivery, Local Inbox state, and completion permissions. It does not
+call Project Hermes or any remote agent adapter.
 
 The endpoint supports client idempotency keys. Retrying the same install check
 for the same requester returns the same synthetic task instead of creating a

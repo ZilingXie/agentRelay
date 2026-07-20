@@ -34,6 +34,8 @@ from server.protocol_v04 import (
 )
 from server.protocol_v05 import (
     is_protocol_v05,
+    reject_unknown as reject_unknown_v05,
+    require_string as require_string_v05,
     validate_ack as validate_v05_ack,
     validate_complete as validate_v05_complete,
     validate_delivery_fail as validate_v05_delivery_fail,
@@ -546,8 +548,6 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_json(result)
             return
         if path == "/agentrelay/healthchecks/install":
-            if not self.require_legacy_writes():
-                return
             requester_agent_id = auth.get("agent_id")
             if not requester_agent_id:
                 self.respond_error(
@@ -559,6 +559,25 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 return
             requested_agent_id = read_alias(payload, "requester_agent_id", "requesterAgentId", payload.get("from"))
             if requested_agent_id and not self.require_agent(auth, requested_agent_id):
+                return
+            if self.mutation_mode == "v05":
+                reject_unknown_v05(
+                    payload,
+                    {"idempotency_key", "requester_agent_id", "requesterAgentId", "from"},
+                )
+                key = require_string_v05(payload, "idempotency_key")
+                store = self.require_v05_writes()
+                if store is None:
+                    return
+                self.respond_json(
+                    store.create_install_healthcheck(
+                        requester_agent_id,
+                        idempotency_key=key,
+                    ),
+                    status=201,
+                )
+                return
+            if not self.require_legacy_writes():
                 return
             result = self.store.create_install_healthcheck(
                 requester_agent_id,

@@ -274,9 +274,11 @@ subsystem.
   current delivered Message and `agent_reported_failure`. Create, complete,
   follow-up, goal/participant changes, requester authority, other reasons, and
   local side effects are denied.
-- Relay remains the trusted protocol publisher; independent signing/KMS is
-  deferred. Local approval does not claim protection from a malicious process
-  with same-user filesystem write access.
+- Relay remains the trusted protocol publisher. Dynamic Agent-tool bundles use
+  self-published Ed25519 signatures whose first key observation still trusts
+  Relay TLS; external KMS/key pinning remains deferred. Local approval does not
+  claim protection from a malicious process with same-user filesystem write
+  access.
 - Release order is Server then Client then the independently preserved Hermes
   deploy source. Production verification covers Zac and Hermes, not Vivi, and
   includes positive/negative authorization, hot patch, malicious-bundle reject,
@@ -299,8 +301,9 @@ subsystem.
 
 ## Structured Message Subject And Dynamic Agent Tools
 
-Status: implemented on task branch; pending Server/Client PRs, staged deployment,
-client upgrades, bundle activation, and production verification.
+Status: Server PR `#67` and Client PR `agent-relay-mcp#58` merged. Compatible
+revision `3` is deployed and Zac's local MCP is upgraded; signed revision `4`
+activation and final production E2E remain pending.
 
 - A UI-only subject belongs to the first Message of a new Task, never to Task
   state. Follow-ups provide a new subject; ordinary replies contain only parts.
@@ -319,6 +322,9 @@ client upgrades, bundle activation, and production verification.
 - Release gate: full Server and Client suites, malicious-bundle coverage,
   process-level MCP smoke, cross-repo hot patch, and create/reply/complete/
   follow-up E2E must pass before activation.
+- The v0.5 install loopback uses a synthetic ACK Message and normal requester
+  Listener delivery, then completes with the latest Message/turn/Task-version
+  context. It does not reopen legacy healthcheck mutations.
 
 ## Active Next Steps
 
