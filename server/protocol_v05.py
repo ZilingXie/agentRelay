@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import math
+import re
 from typing import Any
 
 
@@ -16,6 +19,39 @@ DELIVERY_ACK_LEASE_SECONDS = 60
 LISTENER_READINESS_PUBLISH_INTERVAL_SECONDS = 60
 LISTENER_READINESS_MAX_AGE_SECONDS = 300
 MAX_VISIBILITY_BATCH_SIZE = 100
+MESSAGE_SUBJECT_MAX_LENGTH = 120
+MESSAGE_METADATA_MAX_BYTES = 4096
+MESSAGE_METADATA_MAX_DEPTH = 3
+MESSAGE_METADATA_MAX_PROPERTIES = 16
+MESSAGE_METADATA_MAX_ARRAY_ITEMS = 16
+MESSAGE_METADATA_MAX_STRING_LENGTH = 1024
+MESSAGE_METADATA_KEY = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
+MESSAGE_METADATA_RESERVED_KEYS = {
+    "actoragentid",
+    "actorid",
+    "requesteragentid",
+    "requesterid",
+    "targetagentid",
+    "targetid",
+    "agentid",
+    "authorization",
+    "auth",
+    "approval",
+    "confirmationref",
+    "clientactionid",
+    "idempotencykey",
+    "messageid",
+    "turnsequence",
+    "expectedtaskversion",
+    "operation",
+    "method",
+    "path",
+    "route",
+    "token",
+    "credential",
+    "credentials",
+    "headers",
+}
 
 TASK_FAILURE_REASONS = {
     "delivery_retry_exhausted",
@@ -73,6 +109,62 @@ def validate_message_parts(parts: Any) -> list[dict[str, Any]]:
     return parts
 
 
+def validate_message_subject(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("message.subject must be a non-empty string")
+    subject = value.strip()
+    if len(subject) > MESSAGE_SUBJECT_MAX_LENGTH:
+        raise ValueError(f"message.subject must be at most {MESSAGE_SUBJECT_MAX_LENGTH} characters")
+    return subject
+
+
+def validate_message_metadata(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("message.metadata must be an object")
+    encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    if len(encoded) > MESSAGE_METADATA_MAX_BYTES:
+        raise ValueError(f"message.metadata must be at most {MESSAGE_METADATA_MAX_BYTES} bytes")
+    _validate_message_metadata_value(value, depth=0)
+    return value
+
+
+def _validate_message_metadata_value(value: Any, *, depth: int) -> None:
+    if depth > MESSAGE_METADATA_MAX_DEPTH:
+        raise ValueError(f"message.metadata depth must be at most {MESSAGE_METADATA_MAX_DEPTH}")
+    if isinstance(value, dict):
+        if len(value) > MESSAGE_METADATA_MAX_PROPERTIES:
+            raise ValueError(
+                f"message.metadata objects may contain at most {MESSAGE_METADATA_MAX_PROPERTIES} properties"
+            )
+        for key, child in value.items():
+            if not isinstance(key, str) or not MESSAGE_METADATA_KEY.fullmatch(key):
+                raise ValueError("message.metadata keys must match ^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
+            normalized_key = re.sub(r"[_.-]", "", key).lower()
+            if normalized_key in MESSAGE_METADATA_RESERVED_KEYS:
+                raise ValueError(f"message.metadata key is reserved: {key}")
+            _validate_message_metadata_value(child, depth=depth + 1)
+        return
+    if isinstance(value, list):
+        if len(value) > MESSAGE_METADATA_MAX_ARRAY_ITEMS:
+            raise ValueError(
+                f"message.metadata arrays may contain at most {MESSAGE_METADATA_MAX_ARRAY_ITEMS} items"
+            )
+        for child in value:
+            _validate_message_metadata_value(child, depth=depth + 1)
+        return
+    if isinstance(value, str):
+        if len(value) > MESSAGE_METADATA_MAX_STRING_LENGTH:
+            raise ValueError(
+                f"message.metadata strings may contain at most {MESSAGE_METADATA_MAX_STRING_LENGTH} characters"
+            )
+        return
+    if value is None or isinstance(value, bool) or isinstance(value, int):
+        return
+    if isinstance(value, float) and math.isfinite(value):
+        return
+    raise ValueError("message.metadata values must be finite JSON values")
+
+
 def validate_task_create(payload: dict[str, Any]) -> None:
     reject_unknown(
         payload,
@@ -100,9 +192,13 @@ def validate_task_create(payload: dict[str, Any]) -> None:
     message = payload.get("message")
     if not isinstance(message, dict):
         raise ValueError("message must be an object")
-    reject_unknown(message, {"message_id", "parts"})
+    reject_unknown(message, {"message_id", "subject", "parts", "metadata"})
     if "message_id" in message:
         require_string(message, "message_id")
+    if "subject" in message:
+        validate_message_subject(message["subject"])
+    if "metadata" in message:
+        validate_message_metadata(message["metadata"])
     validate_message_parts(message.get("parts"))
     if "max_turns" in payload:
         require_positive_int(payload, "max_turns")

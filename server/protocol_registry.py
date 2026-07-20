@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import base64
 import json
 import os
 import re
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -23,12 +26,16 @@ REJECTED_PROTOCOL_VERSIONS = ["agent-collab-v0.1"]
 PATCH_CAPABILITY = "dynamic_protocol_bundle_v0.1"
 ADAPTER_CAPABILITY = "semantic_protocol_adapter_v2"
 AUTHORIZATION_CAPABILITY = "local_authorization_v1"
-ADAPTER_CONTRACT_VERSION = 1
+DYNAMIC_AGENT_TOOL_SCHEMA_CAPABILITY = "dynamic_agent_tool_schema_v1"
+LEGACY_ADAPTER_CONTRACT_VERSION = 1
+ADAPTER_CONTRACT_VERSION = 2
+AGENT_TOOL_CONTRACT_VERSION = 1
 PROTOCOL_AUTHORITY_ID = "server.stellarix.space/agentrelay"
 BUNDLE_REVISION_V03 = 1
 BUNDLE_REVISION_V04 = 1
-BUNDLE_REVISION_V05 = 2
-BUNDLE_PUBLISHED_AT_V05 = "2026-07-19T00:00:00Z"
+BUNDLE_REVISION_V05_COMPATIBLE = 3
+BUNDLE_REVISION_V05 = 4
+BUNDLE_PUBLISHED_AT_V05 = "2026-07-20T00:00:00Z"
 BUNDLE_EXPIRES_AT_V05 = "2027-07-19T00:00:00Z"
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,9 +54,9 @@ PROTECTED_BINDING_SLOTS = [
     "failure_reason",
 ]
 
-V05_OPERATION_ADAPTERS: dict[str, Any] = {
+V05_LEGACY_OPERATION_ADAPTERS: dict[str, Any] = {
     "engine": ADAPTER_CAPABILITY,
-    "contract_version": ADAPTER_CONTRACT_VERSION,
+    "contract_version": LEGACY_ADAPTER_CONTRACT_VERSION,
     "allowed_binding_sources": ["input", "identity", "task", "runtime"],
     "protected_slots": PROTECTED_BINDING_SLOTS,
     "operations": {
@@ -125,6 +132,131 @@ V05_OPERATION_ADAPTERS: dict[str, Any] = {
     },
 }
 
+V05_OPERATION_ADAPTERS: dict[str, Any] = {
+    "engine": ADAPTER_CAPABILITY,
+    "contract_version": ADAPTER_CONTRACT_VERSION,
+    "allowed_binding_sources": ["input", "identity", "task", "runtime"],
+    "protected_slots": PROTECTED_BINDING_SLOTS,
+    "operations": {
+        "create_task": {
+            "method": "POST",
+            "path": "/tasks",
+            "request_schema": "task-create-v05.schema.json",
+            "bindings": [
+                {"slot": "protocol_version", "to": "/protocol_version", "value": PROTOCOL_V05},
+                {"slot": "idempotency_key", "to": "/idempotency_key", "from": "runtime.idempotency_key"},
+                {"slot": "requester_agent_id", "to": "/requester_agent_id", "from": "identity.agent_id"},
+                {"slot": "target_agent_id", "to": "/target_agent_id", "from": "input.targetAgentId"},
+                {"slot": "done_criteria", "to": "/done_criteria", "from": "input.doneCriteria"},
+                {"slot": "max_turns", "to": "/max_turns", "from": "input.maxTurns", "optional": True},
+                {"slot": "task_expires_at", "to": "/task_expires_at", "from": "input.taskExpiresAt", "optional": True},
+                {"slot": "message_subject", "to": "/message/subject", "from": "input.message.subject"},
+                {"slot": "message_parts", "to": "/message/parts", "from": "input.message.parts"},
+                {"slot": "message_metadata", "to": "/message/metadata", "from": "input.message.metadata", "optional": True},
+            ],
+        },
+        "reply": {
+            "method": "POST",
+            "path": "/tasks/{task_id}/messages",
+            "request_schema": "task-message-v05.schema.json",
+            "bindings": [
+                {"slot": "actor_agent_id", "to": "/actor_agent_id", "from": "identity.agent_id"},
+                {"slot": "message_id", "to": "/message_id", "from": "task.current_message_id"},
+                {"slot": "turn_sequence", "to": "/turn_sequence", "from": "task.turn_sequence"},
+                {"slot": "expected_task_version", "to": "/expected_task_version", "from": "task.task_version"},
+                {"slot": "idempotency_key", "to": "/idempotency_key", "from": "runtime.idempotency_key"},
+                {"slot": "message_parts", "to": "/parts", "from": "input.parts"},
+            ],
+        },
+        "complete_task": V05_LEGACY_OPERATION_ADAPTERS["operations"]["complete_task"],
+        "fail_task": V05_LEGACY_OPERATION_ADAPTERS["operations"]["fail_task"],
+        "create_followup": {
+            "method": "POST",
+            "path": "/tasks/{task_id}/followups",
+            "request_schema": "task-followup-v05.schema.json",
+            "bindings": [
+                {"slot": "idempotency_key", "to": "/idempotency_key", "from": "runtime.idempotency_key"},
+                {"slot": "done_criteria", "to": "/done_criteria", "from": "input.doneCriteria"},
+                {"slot": "max_turns", "to": "/max_turns", "from": "input.maxTurns", "optional": True},
+                {"slot": "task_expires_at", "to": "/task_expires_at", "from": "input.taskExpiresAt", "optional": True},
+                {"slot": "message_subject", "to": "/message/subject", "from": "input.message.subject"},
+                {"slot": "message_parts", "to": "/message/parts", "from": "input.message.parts"},
+                {"slot": "message_metadata", "to": "/message/metadata", "from": "input.message.metadata", "optional": True},
+            ],
+        },
+    },
+}
+
+MESSAGE_PARTS_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "array",
+    "minItems": 1,
+    "items": {"type": "object", "minProperties": 1},
+}
+
+MESSAGE_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["subject", "parts"],
+    "properties": {
+        "subject": {"type": "string", "minLength": 1, "maxLength": 120},
+        "parts": MESSAGE_PARTS_INPUT_SCHEMA,
+    },
+}
+
+V05_AGENT_TOOLS: dict[str, Any] = {
+    "contract_version": AGENT_TOOL_CONTRACT_VERSION,
+    "tools": {
+        "agentrelay_create_task": {
+            "operation": "create_task",
+            "title": "Create AgentRelay task",
+            "description": "Create a Task with a display subject on its first Message; local identity and protocol fields are automatic.",
+            "input_schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["targetAgentId", "doneCriteria", "message"],
+                "properties": {
+                    "targetAgentId": {"type": "string", "minLength": 1},
+                    "doneCriteria": {"type": "string", "minLength": 1},
+                    "message": MESSAGE_INPUT_SCHEMA,
+                    "maxTurns": {"type": "integer", "minimum": 1},
+                    "taskExpiresAt": {"type": "integer", "minimum": 1},
+                },
+            },
+        },
+        "agentrelay_reply": {
+            "operation": "reply",
+            "title": "Reply to AgentRelay task",
+            "description": "Reply with Message parts; the Agent supplies taskId while local identity and protocol context are automatic.",
+            "input_schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["taskId", "parts"],
+                "properties": {
+                    "taskId": {"type": "string", "minLength": 1},
+                    "parts": MESSAGE_PARTS_INPUT_SCHEMA,
+                },
+            },
+        },
+        "agentrelay_create_followup": {
+            "operation": "create_followup",
+            "title": "Create AgentRelay follow-up",
+            "description": "Create a new Task under a terminal Task with new done criteria and a new first-Message subject.",
+            "input_schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["taskId", "doneCriteria", "message"],
+                "properties": {
+                    "taskId": {"type": "string", "minLength": 1},
+                    "doneCriteria": {"type": "string", "minLength": 1},
+                    "message": MESSAGE_INPUT_SCHEMA,
+                    "maxTurns": {"type": "integer", "minimum": 1},
+                    "taskExpiresAt": {"type": "integer", "minimum": 1},
+                },
+            },
+        },
+    },
+}
+
 
 class ProtocolNegotiationRequired(ValueError):
     def __init__(
@@ -178,8 +310,13 @@ def v04_content() -> dict[str, Any]:
     }
 
 
-def v05_content() -> dict[str, Any]:
-    return {
+def dynamic_agent_tools_enabled() -> bool:
+    return os.environ.get("AGENTRELAY_DYNAMIC_AGENT_TOOLS_ENABLED", "0").strip().lower() in {"1", "true", "yes"}
+
+
+def v05_content(*, dynamic_tools: bool | None = None) -> dict[str, Any]:
+    enabled = dynamic_agent_tools_enabled() if dynamic_tools is None else dynamic_tools
+    content = {
         "schemas": read_json_dir(SCHEMA_DIR, "*v05*.schema.json"),
         "examples": read_json_dir(ROOT / "examples" / "protocol-v05", "*.json"),
         "docs": {
@@ -188,8 +325,11 @@ def v05_content() -> dict[str, Any]:
             "protocol-v05-conformance.md": read_text_if_exists(DOCS_DIR / "protocol-v05-conformance.md"),
             "protocol-auto-upgrade.md": read_text_if_exists(DOCS_DIR / "protocol-auto-upgrade.md"),
         },
-        "adapters": V05_OPERATION_ADAPTERS,
+        "adapters": V05_OPERATION_ADAPTERS if enabled else V05_LEGACY_OPERATION_ADAPTERS,
     }
+    if enabled:
+        content["agent_tools"] = V05_AGENT_TOOLS
+    return content
 
 
 def content_digests(content: dict[str, Any]) -> tuple[str, str]:
@@ -364,15 +504,17 @@ def protocol_manifest_v05(
 ) -> dict[str, Any]:
     base = (public_base_url or "https://server.stellarix.space/agentrelay").rstrip("/")
     manifest = protocol_manifest(base)
-    schema_digest, bundle_digest = content_digests(v05_content())
+    dynamic_tools = dynamic_agent_tools_enabled()
+    adapter_contract_version = ADAPTER_CONTRACT_VERSION if dynamic_tools else LEGACY_ADAPTER_CONTRACT_VERSION
+    schema_digest, bundle_digest = content_digests(v05_content(dynamic_tools=dynamic_tools))
     manifest.update(
         {
             "version": PROTOCOL_V05,
             "semver": "0.5.0",
-            "bundle_revision": BUNDLE_REVISION_V05,
+            "bundle_revision": BUNDLE_REVISION_V05 if dynamic_tools else BUNDLE_REVISION_V05_COMPATIBLE,
             "schema_digest": schema_digest,
             "bundle_digest": bundle_digest,
-            "adapter_contract_version": ADAPTER_CONTRACT_VERSION,
+            "adapter_contract_version": adapter_contract_version,
             "published_at": BUNDLE_PUBLISHED_AT_V05,
             "expires_at": BUNDLE_EXPIRES_AT_V05,
             "status": "accepted_non_default",
@@ -381,9 +523,11 @@ def protocol_manifest_v05(
     )
     manifest["compatibility"]["current"] = PROTOCOL_V05
     manifest["required_client_capabilities"] = [PATCH_CAPABILITY, ADAPTER_CAPABILITY, AUTHORIZATION_CAPABILITY]
+    if dynamic_tools:
+        manifest["required_client_capabilities"].append(DYNAMIC_AGENT_TOOL_SCHEMA_CAPABILITY)
     manifest["hot_update"] = {
         "engine": ADAPTER_CAPABILITY,
-        "contract_version": ADAPTER_CONTRACT_VERSION,
+        "contract_version": adapter_contract_version,
         "enabled": os.environ.get("AGENTRELAY_HOT_UPDATE_ENABLED", "1").strip().lower() not in {"0", "false", "no"},
         "hot_patch_from": [PROTOCOL_V05],
         "protected_slots": PROTECTED_BINDING_SLOTS,
@@ -403,7 +547,71 @@ def protocol_manifest_v05(
         "listener_readiness_max_age_seconds": 300,
         "max_visibility_batch_size": 100,
     }
+    if dynamic_tools:
+        manifest["signature"] = sign_protocol_manifest(manifest)
     return manifest
+
+
+def protocol_signature_payload(manifest: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "protocol": manifest["protocol"],
+        "version": manifest["version"],
+        "semver": manifest["semver"],
+        "bundle_revision": manifest["bundle_revision"],
+        "schema_digest": manifest["schema_digest"],
+        "bundle_digest": manifest["bundle_digest"],
+        "adapter_contract_version": manifest["adapter_contract_version"],
+        "authority": manifest["authority"],
+        "published_at": manifest["published_at"],
+        "expires_at": manifest["expires_at"],
+        "required_client_capabilities": manifest["required_client_capabilities"],
+    }
+
+
+def sign_protocol_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    private_key_path = os.environ.get("AGENTRELAY_PROTOCOL_SIGNING_KEY_FILE", "").strip()
+    key_id = os.environ.get("AGENTRELAY_PROTOCOL_SIGNING_KEY_ID", "").strip()
+    if not private_key_path or not key_id:
+        raise ValueError(
+            "dynamic Agent tools require AGENTRELAY_PROTOCOL_SIGNING_KEY_FILE and AGENTRELAY_PROTOCOL_SIGNING_KEY_ID"
+        )
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", key_id):
+        raise ValueError("AGENTRELAY_PROTOCOL_SIGNING_KEY_ID must match [A-Za-z0-9._-]{1,128}")
+    payload = json.dumps(
+        protocol_signature_payload(manifest),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    try:
+        public_key = subprocess.run(
+            ["openssl", "pkey", "-in", private_key_path, "-pubout", "-outform", "DER"],
+            capture_output=True,
+            check=True,
+        ).stdout
+        ed25519_spki_prefix = bytes.fromhex("302a300506032b6570032100")
+        if len(public_key) != 44 or not public_key.startswith(ed25519_spki_prefix):
+            raise ValueError("AGENTRELAY_PROTOCOL_SIGNING_KEY_FILE must contain an Ed25519 private key")
+        # OpenSSL's Ed25519 implementation is one-shot and requires a seekable
+        # input so it can determine the payload length before signing.
+        with tempfile.NamedTemporaryFile(mode="wb", prefix="agentrelay-protocol-", delete=True) as payload_file:
+            payload_file.write(payload)
+            payload_file.flush()
+            signed = subprocess.run(
+                ["openssl", "pkeyutl", "-sign", "-rawin", "-in", payload_file.name, "-inkey", private_key_path],
+                capture_output=True,
+                check=True,
+            ).stdout
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise ValueError("failed to sign the dynamic Agent tool bundle with Ed25519") from exc
+    if len(signed) != 64:
+        raise ValueError("Ed25519 protocol signature must be 64 bytes")
+    return {
+        "algorithm": "Ed25519",
+        "key_id": key_id,
+        "public_key_spki": base64.b64encode(public_key).decode("ascii"),
+        "value": base64.b64encode(signed).decode("ascii"),
+    }
 
 
 def protocol_bundle_v05(

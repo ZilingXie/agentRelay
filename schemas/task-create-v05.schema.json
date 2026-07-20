@@ -19,6 +19,8 @@
       "required": ["parts"],
       "properties": {
         "message_id": {"type": "string", "minLength": 1},
+        "subject": {"type": "string", "minLength": 1, "maxLength": 120},
+        "metadata": {"$ref": "https://server.stellarix.space/agentrelay/schemas/protocol-v05-common.schema.json#/$defs/messageMetadata"},
         "parts": {"$ref": "https://server.stellarix.space/agentrelay/schemas/protocol-v05-common.schema.json#/$defs/parts"}
       }
     }

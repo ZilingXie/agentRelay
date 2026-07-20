@@ -297,6 +297,29 @@ subsystem.
   `sha256:ba842be162628c7cc137914220dca2582dd2259db28e9192e3dce8c0afcc7f36`;
   Zac is `up_to_date` and passed `doctor` after service restart.
 
+## Structured Message Subject And Dynamic Agent Tools
+
+Status: implemented on task branch; pending Server/Client PRs, staged deployment,
+client upgrades, bundle activation, and production verification.
+
+- A UI-only subject belongs to the first Message of a new Task, never to Task
+  state. Follow-ups provide a new subject; ordinary replies contain only parts.
+- v0.5 Message persistence adds nullable `subject` and `metadata_json`; existing
+  rows migrate to null and remain readable without Task backfill.
+- The compatible deployment publishes optional wire subject under adapter
+  contract v1. After MCP upgrades, `AGENTRELAY_DYNAMIC_AGENT_TOOLS_ENABLED=1`
+  publishes contract v2/revision 4 and requires
+  `dynamic_agent_tool_schema_v1`.
+- The signed bundle may update only the fixed create/reply/follow-up tool input
+  Schemas and descriptions. Local runtime code retains identity, approval,
+  operation/route allowlists, protected slots, LKG, and rollback authority.
+- Create/follow-up pre-register a bounded, non-authoritative
+  `/message/metadata` slot. A signed bundle may add optional public fields only
+  inside that container; ordinary reply remains `taskId + parts`.
+- Release gate: full Server and Client suites, malicious-bundle coverage,
+  process-level MCP smoke, cross-repo hot patch, and create/reply/complete/
+  follow-up E2E must pass before activation.
+
 ## Active Next Steps
 
 - Complete the 24-hour production observation window and record readiness,

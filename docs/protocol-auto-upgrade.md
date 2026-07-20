@@ -36,17 +36,34 @@ allowlists, and local side effects remain in the non-hot-updatable MCP core.
 
 Bundle bindings may read only stable tool input, local identity, normalized Task
 context, and MCP runtime idempotency context. They cannot contain scripts,
-templates, functions, loops, commands, file access, arbitrary URLs, or dynamic
-tool registration. Adapter v2 requires the exact compiled operation and semantic
-slot contracts. MCP rejects unknown or duplicate slots and targets, unsafe JSON
-Pointers, prototype-property names, protected-slot rebinding, and unknown adapter
-fields.
+templates, functions, loops, commands, file access, or arbitrary URLs. Adapter
+contract v2 may publish `agent_tools` definitions that update the title,
+description, and input JSON Schema of a fixed local tool allowlist. It cannot
+add a new tool, handler, operation, route, identity source, approval source, or
+protected protocol field. For create and follow-up, the runtime pre-registers
+one optional `/message/metadata` slot. A bundle may declare bounded public
+fields inside that non-authoritative container, but cannot choose another
+destination or expose metadata on ordinary replies. MCP compiles the verified public Schema locally and
+emits `notifications/tools/list_changed` only after the complete bundle passes
+validation. MCP rejects unknown or duplicate slots and targets, unsafe JSON
+Pointers, prototype-property names, protected-slot rebinding, untrusted Agent
+input fields, and unknown adapter fields.
 
 MCP validates the authority id and configured Relay path, schema digest, bundle
 digest, immutable revision, adapter contract, bundle size, and publication and
-expiration window before activation and again before use. Relay remains the
-trusted publisher; these controls do not defend against a fully compromised
-Relay host. Independent bundle signing is deferred.
+expiration window before activation and again before use. A bundle that
+publishes dynamic Agent tools must also carry an Ed25519 signature over its
+protocol identity, revision, schema and bundle digests, adapter contract,
+authority, validity window, and required capabilities. MCP verifies that
+signature before compiling any Agent-facing Schema.
+
+The signing public key and `key_id` are published in the Relay manifest. The
+configured Relay origin and TLS therefore remain the trust source for the first
+key observation; the signature detects substituted cached or persisted bundle
+content and provides an explicit rotation identity, but is not an external PKI
+root. It does not protect against simultaneous compromise of the Relay host and
+its signing private key. Keep the private key outside Git, readable only by the
+Relay process, and rotate `key_id` whenever the key changes.
 
 ## Activation And Recovery
 
@@ -60,6 +77,12 @@ Only an explicit Relay `hot_rollback` action may reduce the active revision. The
 client rejects a different digest under the same revision. Operators can set
 `AGENTRELAY_DISABLE_HOT_UPDATE=1` on MCP or
 `AGENTRELAY_HOT_UPDATE_ENABLED=0` on Relay as independent emergency stops.
+Relay additionally keeps `AGENTRELAY_DYNAMIC_AGENT_TOOLS_ENABLED=0` during the
+compatibility deployment. After capable MCP runtimes are installed, enabling
+it publishes adapter contract v2, bundle revision 4, and the
+`dynamic_agent_tool_schema_v1` capability requirement. Relay refuses to publish
+that mode unless `AGENTRELAY_PROTOCOL_SIGNING_KEY_FILE` and
+`AGENTRELAY_PROTOCOL_SIGNING_KEY_ID` are configured and signing succeeds.
 
 Protocol documents and examples are cached for inspection only. They are never
 automatically inserted into Local Agent context.

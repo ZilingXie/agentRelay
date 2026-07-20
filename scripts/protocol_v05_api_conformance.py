@@ -34,7 +34,7 @@ def main() -> None:
         root = Path(tmp)
         run_v05_flow(root)
         run_closed_gate(root)
-    print("protocol v0.5 HTTP conformance passed (21/21)")
+    print("protocol v0.5 HTTP conformance passed (22/22)")
 
 
 def seed_registry(db_path: Path) -> None:
@@ -81,7 +81,11 @@ def run_v05_flow(root: Path) -> None:
                 "target_agent_id": B,
                 "done_criteria": "accepted response",
                 "max_turns": 2,
-                "message": {"parts": [{"kind": "text", "text": "ping"}]},
+                "message": {
+                    "subject": "Initial ping",
+                    "metadata": {"category": "conformance", "display": {"priority": 2}},
+                    "parts": [{"kind": "text", "text": "ping"}],
+                },
             },
             HEADERS[A],
             201,
@@ -89,6 +93,10 @@ def run_v05_flow(root: Path) -> None:
         task = created["task"]
         task_id = task["task_id"]
         assert task["status"] == "open" and created["messages"][0]["delivery_status"] == "pending"
+        assert created["messages"][0]["metadata"] == {
+            "category": "conformance",
+            "display": {"priority": 2},
+        }
 
         request(base, "GET", f"/tasks/{task_id}", None, HEADERS[C], 403)
         event = recover(base, B, listeners[B])
@@ -153,6 +161,7 @@ def run_v05_flow(root: Path) -> None:
         detail = ack(base, A, task, response_event, listeners[A], "ack-response")
         task = detail["task"]
         assert task["task_version"] == 4 and len(detail["messages"]) == 2
+        assert detail["messages"][1]["metadata"] is None
 
         batch = request(
             base,
@@ -196,12 +205,17 @@ def run_v05_flow(root: Path) -> None:
             {
                 "idempotency_key": "api-followup",
                 "done_criteria": "another accepted response",
-                "message": {"parts": [{"kind": "text", "text": "again"}]},
+                "message": {
+                    "subject": "Follow-up ping",
+                    "metadata": {"category": "followup"},
+                    "parts": [{"kind": "text", "text": "again"}],
+                },
             },
             HEADERS[A],
             201,
         )
         assert followup["task"]["root_task_id"] == task_id
+        assert followup["messages"][0]["metadata"] == {"category": "followup"}
         lineage = request(
             base, "GET", f"/tasks/{task_id}/lineage", None, HEADERS[A], 200
         )["tasks"]
@@ -222,6 +236,25 @@ def run_v05_flow(root: Path) -> None:
         )
         assert admin_detail["visibility"]["diagnosis"] == "task_completed"
         assert len(admin_detail["audit_events"]) >= 5
+
+        request(
+            base,
+            "POST",
+            "/tasks",
+            {
+                "protocol_version": PROTOCOL_V05,
+                "idempotency_key": "reserved-metadata",
+                "requester_agent_id": A,
+                "target_agent_id": B,
+                "done_criteria": "must reject reserved metadata",
+                "message": {
+                    "metadata": {"requesterAgentId": C},
+                    "parts": [{"kind": "text", "text": "invalid"}],
+                },
+            },
+            HEADERS[A],
+            400,
+        )
 
         request(
             base,

@@ -62,6 +62,8 @@ const v05Message = {
   turn_sequence: 1,
   from_agent_id: "zac-agent",
   to_agent_id: "frank-agent",
+  subject: "Investigate the issue",
+  metadata: { category: "project-state", display: { priority: 2 } },
   parts: [{ kind: "text", text: "Please investigate." }],
   idempotency_key: "v05-create",
   delivery_status: "pending",
@@ -94,6 +96,46 @@ const v05Outbox = {
 };
 
 validate("task-detail-v05.schema.json", { task: v05Task, messages: [v05Message] });
+validate("task-create-v05.schema.json", {
+  protocol_version: "agent-collab-v0.5",
+  idempotency_key: "schema-v05-create",
+  requester_agent_id: "zac-agent",
+  target_agent_id: "frank-agent",
+  done_criteria: "accepted response",
+  message: {
+    subject: "Investigate the issue",
+    metadata: { category: "project-state", labels: ["test-b"] },
+    parts: [{ kind: "text", text: "Please investigate." }]
+  }
+});
+rejects("task-create-v05.schema.json", {
+  protocol_version: "agent-collab-v0.5",
+  idempotency_key: "schema-v05-invalid-metadata",
+  requester_agent_id: "zac-agent",
+  target_agent_id: "frank-agent",
+  done_criteria: "accepted response",
+  message: {
+    metadata: { "invalid key": true },
+    parts: [{ kind: "text", text: "Please investigate." }]
+  }
+});
+rejects("task-create-v05.schema.json", {
+  protocol_version: "agent-collab-v0.5",
+  idempotency_key: "schema-v05-long-subject",
+  requester_agent_id: "zac-agent",
+  target_agent_id: "frank-agent",
+  done_criteria: "accepted response",
+  message: { subject: "x".repeat(121), parts: [{ kind: "text", text: "Please investigate." }] }
+});
+rejects("task-message-v05.schema.json", {
+  actor_agent_id: "frank-agent",
+  message_id: "msg_v05",
+  turn_sequence: 1,
+  expected_task_version: 1,
+  idempotency_key: "schema-v05-reply-subject",
+  subject: "Replies cannot rename a task",
+  parts: [{ kind: "text", text: "Done." }]
+});
 validate("task-visibility-v05.schema.json", {
   protocol_version: "agent-collab-v0.5",
   diagnosis_version: 1,

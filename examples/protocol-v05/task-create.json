@@ -5,5 +5,9 @@
   "target_agent_id": "frank-agent",
   "done_criteria": "Frank returns an answer that Zac accepts.",
   "max_turns": 4,
-  "message": {"parts": [{"kind": "text", "text": "Please investigate."}]}
+  "message": {
+    "subject": "Investigate the reported issue",
+    "metadata": {"category": "investigation"},
+    "parts": [{"kind": "text", "text": "Please investigate."}]
+  }
 }

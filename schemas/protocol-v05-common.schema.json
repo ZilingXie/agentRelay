@@ -8,6 +8,29 @@
       "minItems": 1,
       "items": {"type": "object", "minProperties": 1}
     },
+    "messageMetadata": {
+      "$ref": "#/$defs/messageMetadataObject"
+    },
+    "messageMetadataObject": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"},
+      "additionalProperties": {"$ref": "#/$defs/messageMetadataValue"}
+    },
+    "messageMetadataValue": {
+      "anyOf": [
+        {"type": "string", "maxLength": 1024},
+        {"type": "number"},
+        {"type": "boolean"},
+        {"type": "null"},
+        {
+          "type": "array",
+          "maxItems": 16,
+          "items": {"$ref": "#/$defs/messageMetadataValue"}
+        },
+        {"$ref": "#/$defs/messageMetadataObject"}
+      ]
+    },
     "task": {
       "type": "object",
       "additionalProperties": false,
@@ -45,7 +68,7 @@
       "additionalProperties": false,
       "required": [
         "message_id", "task_id", "turn_sequence", "from_agent_id", "to_agent_id",
-        "parts", "idempotency_key", "delivery_status", "max_delivery_attempts",
+        "subject", "metadata", "parts", "idempotency_key", "delivery_status", "max_delivery_attempts",
         "delivered_at", "failed_at", "delivery_reason", "created_at", "updated_at"
       ],
       "properties": {
@@ -54,6 +77,13 @@
         "turn_sequence": {"type": "integer", "minimum": 1},
         "from_agent_id": {"type": "string", "minLength": 1},
         "to_agent_id": {"type": "string", "minLength": 1},
+        "subject": {"type": ["string", "null"], "minLength": 1, "maxLength": 120},
+        "metadata": {
+          "anyOf": [
+            {"$ref": "#/$defs/messageMetadata"},
+            {"type": "null"}
+          ]
+        },
         "parts": {"$ref": "#/$defs/parts"},
         "idempotency_key": {"type": "string", "minLength": 1},
         "delivery_status": {"enum": ["pending", "delivered", "failed"]},
