@@ -97,6 +97,8 @@ class V05Store:
                     turn_sequence INTEGER NOT NULL CHECK (turn_sequence >= 1),
                     from_agent_id TEXT NOT NULL,
                     to_agent_id TEXT NOT NULL,
+                    subject TEXT,
+                    metadata_json TEXT,
                     parts_json TEXT NOT NULL,
                     idempotency_key TEXT NOT NULL,
                     delivery_status TEXT NOT NULL CHECK (delivery_status IN ('pending', 'delivered', 'failed')),
@@ -181,6 +183,13 @@ class V05Store:
                 END;
                 """
             )
+            message_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(messages)").fetchall()
+            }
+            if "subject" not in message_columns:
+                conn.execute("ALTER TABLE messages ADD COLUMN subject TEXT")
+            if "metadata_json" not in message_columns:
+                conn.execute("ALTER TABLE messages ADD COLUMN metadata_json TEXT")
 
     def upsert_agent(
         self,
@@ -350,6 +359,8 @@ class V05Store:
                 turn_sequence=1,
                 from_agent_id=requester,
                 to_agent_id=target,
+                subject=str(message_payload["subject"]).strip() if message_payload.get("subject") else None,
+                metadata=message_payload.get("metadata"),
                 parts=message_payload["parts"],
                 idempotency_key=key,
                 now=timestamp,
@@ -366,7 +377,13 @@ class V05Store:
             )
             self._audit_conn(
                 conn, task_id, "task.created", requester, message_id,
-                {"status": "open", "task_version": 1}, timestamp,
+                {
+                    "status": "open",
+                    "task_version": 1,
+                    "message_subject_present": bool(message_payload.get("subject")),
+                    "message_metadata_present": "metadata" in message_payload,
+                },
+                timestamp,
             )
             if source_task_id:
                 self._audit_conn(
@@ -1451,6 +1468,8 @@ class V05Store:
         turn_sequence: int,
         from_agent_id: str,
         to_agent_id: str,
+        subject: str | None = None,
+        metadata: dict[str, Any] | None = None,
         parts: list[dict[str, Any]],
         idempotency_key: str,
         now: int,
@@ -1459,12 +1478,13 @@ class V05Store:
             """
             INSERT INTO messages (
                 message_id, task_id, turn_sequence, from_agent_id, to_agent_id,
-                parts_json, idempotency_key, delivery_status, max_delivery_attempts,
+                subject, metadata_json, parts_json, idempotency_key, delivery_status, max_delivery_attempts,
                 delivered_at, failed_at, delivery_reason, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL, NULL, NULL, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL, NULL, NULL, ?, ?)
             """,
             (
                 message_id, task_id, turn_sequence, from_agent_id, to_agent_id,
+                subject, json.dumps(metadata, sort_keys=True) if metadata is not None else None,
                 json.dumps(parts, sort_keys=True), idempotency_key,
                 MAX_DELIVERY_ATTEMPTS, now, now,
             ),
@@ -1704,6 +1724,8 @@ class V05Store:
     def _message_dict(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
         value = dict(row)
         value["parts"] = json.loads(value.pop("parts_json"))
+        metadata_json = value.pop("metadata_json", None)
+        value["metadata"] = json.loads(metadata_json) if metadata_json is not None else None
         return value
 
     @staticmethod

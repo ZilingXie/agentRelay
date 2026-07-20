@@ -21,6 +21,7 @@ BASE = 10_000
 
 def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
+        assert_metadata_migration(Path(tmp) / "metadata-migration.sqlite3")
         scenarios = (
             (native_schema_and_admission, BASE),
             (round_trip_completion, BASE + 303),
@@ -67,6 +68,16 @@ def prepare_agents(store: V05Store, readiness_time: int) -> dict[str, tuple[str,
     return state
 
 
+def assert_metadata_migration(db_path: Path) -> None:
+    store = V05Store(str(db_path))
+    with store.connect() as conn:
+        conn.execute("ALTER TABLE messages DROP COLUMN metadata_json")
+    migrated = V05Store(str(db_path))
+    with migrated.connect() as conn:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(messages)")}
+    assert "metadata_json" in columns
+
+
 def create(
     store: V05Store,
     key: str,
@@ -84,7 +95,11 @@ def create(
         "done_criteria": "accepted target response",
         "max_turns": max_turns,
         "task_expires_at": expires_at or now + 3600,
-        "message": {"parts": [{"kind": "text", "text": key}]},
+        "message": {
+            "subject": f"Subject {key}",
+            "metadata": {"category": "conformance", "case": key},
+            "parts": [{"kind": "text", "text": key}],
+        },
     }
     return store.create_task(payload, source_task_id=source_task_id, now=now)
 
@@ -168,8 +183,18 @@ def native_schema_and_admission(
         assert "task_version" in task_columns
         assert "delivery_status" not in task_columns
         assert "status_version" not in task_columns
+        message_columns = {row["name"] for row in conn.execute("PRAGMA table_info(messages)")}
+        assert "subject" in message_columns
+        assert "metadata_json" in message_columns
+        assert "subject" not in task_columns
+        assert "metadata_json" not in task_columns
 
     first = create(store, "native-create", now=BASE + 1)
+    assert first["messages"][0]["subject"] == "Subject native-create"
+    assert first["messages"][0]["metadata"] == {
+        "category": "conformance",
+        "case": "native-create",
+    }
     duplicate = create(store, "native-create", now=BASE + 1)
     assert duplicate["task"]["task_id"] == first["task"]["task_id"]
     assert_conflict(

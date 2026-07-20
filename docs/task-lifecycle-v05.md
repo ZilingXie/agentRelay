@@ -291,6 +291,8 @@ task_id
 turn_sequence
 from_agent_id
 to_agent_id
+subject
+metadata_json
 parts_json
 idempotency_key
 delivery_status
@@ -340,6 +342,12 @@ AgentEvent(type=message.pending, outbox_status=queued,
 Task and Message audit Events
 idempotency result
 ```
+
+The initial Message may include a structured UI-only `subject` and bounded,
+non-authoritative `metadata`. Follow-up creation also creates a new Task and
+initial Message, so it may include a new subject and metadata. The next-Message
+transaction accepts only `parts` and cannot change the first Message display
+data.
 
 A new response or requester follow-up requires:
 
@@ -579,6 +587,24 @@ turn; `message_id` is the final deterministic tie-breaker used only when
 reporting an invariant violation. The response conforms to
 `task-detail-v05.schema.json`. Visibility does not replace this endpoint and
 never carries the full conversation history.
+
+The first Message of a newly created Task may carry a structured `subject` of
+at most 120 characters for UI display. The subject belongs to that Message,
+not to Task state. Ordinary replies contain only `parts` and cannot rename the
+Task. A follow-up creates a new Task and may therefore provide a new first-
+Message subject. During the compatibility rollout the wire field is optional;
+new Agent-facing tool schemas require it, while historical Messages return
+`subject: null`.
+
+The first Message may also carry an optional `metadata` object. Relay limits it
+to 4096 serialized bytes, three nested levels, 16 properties or array items per
+container, 1024 characters per string, finite JSON values, and safe key names.
+Identity, authorization, approval, routing, idempotency, Message context, and
+Task-version names are reserved. Metadata is persisted on Message, never Task,
+and cannot affect authorization or lifecycle behavior. Signed Agent-tool
+bundles may add optional public fields inside this container without changing
+the local MCP runtime. Historical and ordinary reply Messages return
+`metadata: null`.
 
 ## 15. Dashboard And Dispatcher Contract
 

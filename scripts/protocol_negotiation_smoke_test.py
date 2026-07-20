@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from server.protocol_registry import negotiate_protocol
+from server.protocol_registry import negotiate_protocol, protocol_bundle_v05, protocol_manifest_v05
 
 
 BASE_URL = "http://127.0.0.1:8802/agentrelay/api"
@@ -28,6 +28,21 @@ HEADERS = {
 
 def main() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
+        signing_key_path = Path(tmpdir) / "protocol-signing-key.pem"
+        subprocess.run(
+            ["openssl", "genpkey", "-algorithm", "ED25519", "-out", str(signing_key_path)],
+            capture_output=True,
+            check=True,
+        )
+        wrong_signing_key_path = Path(tmpdir) / "wrong-protocol-signing-key.pem"
+        subprocess.run(
+            [
+                "openssl", "genpkey", "-algorithm", "RSA",
+                "-pkeyopt", "rsa_keygen_bits:2048", "-out", str(wrong_signing_key_path),
+            ],
+            capture_output=True,
+            check=True,
+        )
         env = os.environ.copy()
         env.update(
             {
@@ -159,6 +174,59 @@ def main() -> None:
                 raise AssertionError("negotiation target must bind the manifest publication time")
             if v05_negotiated["target"].get("expires_at") != v05_manifest["expires_at"]:
                 raise AssertionError("negotiation target must bind the manifest expiration time")
+
+            previous_dynamic_tools = os.environ.get("AGENTRELAY_DYNAMIC_AGENT_TOOLS_ENABLED")
+            previous_signing_key = os.environ.get("AGENTRELAY_PROTOCOL_SIGNING_KEY_FILE")
+            previous_signing_key_id = os.environ.get("AGENTRELAY_PROTOCOL_SIGNING_KEY_ID")
+            os.environ["AGENTRELAY_DYNAMIC_AGENT_TOOLS_ENABLED"] = "1"
+            os.environ["AGENTRELAY_PROTOCOL_SIGNING_KEY_FILE"] = str(signing_key_path)
+            os.environ["AGENTRELAY_PROTOCOL_SIGNING_KEY_ID"] = "negotiation-smoke-key"
+            try:
+                dynamic_manifest = protocol_manifest_v05(
+                    "https://example.test/agentrelay", write_mode="v05"
+                )
+                dynamic_bundle = protocol_bundle_v05(
+                    "https://example.test/agentrelay", write_mode="v05"
+                )
+                if dynamic_manifest.get("adapter_contract_version") != 2:
+                    raise AssertionError("dynamic Agent tools must publish adapter contract version 2")
+                if "dynamic_agent_tool_schema_v1" not in dynamic_manifest["required_client_capabilities"]:
+                    raise AssertionError("dynamic Agent tool capability is not required")
+                signature = dynamic_manifest.get("signature", {})
+                if signature.get("algorithm") != "Ed25519" or signature.get("key_id") != "negotiation-smoke-key":
+                    raise AssertionError("dynamic Agent tools must publish an Ed25519 manifest signature")
+                tools = dynamic_bundle.get("agent_tools", {}).get("tools", {})
+                if set(tools) != {"agentrelay_create_task", "agentrelay_reply", "agentrelay_create_followup"}:
+                    raise AssertionError(f"dynamic Agent tools are incomplete: {sorted(tools)}")
+                create_schema = tools["agentrelay_create_task"]["input_schema"]
+                if create_schema["properties"]["message"]["required"] != ["subject", "parts"]:
+                    raise AssertionError("create tool must require structured Message subject and parts")
+                reply_schema = tools["agentrelay_reply"]["input_schema"]
+                if "subject" in reply_schema["properties"]:
+                    raise AssertionError("reply tool must not expose subject")
+                os.environ["AGENTRELAY_PROTOCOL_SIGNING_KEY_FILE"] = str(wrong_signing_key_path)
+                try:
+                    protocol_manifest_v05("https://example.test/agentrelay", write_mode="v05")
+                except ValueError as exc:
+                    if "Ed25519 private key" not in str(exc):
+                        raise
+                else:
+                    raise AssertionError("dynamic Agent tools must reject a non-Ed25519 signing key")
+                finally:
+                    os.environ["AGENTRELAY_PROTOCOL_SIGNING_KEY_FILE"] = str(signing_key_path)
+            finally:
+                if previous_dynamic_tools is None:
+                    os.environ.pop("AGENTRELAY_DYNAMIC_AGENT_TOOLS_ENABLED", None)
+                else:
+                    os.environ["AGENTRELAY_DYNAMIC_AGENT_TOOLS_ENABLED"] = previous_dynamic_tools
+                if previous_signing_key is None:
+                    os.environ.pop("AGENTRELAY_PROTOCOL_SIGNING_KEY_FILE", None)
+                else:
+                    os.environ["AGENTRELAY_PROTOCOL_SIGNING_KEY_FILE"] = previous_signing_key
+                if previous_signing_key_id is None:
+                    os.environ.pop("AGENTRELAY_PROTOCOL_SIGNING_KEY_ID", None)
+                else:
+                    os.environ["AGENTRELAY_PROTOCOL_SIGNING_KEY_ID"] = previous_signing_key_id
 
             previous_hot_update = os.environ.get("AGENTRELAY_HOT_UPDATE_ENABLED")
             os.environ["AGENTRELAY_HOT_UPDATE_ENABLED"] = "0"
