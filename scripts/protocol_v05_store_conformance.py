@@ -191,6 +191,8 @@ def install_healthcheck(
     assert detail["messages"][0]["delivery_status"] == "delivered"
     assert detail["messages"][1]["delivery_status"] == "pending"
     assert "ACK from agentrelay-healthcheck" in detail["messages"][1]["parts"][0]["text"]
+    assert store.get_agent("agentrelay-healthcheck")["enabled"] is False
+    assert store.admin_summary(now=BASE + 2301)["readiness"]["stale_enabled_agents"] == 0
     repeated = store.create_install_healthcheck(
         A,
         idempotency_key="install-health-v05",
@@ -219,6 +221,14 @@ def install_healthcheck(
     )
     assert completed["task"]["status"] == "completed"
     assert store.claim_due_event("agentrelay-healthcheck", now=BASE + 2304) is None
+
+    with store.connect() as conn:
+        conn.execute(
+            "UPDATE agents SET enabled = 1 WHERE agent_id = 'agentrelay-healthcheck'"
+        )
+    reopened = V05Store(str(store.db_path))
+    assert reopened.get_agent("agentrelay-healthcheck")["enabled"] is False
+    assert reopened.admin_summary(now=BASE + 2304)["alerts"] == []
 
 
 def native_schema_and_admission(
