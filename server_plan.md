@@ -125,8 +125,15 @@ through
 [`heremes-deploy#3`](https://github.com/ZilingXie/heremes-deploy/pull/3), using
 native v0.5 create, Server batch visibility, and an atomic local Task-id journal.
 Its offline exact-runtime E2E and production read-only visibility probe passed.
-The 24-hour
-observation window is still in progress. The authoritative design is
+The production observation is fully observed as of 2026-07-20. The final
+sample was taken 116216 seconds after the stable start and retained the two
+baseline E2E Tasks at `completed`/`task_version=5` with delivered current
+Messages. Production had 11 Tasks and 22 delivered Messages, with zero due or
+unacked Events, zero transitionable exhaustion, zero invariants, no alerts,
+and fresh Zac/Vivi readiness. A synthetic install-healthcheck admission
+regression found at the final gate was handled under `closed` plus forward-fix
+Server PR #70; post-write preflight passed again after production returned to
+`v05`. The authoritative design is
 [`docs/task-lifecycle-v05.md`](docs/task-lifecycle-v05.md).
 
 The v0.5 direction is a direct maintenance-window upgrade:
@@ -341,8 +348,6 @@ and historical Inbox-title verification passed.
 
 ## Active Next Steps
 
-- Complete the 24-hour production observation window and record readiness,
-  delivery backlog, invariant, dashboard, and Inbox UI results.
 - Keep `scripts/protocol_v05_preflight.py --allow-existing-collaboration` as the
   post-write production verification gate. Any incident must first switch
   mutations to `closed`, then be repaired forward.
