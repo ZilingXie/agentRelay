@@ -168,6 +168,9 @@ Detailed implementation and cutover gates are maintained in
 - Listener stale-epoch recovery is fenced by the same 300-second readiness
   window: an expired epoch may register conditionally, while a fresh replacement
   Listener cannot be displaced by an automatic recovery attempt.
+- Dynamic v0.5 bundle publication uses revision `5` after the readiness schema
+  change, preserving the invariant that one bundle revision has one immutable
+  digest.
 - The Hermes repository/runtime ownership is identified. Its dirty production
   baseline remains preserved. The v0.5 Listener/worker and daily dispatcher are
   deployed from reviewed isolated worktrees without overwriting that baseline.
