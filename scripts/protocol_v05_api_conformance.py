@@ -70,6 +70,87 @@ def run_v05_flow(root: Path) -> None:
         public_agents = request(base, "GET", "/agents", None, HEADERS[A], 200)["agents"]
         assert {agent["agent_id"] for agent in public_agents} == {A, B, C}
         assert all(PROTOCOL_V05 in agent["protocol_capabilities"] for agent in public_agents)
+        blocked_recovery = request(
+            base,
+            "POST",
+            f"/workers/{C}/readiness/register",
+            {
+                "listener_instance_id": "listener-api-recovery-blocked",
+                "client_version": "0.5.1",
+                "workspace_version": "2",
+                "transport": "websocket",
+                "recover_if_stale": True,
+            },
+            HEADERS[C],
+            409,
+        )
+        assert blocked_recovery["code"] == "listener_recovery_not_allowed"
+        invalid_recovery = request(
+            base,
+            "POST",
+            f"/workers/{C}/readiness/register",
+            {
+                "listener_instance_id": "listener-api-invalid-recovery",
+                "client_version": "0.5.1",
+                "workspace_version": "2",
+                "transport": "websocket",
+                "recover_if_stale": "true",
+            },
+            HEADERS[C],
+            400,
+        )
+        assert invalid_recovery["code"] == "VALIDATION_ERROR"
+        stale_at = int(time.time()) - 301
+        V05Store(str(v05_db)).publish_readiness(
+            C,
+            listener_instance_id=listeners[C][0],
+            readiness_epoch=listeners[C][1],
+            ready=True,
+            now=stale_at,
+        )
+        recovered = request(
+            base,
+            "POST",
+            f"/workers/{C}/readiness/register",
+            {
+                "listener_instance_id": "listener-api-recovered",
+                "client_version": "0.5.1",
+                "workspace_version": "2",
+                "transport": "websocket",
+                "recover_if_stale": True,
+            },
+            HEADERS[C],
+            201,
+        )["readiness"]
+        assert recovered["readiness_epoch"] == listeners[C][1] + 1
+        listeners[C] = (recovered["listener_instance_id"], recovered["readiness_epoch"])
+        request(
+            base,
+            "POST",
+            f"/workers/{C}/readiness",
+            {
+                "listener_instance_id": listeners[C][0],
+                "readiness_epoch": listeners[C][1],
+                "ready": True,
+            },
+            HEADERS[C],
+            200,
+        )
+        racing_recovery = request(
+            base,
+            "POST",
+            f"/workers/{C}/readiness/register",
+            {
+                "listener_instance_id": "listener-api-racing-recovery",
+                "client_version": "0.5.1",
+                "workspace_version": "2",
+                "transport": "websocket",
+                "recover_if_stale": True,
+            },
+            HEADERS[C],
+            409,
+        )
+        assert racing_recovery["code"] == "listener_recovery_not_allowed"
         healthcheck = request(
             base,
             "POST",

@@ -80,7 +80,11 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
                 epoch = parse_required_positive_int_query(query, "readiness_epoch")
                 self.v05_store.assert_listener_epoch(agent_id, instance_id, epoch)
             except (ValueError, ConflictError) as exc:
-                self.respond_error(409 if isinstance(exc, ConflictError) else 400, str(exc))
+                self.respond_error(
+                    409 if isinstance(exc, ConflictError) else 400,
+                    str(exc),
+                    code=exc.code if isinstance(exc, ConflictError) else "VALIDATION_ERROR",
+                )
                 return
             self.accept_websocket(key)
             self.stream_v05_events(agent_id, instance_id, epoch)
@@ -240,8 +244,11 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
-    def respond_error(self, status: int, message: str) -> None:
-        self.respond_json({"error": message}, status=status)
+    def respond_error(self, status: int, message: str, *, code: str | None = None) -> None:
+        payload = {"error": message}
+        if code is not None:
+            payload["code"] = code
+        self.respond_json(payload, status=status)
 
     def log_message(self, fmt: str, *args: Any) -> None:
         print(f"{self.address_string()} - {fmt % args}")

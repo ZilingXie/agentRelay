@@ -506,6 +506,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 client_version=payload["client_version"],
                 workspace_version=payload["workspace_version"],
                 transport=payload["transport"],
+                recover_if_stale=payload.get("recover_if_stale", False),
             )
             self.respond_json({"readiness": readiness}, status=201)
             return

@@ -239,6 +239,7 @@ class V05Store:
         client_version: str,
         workspace_version: str,
         transport: str,
+        recover_if_stale: bool = False,
         now: int | None = None,
     ) -> dict[str, Any]:
         timestamp = _now(now)
@@ -246,9 +247,18 @@ class V05Store:
             conn.execute("BEGIN IMMEDIATE")
             self._require_agent_conn(conn, agent_id)
             row = conn.execute(
-                "SELECT readiness_epoch FROM agent_listener_readiness WHERE agent_id = ?",
+                "SELECT readiness_epoch, observed_at FROM agent_listener_readiness WHERE agent_id = ?",
                 (agent_id,),
             ).fetchone()
+            if (
+                recover_if_stale
+                and row
+                and int(row["observed_at"]) >= timestamp - LISTENER_READINESS_MAX_AGE_SECONDS
+            ):
+                raise ConflictError(
+                    "listener_recovery_not_allowed",
+                    code="listener_recovery_not_allowed",
+                )
             epoch = int(row["readiness_epoch"]) + 1 if row else 1
             conn.execute(
                 """

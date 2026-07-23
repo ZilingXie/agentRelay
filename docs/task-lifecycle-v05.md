@@ -705,6 +705,16 @@ verification, authenticated Event recovery, and ACK/NACK endpoint checks pass.
 Graceful shutdown reports `ready=false` for its own epoch on a best-effort basis;
 the 300-second expiry remains authoritative.
 
+If a Listener receives `409 stale_readiness_epoch` from readiness publication
+or the WebSocket upgrade, it may retry registration with
+`recover_if_stale=true` while retaining its process-instance id. Relay performs
+the recovery check and registration atomically: recovery is allowed when no
+readiness row exists or when the current row is older than 300 seconds. A row
+inside the freshness window cannot be replaced through recovery, even when it
+reports `ready=false`; Relay returns `409 listener_recovery_not_allowed` so two
+live Listener processes cannot continually replace each other's epochs. Normal
+startup registration remains an explicit, unconditional replacement operation.
+
 ## 17. Maintenance-Window Cutover
 
 This project currently has few users, so v0.5 uses a direct maintenance-window
