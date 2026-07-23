@@ -133,6 +133,8 @@ def main() -> None:
             v05_manifest = get_json(f"{BASE_URL}/protocols/agent-collab/v0.5/manifest")
             if v05_manifest["compatibility"]["current"] != "agent-collab-v0.5":
                 raise AssertionError("v0.5 compatibility.current must match its manifest version")
+            if v05_manifest["bundle_revision"] != 3:
+                raise AssertionError("compatible v0.5 bundle revision must remain 3")
             v05_bundle = get_json(f"{BASE_URL}/protocols/agent-collab/v0.5/bundle")
             if v05_manifest["bundle_digest"] != canonical_digest({key: value for key, value in v05_bundle.items() if key != "manifest"}):
                 raise AssertionError("manifest bundle digest does not match the served v0.5 bundle")
@@ -190,6 +192,8 @@ def main() -> None:
                 )
                 if dynamic_manifest.get("adapter_contract_version") != 2:
                     raise AssertionError("dynamic Agent tools must publish adapter contract version 2")
+                if dynamic_manifest.get("bundle_revision") != 5:
+                    raise AssertionError("dynamic v0.5 bundle revision must be 5")
                 if "dynamic_agent_tool_schema_v1" not in dynamic_manifest["required_client_capabilities"]:
                     raise AssertionError("dynamic Agent tool capability is not required")
                 signature = dynamic_manifest.get("signature", {})
