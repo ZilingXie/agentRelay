@@ -78,8 +78,12 @@ def main() -> None:
             new_listener = ready_listener(store, "frank-listener-2", int(time.time()))
             wait_for_socket_close(old_socket)
             old_socket = None
-            stale_status = websocket_handshake_status(old_listener)
+            stale_status, stale_error = websocket_handshake_error(old_listener)
             assert stale_status == 409
+            assert stale_error == {
+                "error": "stale_readiness_epoch",
+                "code": "stale_readiness_epoch",
+            }
 
             new_socket = websocket_connect(new_listener)
             new_hello = read_json_frame(new_socket)
@@ -187,20 +191,23 @@ def websocket_path(listener: tuple[str, int]) -> str:
 
 
 def websocket_connect(listener: tuple[str, int]) -> socket.socket:
-    sock, status = websocket_handshake(listener)
+    sock, status, _headers = websocket_handshake(listener)
     if status != 101:
         sock.close()
         raise AssertionError(f"websocket upgrade failed with {status}")
     return sock
 
 
-def websocket_handshake_status(listener: tuple[str, int]) -> int:
-    sock, status = websocket_handshake(listener)
-    sock.close()
-    return status
+def websocket_handshake_error(listener: tuple[str, int]) -> tuple[int, dict]:
+    sock, status, headers = websocket_handshake(listener)
+    try:
+        body = read_http_body(sock, headers)
+        return status, json.loads(body)
+    finally:
+        sock.close()
 
 
-def websocket_handshake(listener: tuple[str, int]) -> tuple[socket.socket, int]:
+def websocket_handshake(listener: tuple[str, int]) -> tuple[socket.socket, int, bytes]:
     sock = socket.create_connection((HOST, PORT), timeout=5)
     sock.settimeout(5)
     key = base64.b64encode(os.urandom(16)).decode("ascii")
@@ -219,7 +226,17 @@ def websocket_handshake(listener: tuple[str, int]) -> tuple[socket.socket, int]:
     sock.sendall("\r\n".join(lines).encode("utf-8"))
     response = read_until(sock, b"\r\n\r\n")
     status = int(response.split(b"\r\n", 1)[0].split()[1])
-    return sock, status
+    return sock, status, response
+
+
+def read_http_body(sock: socket.socket, response_headers: bytes) -> bytes:
+    headers = response_headers.decode("utf-8")
+    content_length = 0
+    for line in headers.split("\r\n"):
+        if line.lower().startswith("content-length:"):
+            content_length = int(line.split(":", 1)[1].strip())
+            break
+    return recv_exact(sock, content_length)
 
 
 def wait_for_socket_close(sock: socket.socket) -> None:

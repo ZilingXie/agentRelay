@@ -325,12 +325,20 @@ def validate_visibility_batch(payload: dict[str, Any]) -> list[str]:
 def validate_readiness_register(payload: dict[str, Any]) -> None:
     reject_unknown(
         payload,
-        {"listener_instance_id", "client_version", "workspace_version", "transport"},
+        {
+            "listener_instance_id",
+            "client_version",
+            "workspace_version",
+            "transport",
+            "recover_if_stale",
+        },
     )
     require_string(payload, "listener_instance_id")
     require_string(payload, "client_version")
     require_string(payload, "workspace_version")
     require_string(payload, "transport")
+    if "recover_if_stale" in payload and not isinstance(payload["recover_if_stale"], bool):
+        raise ValueError("recover_if_stale must be a boolean")
 
 
 def validate_readiness_publish(payload: dict[str, Any]) -> None:

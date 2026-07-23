@@ -269,14 +269,43 @@ def native_schema_and_admission(
     assert_conflict(lambda: create(store, "stale-readiness", now=BASE + 301), "listener_not_ready")
 
     old_instance, old_epoch = listeners[A]
-    replacement = store.register_listener(
-        A,
-        listener_instance_id="listener-zac-agent-2",
-        client_version="0.5.0",
-        workspace_version="2",
-        transport="websocket",
-        now=BASE + 302,
+    assert_conflict(
+        lambda: store.register_listener(
+            A,
+            listener_instance_id="listener-zac-agent-recovery-blocked",
+            client_version="0.5.1",
+            workspace_version="2",
+            transport="websocket",
+            recover_if_stale=True,
+            now=BASE + 300,
+        ),
+        "listener_recovery_not_allowed",
     )
+    def recover_listener(instance_id: str) -> dict | ConflictError:
+        try:
+            return store.register_listener(
+                A,
+                listener_instance_id=instance_id,
+                client_version="0.5.1",
+                workspace_version="2",
+                transport="websocket",
+                recover_if_stale=True,
+                now=BASE + 301,
+            )
+        except ConflictError as exc:
+            return exc
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        recovery_results = list(pool.map(
+            recover_listener,
+            ("listener-zac-agent-2a", "listener-zac-agent-2b"),
+        ))
+    replacements = [result for result in recovery_results if isinstance(result, dict)]
+    recovery_conflicts = [result for result in recovery_results if isinstance(result, ConflictError)]
+    assert len(replacements) == 1
+    assert len(recovery_conflicts) == 1
+    assert recovery_conflicts[0].code == "listener_recovery_not_allowed"
+    replacement = replacements[0]
     assert replacement["readiness_epoch"] == old_epoch + 1
     assert_conflict(
         lambda: store.publish_readiness(
@@ -290,7 +319,7 @@ def native_schema_and_admission(
     )
     store.publish_readiness(
         A,
-        listener_instance_id="listener-zac-agent-2",
+        listener_instance_id=replacement["listener_instance_id"],
         readiness_epoch=replacement["readiness_epoch"],
         ready=True,
         now=BASE + 302,
@@ -303,7 +332,7 @@ def native_schema_and_admission(
         ready=True,
         now=BASE + 302,
     )
-    listeners[A] = ("listener-zac-agent-2", replacement["readiness_epoch"])
+    listeners[A] = (replacement["listener_instance_id"], replacement["readiness_epoch"])
 
 
 def round_trip_completion(
