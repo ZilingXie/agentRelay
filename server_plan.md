@@ -4,7 +4,7 @@ Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/age
 
 Status date: 2026-07-28.
 
-Latest update: Protocol v0.6 is active in production as of 2026-07-28. The v0.5 database was migrated with the reviewed fail-closed converter from Server PR #76, production runs `write_mode=v06` with bundle revision 6, and Zac, Vivi, and Project Hermes publish fresh v0.6 readiness. Server PRs #77 and #78 corrected the bundle-revision monotonicity and parked-delivery semantics found during cutover; Client PR #69 corrected recovery Event protocol stamping. Production Task `task_cb366d360b2d4174a6cddc21de31a0c3` completed the offline-create, Vivi recovery ACK, Vivi reply, Zac ACK, and requester-complete flow.
+Latest update: Protocol v0.6 is active in production as of 2026-07-28. The v0.5 database was migrated with the reviewed fail-closed converter from Server PR #76, production runs `write_mode=v06` with bundle revision 6, and Zac, Vivi, and Project Hermes publish fresh v0.6 readiness. Server PRs #77 and #78 corrected the bundle-revision monotonicity and parked-delivery semantics found during cutover; Client PR #69 corrected recovery Event protocol stamping. Production Task `task_cb366d360b2d4174a6cddc21de31a0c3` completed the offline-create, Vivi recovery ACK, Vivi reply, Zac ACK, and requester-complete flow. Server PR [#80](https://github.com/ZilingXie/agentRelay/pull/80) now advertises Project Hermes' bounded requester/completion-owner authority through its Agent Card; Client PR [#71](https://github.com/ZilingXie/agent-relay-mcp/pull/71) and Hermes PR [#9](https://github.com/ZilingXie/heremes-deploy/pull/9) consume that authority only when Hermes owns completion and the current delivered Message is a target response.
 
 ## Purpose
 
@@ -34,6 +34,29 @@ After every completed change, and after any explicit planning pass that changes 
 - Protocol v0.6 is the active production write contract. Protocol v0.5 remains accepted during the compatibility window but is no longer the production write mode.
 - The relay remains intentionally small: route, persist, authorize, notify, audit, and enforce transport/state invariants. Local inbox and human workflow adapters belong outside the cloud relay.
 - Agent roles are `personal_agent` and `service_agent`; permissions are expressed through `execution_mode`, `protocol_capabilities`, and `policy`.
+
+## Project Hermes Requester Completion Authority
+
+Status: implemented and verified in Server PR
+[#80](https://github.com/ZilingXie/agentRelay/pull/80); merge and production
+deployment are pending.
+
+- Project Hermes receives the `task_complete_owned` protocol capability,
+  `can_close_owned_task=true`, and the Agent Card scope
+  `tasks:complete-owned`.
+- The authority is identity- and ownership-specific. Other service-agent
+  profiles retain their existing default and cannot complete requester-owned
+  Tasks merely because they are service agents.
+- Relay completion enforcement remains authoritative: Hermes may complete only
+  when it is the Task requester/completion owner and anchors the mutation to
+  the current delivered response from the target.
+- Release order is Server PR #80, Client PR #71, then Hermes PR #9. Production
+  verification must confirm the published Agent Card, fresh readiness, a
+  requester-owned completion, and the absence of an extra reply Message.
+- The production smoke Task
+  `task_02c418549b5745c4a9fe686c04f470a9` already completed through the repaired
+  worker path at Task version 5. Canonical deployment remains required so the
+  runtime and published policy no longer depend on a manual hotfix.
 
 ## Protocol v0.6 Offline Delivery Plan
 
@@ -332,10 +355,12 @@ subsystem.
 - Human mutations require a Local Inbox approval record bound to the exact
   action, payload, Task context, expiry, and confirmation reference. Direct v0.5
   create is disabled by default and uses reviewed-draft Send.
-- Hermes receives only two service-policy authorities: bounded reply to its
-  current delivered Message and `agent_reported_failure`. Create, complete,
-  follow-up, goal/participant changes, requester authority, other reasons, and
-  local side effects are denied.
+- On the target side, Hermes receives only bounded reply and
+  `agent_reported_failure` authority for its current delivered Message. On the
+  requester side, Hermes may additionally complete only a Task it owns as
+  completion owner against the current delivered target response. Create,
+  follow-up, goal/participant changes, target-side completion, other reasons,
+  and local side effects remain denied.
 - Relay remains the trusted protocol publisher. Dynamic Agent-tool bundles use
   self-published Ed25519 signatures whose first key observation still trusts
   Relay TLS; external KMS/key pinning remains deferred. Local approval does not
