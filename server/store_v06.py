@@ -16,7 +16,6 @@ from server.protocol_v06 import (
     MAX_DELIVERY_ATTEMPTS,
     OUTBOX_LAST_ERRORS,
     PROTOCOL_V06,
-    RETRY_BACKOFF_SECONDS,
     TASK_FAILURE_REASONS,
 )
 from server.store import ConflictError
@@ -1521,64 +1520,36 @@ class V06Store:
                 (error, now, event["event_id"]),
             )
             return
-        attempts = int(event["outbox_attempts"])
-        if attempts >= MAX_DELIVERY_ATTEMPTS:
-            conn.execute(
-                """
-                UPDATE agent_events SET outbox_status = 'parked', inflight_until = NULL,
-                    inflight_via = NULL, next_retry_at = NULL, exhausted_at = NULL,
-                    exhaustion_reason = NULL, last_error = ?, updated_at = ? WHERE event_id = ?
-                """,
-                (error, now, event["event_id"]),
-            )
-            if event["can_transition_message"]:
-                message = self._message_row_conn(conn, event["message_id"])
-                task = self._task_row_conn(conn, event["task_id"])
-                if task and message and message["from_agent_id"] != INSTALL_HEALTHCHECK_AGENT_ID:
-                    self._insert_info_event_conn(
-                        conn,
-                        agent_id=message["from_agent_id"],
-                        event_type="message.delivery_waiting",
-                        task_id=task["task_id"],
-                        message_id=message["message_id"],
-                        payload={
-                            "delivery_status": "pending",
-                            "diagnosis": "waiting_listener",
-                            "task_version": task["task_version"],
-                        },
-                        idempotency_key=f"v06:{message['message_id']}:waiting-listener",
-                        now=now,
-                    )
-            return
-        backoff = RETRY_BACKOFF_SECONDS[attempts - 1]
         conn.execute(
             """
-            UPDATE agent_events SET outbox_status = 'retry_wait', inflight_until = NULL,
-                inflight_via = NULL,
-                next_retry_at = ?, last_error = ?, updated_at = ? WHERE event_id = ?
+            UPDATE agent_events SET outbox_status = 'parked', inflight_until = NULL,
+                inflight_via = NULL, next_retry_at = NULL, exhausted_at = NULL,
+                exhaustion_reason = NULL, last_error = ?, updated_at = ? WHERE event_id = ?
             """,
-            (now + backoff, error, now, event["event_id"]),
-        )
-        self._audit_conn(
-            conn, event["task_id"], "message.delivery_attempt_failed", None,
-            event["message_id"],
-            {"attempt": attempts, "last_error": error, "next_retry_at": now + backoff}, now,
+            (error, now, event["event_id"]),
         )
         if event["can_transition_message"]:
             message = self._message_row_conn(conn, event["message_id"])
-            if message:
+            task = self._task_row_conn(conn, event["task_id"])
+            if task and message:
+                self._audit_conn(
+                    conn, task["task_id"], "message.delivery_parked", None,
+                    message["message_id"],
+                    {"attempt": event["outbox_attempts"], "last_error": error}, now,
+                )
+            if task and message and message["from_agent_id"] != INSTALL_HEALTHCHECK_AGENT_ID:
                 self._insert_info_event_conn(
                     conn,
                     agent_id=message["from_agent_id"],
-                    event_type="message.delivery_attempt_failed",
-                    task_id=event["task_id"],
-                    message_id=event["message_id"],
+                    event_type="message.delivery_waiting",
+                    task_id=task["task_id"],
+                    message_id=message["message_id"],
                     payload={
-                        "attempt": attempts,
-                        "last_error": error,
-                        "next_retry_at": now + backoff,
+                        "delivery_status": "pending",
+                        "diagnosis": "waiting_listener",
+                        "task_version": task["task_version"],
                     },
-                    idempotency_key=f"v06:{event['event_id']}:attempt:{attempts}:failed",
+                    idempotency_key=f"v06:{message['message_id']}:waiting-listener",
                     now=now,
                 )
 
