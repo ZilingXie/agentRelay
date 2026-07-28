@@ -45,6 +45,7 @@ The important Phase 1 requirement is thread reuse:
 - `docs/task-lifecycle-v04.md`: decision-complete Protocol v0.4 Task lifecycle design; implementation not started
 - `docs/task-lifecycle-v05.md`: active two-layer Task, Message, and Event lifecycle
 - `docs/task-lifecycle-v06.md`: staged offline-listener delivery and recovery contract
+- `docs/protocol-v06-production-migration.md`: v0.5-to-v0.6 production migration and rollback runbook
 - `docs/third-party-agent-onboarding.md`: prepare, verify, and promote third-party agents
 - Public MCP installer repo: https://github.com/ZilingXie/agent-relay-mcp
 - `docs/local-mcp-install.md`: pointer to the public MCP install repo
