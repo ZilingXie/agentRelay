@@ -4,7 +4,7 @@ Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/age
 
 Status date: 2026-07-28.
 
-Latest update: Protocol v0.5 remains active in production. Protocol v0.6 offline delivery is implemented and locally verified on `feat/v06-offline-delivery`, but is not merged or deployed. It removes transient Listener readiness from Task admission, parks undelivered Events for epoch-fenced recovery, and keeps transport failures out of Task business state. Client and Hermes changes must follow before rollout.
+Latest update: Protocol v0.5 remains active in production. Protocol v0.6 offline delivery is merged in Server PR #74 and compatibility-deployed at merge commit `648875f`; its manifest is public while production remains on `write_mode=v05`. Client PR #67 is deployed for Zac and Hermes PR #7 is deployed for the dispatcher. Activation remains gated on a reviewed v0.5-to-v0.6 data continuity plan plus v0.6 readiness/ACK support from every production target Listener, including Hermes and Vivi.
 
 ## Purpose
 
@@ -31,14 +31,15 @@ After every completed change, and after any explicit planning pass that changes 
 - AgentRelay is the server/cloud relay project: protocol authority, HTTP/WSS relay, SQLite state, auth, delivery reliability, audit/timeline, admin dashboard, Docker deployment, and public protocol assets.
 - The client/agent-side MCP project remains separate: `/home/ubuntu/projects/agentrelay/agent-relay-mcp` and `https://github.com/ZilingXie/agent-relay-mcp`.
 - The public canonical plan has a manual-style navigation shell. Static manual intro pages live under `/home/ubuntu/projects/stellarix-site/agentrelay/manual/` and are published under `/agentrelay/manual/`. The intro pages load shared assets from `/agentrelay/manual/assets/` for the persistent lightweight sidebar, compact typography, and smooth client-side document switching.
-- Protocol v0.3 is the active contract. Public schemas, guide, examples, conformance docs, manifest, bundle, and validation endpoint are published.
+- Protocol v0.5 is the active production write contract. The additive v0.6 manifest, schemas, guide, examples, and validation support are published but are not the active write contract.
 - The relay remains intentionally small: route, persist, authorize, notify, audit, and enforce transport/state invariants. Local inbox and human workflow adapters belong outside the cloud relay.
 - Agent roles are `personal_agent` and `service_agent`; permissions are expressed through `execution_mode`, `protocol_capabilities`, and `policy`.
 
 ## Protocol v0.6 Offline Delivery Plan
 
-Status: Server implementation complete on the task branch; PR, Client, Hermes,
-cross-component E2E, and production rollout remain pending.
+Status: Server, Client, and Hermes dispatcher PRs are merged and compatibility-
+deployed. Production still writes v0.5; v0.6 activation and cross-component E2E
+remain pending.
 
 - `POST /tasks` validates identity, enabled state, authorization, and v0.6
   capability, but no longer rejects stale or absent Listener readiness.
@@ -60,9 +61,11 @@ cross-component E2E, and production rollout remain pending.
   Delivery baselines stayed at `21/21`, `23/23`, and `20/20`; v0.6 offline
   state tests passed `6/6` and HTTP conformance passed `6/6`.
 
-Rollout order is Server PR, Client PR, Hermes PR, then an offline/reconnect E2E.
-Do not enable `AGENTRELAY_MUTATION_MODE=v06` in production before all consumers
-advertise and persist the v0.6 contract.
+The merge and compatibility-deploy order completed as Server PR #74, Client PR
+#67, then Hermes PR #7. Do not enable `AGENTRELAY_MUTATION_MODE=v06` until a
+reviewed v0.5-to-v0.6 data migration or continuity plan exists and every target
+Listener advertises and persists the v0.6 contract. Then run the live offline/
+reconnect E2E before claiming production activation.
 
 ## Completed Server Milestones
 
@@ -386,10 +389,9 @@ and historical Inbox-title verification passed.
 - Keep `scripts/protocol_v05_preflight.py --allow-existing-collaboration` as the
   post-write production verification gate. Any incident must first switch
   mutations to `closed`, then be repaired forward.
-- Merge Hermes PR `ZilingXie/heremes-deploy#7` after Server PR `#74` and Client
-  PR `ZilingXie/agent-relay-mcp#67`; its WeCom at-most-once attempt journal and
-  v0.6 `Delivered / Waiting listener / Expired / Failed` report are implemented
-  and locally verified but not deployed.
+- Define and review v0.5-to-v0.6 data continuity, upgrade Hermes and Vivi
+  Listeners for v0.6 readiness/ACK, then run the production offline-create/
+  recovery probe before switching `AGENTRELAY_MUTATION_MODE` to `v06`.
 - Support the MCP Service Worker Kit with enough server/dashboard visibility to debug worker runs end to end.
 - Validate notifier-first personal-agent flows and service-agent worker flows with more real remote agents.
 - Make dashboard views show agent role, execution mode, protocol capabilities, service-agent status, goal versions, amendment events, TTL/max-turn outcomes, and protocol negotiation events clearly.

@@ -94,7 +94,7 @@ Next implementation slice:
 - [x] Implement and test an explicit task state transition validator.
 - [x] Add reliable event delivery, source refs, approval summaries, Agent Cards, and A2A mapping.
 - [x] Add admin/debug CLI for agents, tasks, timelines, events, and pending work.
-- [x] Implement the Server side of Protocol v0.6 offline delivery with parked outbox recovery and epoch fencing; Client/Hermes rollout remains pending.
+- [x] Merge and compatibility-deploy Protocol v0.6 offline delivery with parked outbox recovery and epoch fencing; production activation remains gated on data continuity and all target Listeners.
 
 See `phase3-plan.md` and the public `plan.html` for the current roadmap.
 
