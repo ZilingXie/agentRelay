@@ -3,13 +3,19 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.request
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from server.store import Store
+
+
 BASE_URL = "http://127.0.0.1:8797/agentrelay/api"
 HEADERS = {
     "Authorization": "Bearer frank-token",
@@ -20,13 +26,25 @@ HEADERS = {
 
 def main() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = f"{tmpdir}/agentrelay-agent-card.sqlite3"
+        Store(db_path).upsert_agent(
+            agent_id="project-hermes",
+            owner="Project Hermes",
+            name="Project Hermes Worker",
+            description="Project Hermes test service agent.",
+            agent_role="service_agent",
+            execution_mode="autonomous",
+        )
         env = os.environ.copy()
         env.update(
             {
                 "AGENTRELAY_HOST": "127.0.0.1",
                 "AGENTRELAY_PORT": "8797",
-                "AGENTRELAY_DB_PATH": f"{tmpdir}/agentrelay-agent-card.sqlite3",
-                "AGENTRELAY_TOKENS": "zac:zac-agent:zac-token,frank:frank-agent:frank-token",
+                "AGENTRELAY_DB_PATH": db_path,
+                "AGENTRELAY_TOKENS": (
+                    "zac:zac-agent:zac-token,frank:frank-agent:frank-token,"
+                    "project-hermes:project-hermes:hermes-token"
+                ),
                 "AGENTRELAY_PUBLIC_BASE_URL": "https://example.test/agentrelay",
             }
         )
@@ -69,10 +87,21 @@ def main() -> None:
                 raise AssertionError("agent card should include accepted task types")
             if "agent:frank-agent:events:ack" not in relay["scopes"]:
                 raise AssertionError("agent card should include event ack scope")
+            if "agent:frank-agent:tasks:complete-owned" in relay["scopes"]:
+                raise AssertionError("personal-agent scopes should remain unchanged")
             if relay["human_approval_policy"]["private_owner_agent_conversation"] != "not_relayed_by_default":
                 raise AssertionError("approval policy should keep private owner-agent conversation local")
             if not any(skill["id"] == "meeting-coordination" for skill in card["skills"]):
                 raise AssertionError("agent card should include meeting coordination skill")
+
+            hermes_card = get_json(f"{BASE_URL}/agents/project-hermes/card", HEADERS)
+            hermes_relay = hermes_card["agentRelay"]
+            if not hermes_relay["policy"]["can_close_owned_task"]:
+                raise AssertionError("Project Hermes should advertise requester-owned completion")
+            if "task_complete_owned" not in hermes_relay["protocol_capabilities"]:
+                raise AssertionError("Project Hermes should advertise its completion capability")
+            if "agent:project-hermes:tasks:complete-owned" not in hermes_relay["scopes"]:
+                raise AssertionError("Project Hermes should advertise its bounded completion scope")
 
             cards = get_json(f"{BASE_URL}/agents/cards", HEADERS)
             ids = {item["agentRelay"]["agent_id"] for item in cards["agentCards"]}

@@ -53,6 +53,7 @@ DEFAULT_SERVICE_CAPABILITIES = [
     "artifact_submit",
     "clarification_request",
 ]
+PROJECT_HERMES_CAPABILITIES = [*DEFAULT_SERVICE_CAPABILITIES, "task_create", "task_complete_owned"]
 DEFAULT_PERSONAL_POLICY = {
     "autonomous_execution_allowed": False,
     "can_amend_goal": True,
@@ -71,6 +72,7 @@ DEFAULT_SERVICE_POLICY = {
     "high_impact_requires_approval": True,
     "secret_safe_push_only": True,
 }
+PROJECT_HERMES_POLICY = {**DEFAULT_SERVICE_POLICY, "can_close_owned_task": True}
 MAX_TURNS_TERMINAL_REASON = (
     "Task exceeded max_turns before the pending agent could make another legal handoff."
 )
@@ -258,7 +260,21 @@ class Store:
                 execution_mode = 'autonomous',
                 capabilities_json = ?,
                 policy_json = ?
-            WHERE agent_id IN ('project-hermes', ?)
+            WHERE agent_id = 'project-hermes'
+            """,
+            (
+                json.dumps(PROJECT_HERMES_CAPABILITIES),
+                json.dumps(PROJECT_HERMES_POLICY),
+            ),
+        )
+        conn.execute(
+            """
+            UPDATE agents
+            SET agent_role = 'service_agent',
+                execution_mode = 'autonomous',
+                capabilities_json = ?,
+                policy_json = ?
+            WHERE agent_id = ?
               AND agent_role = 'personal_agent'
             """,
             (
@@ -518,12 +534,12 @@ class Store:
             if normalized_capabilities is None and existing:
                 normalized_capabilities = parse_json_list(existing["capabilities_json"])
             if normalized_capabilities is None:
-                normalized_capabilities = default_agent_capabilities(normalized_role)
+                normalized_capabilities = default_agent_capabilities(normalized_role, agent_id)
             normalized_policy = policy
             if normalized_policy is None and existing:
                 normalized_policy = parse_json_object(existing["policy_json"])
             if normalized_policy is None:
-                normalized_policy = default_agent_policy(normalized_role)
+                normalized_policy = default_agent_policy(normalized_role, agent_id)
             conn.execute(
                 """
                 INSERT OR REPLACE INTO agents
@@ -2823,8 +2839,8 @@ def ensure_agent_conn(conn: sqlite3.Connection, agent_id: str, owner: str, creat
             f"Personal coordinator agent for {owner}.",
             role,
             execution_mode,
-            json.dumps(default_agent_capabilities(role)),
-            json.dumps(default_agent_policy(role)),
+            json.dumps(default_agent_capabilities(role, agent_id)),
+            json.dumps(default_agent_policy(role, agent_id)),
             created_at,
         ),
     )
@@ -2871,13 +2887,17 @@ def normalize_execution_mode(value: str | None, agent_role: str) -> str:
     return execution_mode
 
 
-def default_agent_capabilities(agent_role: str) -> list[str]:
+def default_agent_capabilities(agent_role: str, agent_id: str = "") -> list[str]:
+    if agent_id == "project-hermes":
+        return list(PROJECT_HERMES_CAPABILITIES)
     if agent_role == "service_agent":
         return list(DEFAULT_SERVICE_CAPABILITIES)
     return list(DEFAULT_PERSONAL_CAPABILITIES)
 
 
-def default_agent_policy(agent_role: str) -> dict[str, Any]:
+def default_agent_policy(agent_role: str, agent_id: str = "") -> dict[str, Any]:
+    if agent_id == "project-hermes":
+        return dict(PROJECT_HERMES_POLICY)
     if agent_role == "service_agent":
         return dict(DEFAULT_SERVICE_POLICY)
     return dict(DEFAULT_PERSONAL_POLICY)
