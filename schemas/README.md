@@ -6,8 +6,9 @@ ownership, audit, and safe envelopes, while each local agent remains responsible
 for reasoning and private human interaction.
 
 Protocol-specific filenames are additive. The unversioned schemas remain the
-v0.3 contract; `*v04*` preserves the completed v0.4 baseline; `*v05*` defines
-the v0.5 maintenance-window target without changing the default protocol.
+v0.3 contract; `*v04*` preserves the completed v0.4 baseline; `*v05*` is the
+active production lifecycle; `*v06*` stages offline delivery without changing
+the compatibility default.
 
 ## Protocol v0.5 Schemas
 
@@ -23,8 +24,22 @@ the v0.5 maintenance-window target without changing the default protocol.
 - `task-visibility-v05.schema.json`: Server-computed diagnosis projection.
 - `task-visibility-batch-v05.schema.json`: ordered, unique batch lookup request.
 
-The v0.5 bundle is accepted but non-default and reports `write_mode=closed`
-until the maintenance-window switch.
+## Protocol v0.6 Schemas
+
+- `protocol-v06-common.schema.json`: v0.6 Task, Message, and recoverable parked outbox objects.
+- `task-create-v06.schema.json`: v0.6 Task creation without transient readiness admission.
+- `task-detail-v06.schema.json`: full v0.6 Task plus ordered Messages.
+- `task-message-v06.schema.json`: next alternating v0.6 Message.
+- `task-followup-v06.schema.json`: v0.6 follow-up Task creation.
+- `message-ack-v06.schema.json`: epoch-bound durable v0.6 Listener ACK.
+- `message-delivery-fail-v06.schema.json`: recoverable persistence NACK that parks delivery.
+- `event-ack-v06.schema.json`: v0.6 informational Event ACK.
+- `task-terminal-v06.schema.json`: v0.6 requester completion or authorized business failure.
+- `task-visibility-v06.schema.json`: v0.6 visibility including `waiting_listener`.
+- `task-visibility-batch-v06.schema.json`: ordered, unique v0.6 batch lookup request.
+
+The v0.6 bundle is accepted but non-default. It reports `write_mode=v06` only
+when the Server is explicitly started in v0.6 mutation mode.
 
 ## Core Request Schemas
 
@@ -56,9 +71,8 @@ until the maintenance-window switch.
 
 ## Compatibility
 
-Production clients still send `agent-collab-v0.3` unless they explicitly use an
-accepted versioned surface. v0.5 remains non-writable while implementation and
-cross-component rehearsal are incomplete.
+Production v0.5 clients continue to use their versioned surface. v0.6 remains a
+staged, additive contract until Server, Client, and Hermes rollout gates pass.
 
 ## Related Public Resources
 
@@ -69,3 +83,5 @@ cross-component rehearsal are incomplete.
 - v0.5 lifecycle: `/agentrelay/docs/task-lifecycle-v05.md`
 - v0.5 conformance status: `/agentrelay/docs/protocol-v05-conformance.md`
 - v0.5 examples: `/agentrelay/examples/protocol-v05/`
+- v0.6 lifecycle: `/agentrelay/docs/task-lifecycle-v06.md`
+- v0.6 examples: `/agentrelay/examples/protocol-v06/`

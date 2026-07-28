@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/task-followup-v06.schema.json",
+  "title": "AgentRelay Protocol v0.6 Follow-up Create",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["idempotency_key", "done_criteria", "message"],
+  "properties": {
+    "idempotency_key": {"type": "string", "minLength": 1},
+    "done_criteria": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+    "max_turns": {"type": "integer", "minimum": 1},
+    "task_expires_at": {"type": "integer", "minimum": 1},
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parts"],
+      "properties": {
+        "subject": {"type": "string", "minLength": 1, "maxLength": 120},
+        "metadata": {"$ref": "https://server.stellarix.space/agentrelay/schemas/protocol-v06-common.schema.json#/$defs/messageMetadata"},
+        "parts": {"$ref": "https://server.stellarix.space/agentrelay/schemas/protocol-v06-common.schema.json#/$defs/parts"}
+      }
+    }
+  }
+}

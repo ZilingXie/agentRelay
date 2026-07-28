@@ -23,16 +23,19 @@ from server.app import (
 from server.delivery_coordinator import DeliveryCoordinator
 from server.store import ConflictError, Store
 from server.store_v05 import V05Store
+from server.store_v06 import V06Store
 
 
 DEFAULT_DB_PATH = "./data/agentrelay.sqlite3"
 DEFAULT_V05_DB_PATH = "./data/agentrelay-v05.sqlite3"
+DEFAULT_V06_DB_PATH = "./data/agentrelay-v06.sqlite3"
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
 class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
     store: Store
     v05_store: V05Store | None = None
+    v06_store: V06Store | None = None
     coordinator: DeliveryCoordinator | None = None
     mutation_mode: str = "legacy"
     auth_identities: dict[str, dict[str, str]] = {}
@@ -66,10 +69,14 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
             self.respond_error(400, "missing Sec-WebSocket-Key")
             return
         self._send_lock = threading.Lock()
-        self._v05_closed = threading.Event()
-        if self.mutation_mode in {"closed", "v05"}:
-            if self.v05_store is None or self.coordinator is None:
-                self.respond_error(503, "Protocol v0.5 delivery is not configured")
+        self._current_closed = threading.Event()
+        if self.mutation_mode in {"closed", "v05", "v06"}:
+            current_store = self.v06_store if self.mutation_mode == "v06" else self.v05_store
+            protocol_version = (
+                "agent-collab-v0.6" if self.mutation_mode == "v06" else "agent-collab-v0.5"
+            )
+            if current_store is None or self.coordinator is None:
+                self.respond_error(503, f"Protocol {protocol_version} delivery is not configured")
                 return
             query = query_params(self.path)
             instance_id = first_query_value(query, "listener_instance_id")
@@ -78,7 +85,7 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
                 return
             try:
                 epoch = parse_required_positive_int_query(query, "readiness_epoch")
-                self.v05_store.assert_listener_epoch(agent_id, instance_id, epoch)
+                current_store.assert_listener_epoch(agent_id, instance_id, epoch)
             except (ValueError, ConflictError) as exc:
                 self.respond_error(
                     409 if isinstance(exc, ConflictError) else 400,
@@ -87,38 +94,42 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
                 )
                 return
             self.accept_websocket(key)
-            self.stream_v05_events(agent_id, instance_id, epoch)
+            self.stream_current_events(agent_id, instance_id, epoch, protocol_version)
             return
         self.accept_websocket(key)
         self.stream_events(agent_id)
 
-    def stream_v05_events(
-        self, agent_id: str, listener_instance_id: str, readiness_epoch: int
+    def stream_current_events(
+        self,
+        agent_id: str,
+        listener_instance_id: str,
+        readiness_epoch: int,
+        protocol_version: str,
     ) -> None:
         assert self.coordinator is not None
         registration = self.coordinator.register_socket(
             agent_id,
             listener_instance_id,
             readiness_epoch,
-            self.send_v05_json_frame,
-            close=self._v05_closed.set,
+            self.send_current_json_frame,
+            close=self._current_closed.set,
         )
         next_heartbeat_at = time.time() + self.heartbeat_seconds
         try:
-            self.send_v05_json_frame(
+            self.send_current_json_frame(
                 {
                     "type": "hello",
-                    "protocolVersion": "agent-collab-v0.5",
+                    "protocolVersion": protocol_version,
                     "agentId": agent_id,
                     "listenerInstanceId": listener_instance_id,
                     "readinessEpoch": readiness_epoch,
                     "serverTime": int(time.time()),
                 }
             )
-            while not self._v05_closed.wait(self.poll_interval_seconds):
+            while not self._current_closed.wait(self.poll_interval_seconds):
                 now = time.time()
                 if now >= next_heartbeat_at:
-                    self.send_v05_json_frame({"type": "heartbeat", "serverTime": int(now)})
+                    self.send_current_json_frame({"type": "heartbeat", "serverTime": int(now)})
                     next_heartbeat_at = now + self.heartbeat_seconds
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, socket.timeout):
             return
@@ -128,11 +139,11 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
             self.coordinator.unregister_socket(registration)
             self.close_connection = True
 
-    def send_v05_json_frame(self, payload: dict[str, Any]) -> None:
+    def send_current_json_frame(self, payload: dict[str, Any]) -> None:
         try:
             self.send_json_frame(payload)
         except Exception:
-            self._v05_closed.set()
+            self._current_closed.set()
             raise
 
     def stream_events(self, agent_id: str) -> None:
@@ -294,23 +305,37 @@ def create_server() -> ThreadingHTTPServer:
     db_path = os.environ.get("AGENTRELAY_DB_PATH", DEFAULT_DB_PATH)
     store = Store(db_path)
     mutation_mode = os.environ.get("AGENTRELAY_MUTATION_MODE", "legacy").strip().lower()
-    if mutation_mode not in {"legacy", "closed", "v05"}:
-        raise ValueError("AGENTRELAY_MUTATION_MODE must be legacy, closed, or v05")
+    if mutation_mode not in {"legacy", "closed", "v05", "v06"}:
+        raise ValueError("AGENTRELAY_MUTATION_MODE must be legacy, closed, v05, or v06")
     v05_db_path = os.environ.get("AGENTRELAY_V05_DB_PATH", "").strip()
     if mutation_mode in {"closed", "v05"} and not v05_db_path:
         v05_db_path = DEFAULT_V05_DB_PATH
     v05_store = V05Store(v05_db_path) if v05_db_path else None
+    v06_db_path = os.environ.get("AGENTRELAY_V06_DB_PATH", "").strip()
+    if mutation_mode == "v06" and not v06_db_path:
+        v06_db_path = DEFAULT_V06_DB_PATH
+    v06_store = V06Store(v06_db_path) if v06_db_path else None
+    current_store = v06_store if mutation_mode == "v06" else v05_store
     coordinator = None
-    if v05_store is not None and mutation_mode in {"closed", "v05"}:
+    if current_store is not None and mutation_mode in {"closed", "v05", "v06"}:
+        coordinator_poll_env = (
+            "AGENTRELAY_V06_COORDINATOR_POLL_SECONDS"
+            if mutation_mode == "v06"
+            else "AGENTRELAY_V05_COORDINATOR_POLL_SECONDS"
+        )
         coordinator = DeliveryCoordinator(
-            v05_store,
+            current_store,
             poll_interval_seconds=float(
-                os.environ.get("AGENTRELAY_V05_COORDINATOR_POLL_SECONDS", "1")
+                os.environ.get(
+                    coordinator_poll_env,
+                    os.environ.get("AGENTRELAY_V05_COORDINATOR_POLL_SECONDS", "1"),
+                )
             ),
         )
         coordinator.start()
     AgentRelayWebSocketHandler.store = store
     AgentRelayWebSocketHandler.v05_store = v05_store
+    AgentRelayWebSocketHandler.v06_store = v06_store
     AgentRelayWebSocketHandler.coordinator = coordinator
     AgentRelayWebSocketHandler.mutation_mode = mutation_mode
     auth_required, identities = load_auth_identities()
@@ -320,7 +345,9 @@ def create_server() -> ThreadingHTTPServer:
     AgentRelayWebSocketHandler.heartbeat_seconds = float(os.environ.get("AGENTRELAY_WS_HEARTBEAT_SECONDS", "30"))
     AgentRelayWebSocketHandler.lease_seconds = int(os.environ.get("AGENTRELAY_WS_LEASE_SECONDS", "60"))
     server = ThreadingHTTPServer((host, port), AgentRelayWebSocketHandler)
-    server.v05_coordinator = coordinator  # type: ignore[attr-defined]
+    server.delivery_coordinator = coordinator  # type: ignore[attr-defined]
+    server.v05_coordinator = coordinator if mutation_mode in {"closed", "v05"} else None  # type: ignore[attr-defined]
+    server.v06_coordinator = coordinator if mutation_mode == "v06" else None  # type: ignore[attr-defined]
     return server
 
 

@@ -1,0 +1,13 @@
+{
+  "protocol_version": "agent-collab-v0.6",
+  "idempotency_key": "v06-create-example",
+  "requester_agent_id": "zac-agent",
+  "target_agent_id": "frank-agent",
+  "done_criteria": "Frank returns an answer that Zac accepts.",
+  "max_turns": 4,
+  "message": {
+    "subject": "Investigate the reported issue",
+    "metadata": {"category": "investigation"},
+    "parts": [{"kind": "text", "text": "Please investigate."}]
+  }
+}

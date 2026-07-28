@@ -13,13 +13,14 @@ from typing import Any
 from server.protocol_v03 import PROTOCOL_V03
 from server.protocol_v04 import PROTOCOL_V04
 from server.protocol_v05 import PROTOCOL_V05
+from server.protocol_v06 import PROTOCOL_V06
 
 
 PROTOCOL_NAME = "agent-collab"
 CURRENT_PROTOCOL_VERSION = PROTOCOL_V03
 CURRENT_PROTOCOL_SEMVER = "0.3.0"
 CURRENT_PROTOCOL_SHORT = "v0.3"
-ACCEPTED_PROTOCOL_VERSIONS = [PROTOCOL_V05, PROTOCOL_V04, PROTOCOL_V03, "agent-collab-v0.2"]
+ACCEPTED_PROTOCOL_VERSIONS = [PROTOCOL_V06, PROTOCOL_V05, PROTOCOL_V04, PROTOCOL_V03, "agent-collab-v0.2"]
 DEPRECATED_PROTOCOL_VERSIONS = ["agent-collab-v0.2"]
 PATCHABLE_PROTOCOL_VERSIONS = ["agent-collab-v0.1"]
 REJECTED_PROTOCOL_VERSIONS = ["agent-collab-v0.1"]
@@ -37,6 +38,9 @@ BUNDLE_REVISION_V05_COMPATIBLE = 3
 BUNDLE_REVISION_V05 = 5
 BUNDLE_PUBLISHED_AT_V05 = "2026-07-20T00:00:00Z"
 BUNDLE_EXPIRES_AT_V05 = "2027-07-19T00:00:00Z"
+BUNDLE_REVISION_V06 = 1
+BUNDLE_PUBLISHED_AT_V06 = "2026-07-28T00:00:00Z"
+BUNDLE_EXPIRES_AT_V06 = "2027-07-28T00:00:00Z"
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "schemas"
@@ -332,6 +336,33 @@ def v05_content(*, dynamic_tools: bool | None = None) -> dict[str, Any]:
     return content
 
 
+def _v06_contract(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _v06_contract(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_v06_contract(item) for item in value]
+    if value == PROTOCOL_V05:
+        return PROTOCOL_V06
+    if isinstance(value, str) and value.endswith("-v05.schema.json"):
+        return f"{value.removesuffix('-v05.schema.json')}-v06.schema.json"
+    return value
+
+
+def v06_content(*, dynamic_tools: bool | None = None) -> dict[str, Any]:
+    enabled = dynamic_agent_tools_enabled() if dynamic_tools is None else dynamic_tools
+    content = {
+        "schemas": read_json_dir(SCHEMA_DIR, "*v06*.schema.json"),
+        "examples": read_json_dir(ROOT / "examples" / "protocol-v06", "*.json"),
+        "docs": {
+            "task-lifecycle-v06.md": read_text_if_exists(DOCS_DIR / "task-lifecycle-v06.md"),
+        },
+        "adapters": _v06_contract(V05_OPERATION_ADAPTERS if enabled else V05_LEGACY_OPERATION_ADAPTERS),
+    }
+    if enabled:
+        content["agent_tools"] = _v06_contract(V05_AGENT_TOOLS)
+    return content
+
+
 def content_digests(content: dict[str, Any]) -> tuple[str, str]:
     return canonical_digest(content.get("schemas", {})), canonical_digest(content)
 
@@ -408,11 +439,12 @@ def negotiate_protocol(
     if active is not None and not isinstance(active, dict):
         raise ValueError("active must be an object when present")
 
-    target = (
-        protocol_manifest_v05(public_base_url, write_mode=write_mode)
-        if write_mode in {"closed", "v05"}
-        else protocol_manifest(public_base_url)
-    )
+    if write_mode == "v06":
+        target = protocol_manifest_v06(public_base_url, write_mode=write_mode)
+    elif write_mode in {"closed", "v05"}:
+        target = protocol_manifest_v05(public_base_url, write_mode=write_mode)
+    else:
+        target = protocol_manifest(public_base_url)
     active = active or {}
     active_version = str(active.get("version") or "")
     active_digest = str(active.get("bundle_digest") or "")
@@ -622,6 +654,73 @@ def protocol_bundle_v05(
     return {
         "manifest": protocol_manifest_v05(public_base_url, write_mode=write_mode),
         **v05_content(),
+    }
+
+
+def protocol_manifest_v06(
+    public_base_url: str | None = None,
+    *,
+    write_mode: str = "closed",
+) -> dict[str, Any]:
+    base = (public_base_url or "https://server.stellarix.space/agentrelay").rstrip("/")
+    manifest = protocol_manifest(base)
+    dynamic_tools = dynamic_agent_tools_enabled()
+    adapter_contract_version = ADAPTER_CONTRACT_VERSION if dynamic_tools else LEGACY_ADAPTER_CONTRACT_VERSION
+    schema_digest, bundle_digest = content_digests(v06_content(dynamic_tools=dynamic_tools))
+    manifest.update(
+        {
+            "version": PROTOCOL_V06,
+            "semver": "0.6.0",
+            "bundle_revision": BUNDLE_REVISION_V06,
+            "schema_digest": schema_digest,
+            "bundle_digest": bundle_digest,
+            "adapter_contract_version": adapter_contract_version,
+            "published_at": BUNDLE_PUBLISHED_AT_V06,
+            "expires_at": BUNDLE_EXPIRES_AT_V06,
+            "status": "accepted_non_default",
+            "write_mode": write_mode,
+        }
+    )
+    manifest["compatibility"]["current"] = PROTOCOL_V06
+    manifest["required_client_capabilities"] = [PATCH_CAPABILITY, ADAPTER_CAPABILITY, AUTHORIZATION_CAPABILITY]
+    if dynamic_tools:
+        manifest["required_client_capabilities"].append(DYNAMIC_AGENT_TOOL_SCHEMA_CAPABILITY)
+    manifest["hot_update"] = {
+        "engine": ADAPTER_CAPABILITY,
+        "contract_version": adapter_contract_version,
+        "enabled": os.environ.get("AGENTRELAY_HOT_UPDATE_ENABLED", "1").strip().lower() not in {"0", "false", "no"},
+        "hot_patch_from": [PROTOCOL_V06],
+        "protected_slots": PROTECTED_BINDING_SLOTS,
+    }
+    manifest["urls"] = {
+        **manifest["urls"],
+        "manifest": f"{base}/api/protocols/{PROTOCOL_NAME}/v0.6/manifest",
+        "bundle": f"{base}/api/protocols/{PROTOCOL_NAME}/v0.6/bundle",
+        "docs": f"{base}/docs/task-lifecycle-v06.md",
+        "examples": f"{base}/examples/protocol-v06/",
+    }
+    manifest["constants"] = {
+        "max_delivery_attempts": 4,
+        "retry_backoff_seconds": [60, 300, 600],
+        "delivery_ack_lease_seconds": 60,
+        "listener_readiness_publish_interval_seconds": 60,
+        "listener_readiness_max_age_seconds": 300,
+        "max_visibility_batch_size": 100,
+        "max_agent_unacked_events": 1000,
+    }
+    if dynamic_tools:
+        manifest["signature"] = sign_protocol_manifest(manifest)
+    return manifest
+
+
+def protocol_bundle_v06(
+    public_base_url: str | None = None,
+    *,
+    write_mode: str = "closed",
+) -> dict[str, Any]:
+    return {
+        "manifest": protocol_manifest_v06(public_base_url, write_mode=write_mode),
+        **v06_content(),
     }
 
 

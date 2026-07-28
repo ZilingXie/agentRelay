@@ -6,6 +6,7 @@ import time
 from typing import Any, Callable
 
 from server.store_v05 import V05Store
+from server.store_v06 import V06Store
 
 
 SendEvent = Callable[[dict[str, Any]], None]
@@ -24,12 +25,15 @@ class SocketRegistration:
 class DeliveryCoordinator:
     def __init__(
         self,
-        store: V05Store,
+        store: V05Store | V06Store,
         *,
         poll_interval_seconds: float = 1.0,
         max_events_per_tick: int = 100,
     ):
         self.store = store
+        self.protocol_version = (
+            "agent-collab-v0.6" if isinstance(store, V06Store) else "agent-collab-v0.5"
+        )
         self.poll_interval_seconds = poll_interval_seconds
         self.max_events_per_tick = max_events_per_tick
         self._sockets: dict[str, SocketRegistration] = {}
@@ -72,7 +76,7 @@ class DeliveryCoordinator:
         self._stop.clear()
         self._thread = threading.Thread(
             target=self._run,
-            name="agentrelay-v05-delivery-coordinator",
+            name=f"agentrelay-{self.protocol_version.rsplit('v', 1)[-1]}-delivery-coordinator",
             daemon=True,
         )
         self._thread.start()
@@ -112,7 +116,7 @@ class DeliveryCoordinator:
                     failed += 1
                     continue
                 try:
-                    registration.send(format_v05_event_message(event))
+                    registration.send(format_event_message(event, self.protocol_version))
                 except Exception:
                     self.store.record_attempt_failure(
                         event["event_id"], "socket_write_failed", now=timestamp
@@ -163,9 +167,13 @@ class DeliveryCoordinator:
 
 
 def format_v05_event_message(event: dict[str, Any]) -> dict[str, Any]:
-    return {
+    return format_event_message(event, "agent-collab-v0.5")
+
+
+def format_event_message(event: dict[str, Any], protocol_version: str) -> dict[str, Any]:
+    message = {
         "type": event["event_type"],
-        "protocolVersion": "agent-collab-v0.5",
+        "protocolVersion": protocol_version,
         "eventId": event["event_id"],
         "agentId": event["agent_id"],
         "taskId": event["task_id"],
@@ -179,3 +187,7 @@ def format_v05_event_message(event: dict[str, Any]) -> dict[str, Any]:
             "href": f"/agentrelay/api/tasks/{event['task_id']}",
         },
     }
+    if protocol_version == "agent-collab-v0.6":
+        message["recoveryAttempt"] = event.get("recovery_attempts", 0)
+        message["inflightVia"] = event.get("inflight_via")
+    return message
