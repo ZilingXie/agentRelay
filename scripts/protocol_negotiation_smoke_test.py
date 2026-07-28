@@ -14,7 +14,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from server.protocol_registry import negotiate_protocol, protocol_bundle_v05, protocol_manifest_v05
+from server.protocol_registry import (
+    negotiate_protocol,
+    protocol_bundle_v05,
+    protocol_manifest_v05,
+    protocol_manifest_v06,
+)
 
 
 BASE_URL = "http://127.0.0.1:8802/agentrelay/api"
@@ -194,6 +199,11 @@ def main() -> None:
                     raise AssertionError("dynamic Agent tools must publish adapter contract version 2")
                 if dynamic_manifest.get("bundle_revision") != 5:
                     raise AssertionError("dynamic v0.5 bundle revision must be 5")
+                v06_manifest = protocol_manifest_v06(
+                    "https://example.test/agentrelay", write_mode="v06"
+                )
+                if v06_manifest.get("bundle_revision", 0) <= dynamic_manifest["bundle_revision"]:
+                    raise AssertionError("v0.6 bundle revision must advance beyond v0.5")
                 if "dynamic_agent_tool_schema_v1" not in dynamic_manifest["required_client_capabilities"]:
                     raise AssertionError("dynamic Agent tool capability is not required")
                 signature = dynamic_manifest.get("signature", {})
