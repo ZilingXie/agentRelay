@@ -386,8 +386,10 @@ and historical Inbox-title verification passed.
 - Keep `scripts/protocol_v05_preflight.py --allow-existing-collaboration` as the
   post-write production verification gate. Any incident must first switch
   mutations to `closed`, then be repaired forward.
-- Observe the first scheduled Hermes v0.5 daily dispatch and add the remaining
-  WeCom at-most-once send journal plus production visibility/readiness metrics.
+- Merge Hermes PR `ZilingXie/heremes-deploy#7` after Server PR `#74` and Client
+  PR `ZilingXie/agent-relay-mcp#67`; its WeCom at-most-once attempt journal and
+  v0.6 `Delivered / Waiting listener / Expired / Failed` report are implemented
+  and locally verified but not deployed.
 - Support the MCP Service Worker Kit with enough server/dashboard visibility to debug worker runs end to end.
 - Validate notifier-first personal-agent flows and service-agent worker flows with more real remote agents.
 - Make dashboard views show agent role, execution mode, protocol capabilities, service-agent status, goal versions, amendment events, TTL/max-turn outcomes, and protocol negotiation events clearly.
