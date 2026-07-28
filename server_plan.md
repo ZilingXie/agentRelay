@@ -4,7 +4,7 @@ Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/age
 
 Status date: 2026-07-28.
 
-Latest update: Protocol v0.5 remains active in production. Protocol v0.6 offline delivery is merged in Server PR #74 and compatibility-deployed at merge commit `648875f`; its manifest is public while production remains on `write_mode=v05`. Client PR #67 is deployed for Zac and Hermes PR #7 is deployed for the dispatcher. Activation remains gated on a reviewed v0.5-to-v0.6 data continuity plan plus v0.6 readiness/ACK support from every production target Listener, including Hermes and Vivi.
+Latest update: Protocol v0.5 remains active in production. Protocol v0.6 offline delivery is merged in Server PR #74 and compatibility-deployed at merge commit `648875f`; its manifest is public while production remains on `write_mode=v05`. The production-migration branch adds a fail-closed v0.5-to-v0.6 converter and maintenance runbook, while the separate Hermes branch adds configurable v0.6 Listener/worker support. Activation remains gated on review/merge, production rehearsal, and a confirmed v0.6 deployment path for Vivi.
 
 ## Purpose
 
@@ -66,6 +66,13 @@ The merge and compatibility-deploy order completed as Server PR #74, Client PR
 reviewed v0.5-to-v0.6 data migration or continuity plan exists and every target
 Listener advertises and persists the v0.6 contract. Then run the live offline/
 reconnect E2E before claiming production activation.
+
+The migration implementation preserves Task lineage, Messages, audit history,
+and idempotency records; rewrites Task protocol ownership to v0.6; discards old
+Listener epochs; and parks recoverable v0.5 Events with leases cleared. It
+requires the explicitly approved v0.6 Agent set to exactly match all enabled
+source Agents and validates row counts, foreign keys, SQLite integrity, and
+Event reachability before producing a destination database.
 
 ## Completed Server Milestones
 
@@ -389,9 +396,10 @@ and historical Inbox-title verification passed.
 - Keep `scripts/protocol_v05_preflight.py --allow-existing-collaboration` as the
   post-write production verification gate. Any incident must first switch
   mutations to `closed`, then be repaired forward.
-- Define and review v0.5-to-v0.6 data continuity, upgrade Hermes and Vivi
-  Listeners for v0.6 readiness/ACK, then run the production offline-create/
-  recovery probe before switching `AGENTRELAY_MUTATION_MODE` to `v06`.
+- Review and merge the v0.5-to-v0.6 migration tooling and Hermes v0.6 Listener,
+  locate and upgrade Vivi's listener-only runtime, rehearse against a protected
+  production snapshot, then execute the documented maintenance cutover and live
+  offline-create/recovery probe.
 - Support the MCP Service Worker Kit with enough server/dashboard visibility to debug worker runs end to end.
 - Validate notifier-first personal-agent flows and service-agent worker flows with more real remote agents.
 - Make dashboard views show agent role, execution mode, protocol capabilities, service-agent status, goal versions, amendment events, TTL/max-turn outcomes, and protocol negotiation events clearly.
