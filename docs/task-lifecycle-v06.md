@@ -3,6 +3,12 @@
 Protocol v0.6 treats Listener absence as a delivery condition, not a Task
 failure. Task, Message, and Event remain separate sources of truth.
 
+Protocol activation applies only to newly created Tasks. An already open Task
+keeps its creation-time `protocol_version`; compatible older Tasks are drained
+through their own Store, readiness epoch, recovery feed, and WebSocket lane.
+Bundle hot update may change a compatible wire mapping, but it never migrates
+Task lifecycle state or rewrites Task protocol ownership.
+
 | Object | Field | States relevant to offline delivery |
 | --- | --- | --- |
 | Task | `tasks.status` | `open`, `completed`, `expired`, `failed` |

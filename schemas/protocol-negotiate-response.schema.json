@@ -6,9 +6,10 @@
   "additionalProperties": false,
   "required": ["action", "reason", "runtime_version", "missing_capabilities", "authority", "target", "retry_policy"],
   "properties": {
-    "action": {"enum": ["up_to_date", "hot_patch", "client_release_required", "hot_rollback"]},
+    "action": {"enum": ["up_to_date", "hot_patch", "client_release_required", "hot_rollback", "task_protocol_retired"]},
     "reason": {"type": "string", "minLength": 1},
     "runtime_version": {"type": "string", "minLength": 1},
+    "requested_task_protocol_version": {"type": ["string", "null"]},
     "missing_capabilities": {"type": "array", "items": {"type": "string"}},
     "authority": {
       "type": "object",

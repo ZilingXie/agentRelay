@@ -17,6 +17,8 @@
       "uniqueItems": true,
       "items": {"type": "string", "minLength": 1}
     },
+    "preferred_protocol_version": {"type": "string", "minLength": 1},
+    "task_protocol_version": {"type": "string", "minLength": 1},
     "active": {
       "type": "object",
       "additionalProperties": false,

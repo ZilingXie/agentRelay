@@ -182,6 +182,41 @@ def main() -> None:
             if v05_negotiated["target"].get("expires_at") != v05_manifest["expires_at"]:
                 raise AssertionError("negotiation target must bind the manifest expiration time")
 
+            v05_task_during_v06 = negotiate_protocol(
+                {
+                    "runtime_version": "0.4.0",
+                    "runtime_capabilities": [
+                        "dynamic_protocol_bundle_v0.1",
+                        "semantic_protocol_adapter_v2",
+                        "local_authorization_v1",
+                    ],
+                    "supported_protocol_versions": ["agent-collab-v0.6", "agent-collab-v0.5"],
+                    "preferred_protocol_version": "agent-collab-v0.6",
+                    "task_protocol_version": "agent-collab-v0.5",
+                },
+                "https://example.test/agentrelay",
+                write_mode="v06",
+            )
+            if v05_task_during_v06["action"] != "hot_patch":
+                raise AssertionError(f"open v0.5 Task must remain negotiable during v0.6: {v05_task_during_v06}")
+            if v05_task_during_v06["target"]["version"] != "agent-collab-v0.5":
+                raise AssertionError("Task negotiation must target the Task protocol, not the Server default")
+            if v05_task_during_v06["requested_task_protocol_version"] != "agent-collab-v0.5":
+                raise AssertionError("Task protocol negotiation must echo the requested Task protocol")
+
+            retired_task = negotiate_protocol(
+                {
+                    "runtime_version": "0.4.0",
+                    "runtime_capabilities": ["dynamic_protocol_bundle_v0.1"],
+                    "supported_protocol_versions": ["agent-collab-v0.6", "agent-collab-v0.5"],
+                    "task_protocol_version": "agent-collab-v0.4",
+                },
+                "https://example.test/agentrelay",
+                write_mode="v06",
+            )
+            if retired_task["action"] != "task_protocol_retired":
+                raise AssertionError(f"non-routable Task protocol must be explicit: {retired_task}")
+
             previous_dynamic_tools = os.environ.get("AGENTRELAY_DYNAMIC_AGENT_TOOLS_ENABLED")
             previous_signing_key = os.environ.get("AGENTRELAY_PROTOCOL_SIGNING_KEY_FILE")
             previous_signing_key_id = os.environ.get("AGENTRELAY_PROTOCOL_SIGNING_KEY_ID")
