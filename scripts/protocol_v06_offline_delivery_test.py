@@ -150,17 +150,15 @@ def expired_notice_recovers(path: Path) -> None:
     assert detail["task"]["status"] == "expired"
 
 
-def push_exhaustion_parks_and_recovery_lease_stays_parked(path: Path) -> None:
+def push_failure_parks_and_recovery_lease_stays_parked(path: Path) -> None:
     store = seed(path)
     register(store, TARGET, "listener-vivi-push", BASE)
     created = create_offline(store)
-    event_id = None
-    for attempt, timestamp in enumerate((BASE, BASE + 60, BASE + 360, BASE + 960), start=1):
-        event = store.claim_due_event(TARGET, now=timestamp)
-        assert event and event["outbox_attempts"] == attempt
-        event_id = event["event_id"]
-        store.record_attempt_failure(event_id, "listener_unavailable", now=timestamp)
-    visibility = store.visibility(created["task"]["task_id"], now=BASE + 960)
+    event = store.claim_due_event(TARGET, now=BASE)
+    assert event and event["outbox_attempts"] == 1
+    event_id = event["event_id"]
+    store.record_attempt_failure(event_id, "listener_unavailable", now=BASE)
+    visibility = store.visibility(created["task"]["task_id"], now=BASE)
     assert visibility["task"]["status"] == "open"
     assert visibility["current_message"]["delivery_status"] == "pending"
     assert visibility["outbox"]["outbox_status"] == "parked"
@@ -175,11 +173,11 @@ def push_exhaustion_parks_and_recovery_lease_stays_parked(path: Path) -> None:
         now=BASE + 1000,
     )
     assert recovered and recovered["event_id"] == event_id
-    assert recovered["outbox_attempts"] == 4
+    assert recovered["outbox_attempts"] == 1
     store.expire_ack_leases(now=BASE + 1060)
     after_lease = store.visibility(created["task"]["task_id"], now=BASE + 1060)
     assert after_lease["outbox"]["outbox_status"] == "parked"
-    assert after_lease["outbox"]["outbox_attempts"] == 4
+    assert after_lease["outbox"]["outbox_attempts"] == 1
     assert TARGET not in store.list_due_agent_ids(now=BASE + 10_000)
 
 
@@ -238,7 +236,7 @@ def main() -> None:
         offline_create_and_recovery(root / "offline.sqlite3")
         old_epoch_is_rejected(root / "epoch.sqlite3")
         expired_notice_recovers(root / "expired.sqlite3")
-        push_exhaustion_parks_and_recovery_lease_stays_parked(root / "push.sqlite3")
+        push_failure_parks_and_recovery_lease_stays_parked(root / "push.sqlite3")
         business_failure_exhausts_parked_delivery(root / "failed.sqlite3")
         recovery_reclaims_its_expired_lease(root / "recovery-lease.sqlite3")
     print("protocol v0.6 offline delivery passed (6/6)")
