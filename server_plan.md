@@ -6,6 +6,13 @@ Status date: 2026-07-28.
 
 Latest update: Protocol v0.6 is active in production as of 2026-07-28. The v0.5 database was migrated with the reviewed fail-closed converter from Server PR #76, production runs `write_mode=v06` with bundle revision 6, and Zac, Vivi, and Project Hermes publish fresh v0.6 readiness. Server PRs #77 and #78 corrected the bundle-revision monotonicity and parked-delivery semantics found during cutover; Client PR #69 corrected recovery Event protocol stamping. Production Task `task_cb366d360b2d4174a6cddc21de31a0c3` completed the offline-create, Vivi recovery ACK, Vivi reply, Zac ACK, and requester-complete flow. Server PR [#80](https://github.com/ZilingXie/agentRelay/pull/80) now advertises Project Hermes' bounded requester/completion-owner authority through its Agent Card; Client PR [#71](https://github.com/ZilingXie/agent-relay-mcp/pull/71) and Hermes PR [#9](https://github.com/ZilingXie/heremes-deploy/pull/9) consume that authority only when Hermes owns completion and the current delivered Message is a target response.
 
+Current work: `feat/protocol-upgrade-safety` makes Task protocol ownership
+immutable across Server upgrades. It adds Task-aware bundle negotiation,
+explicit v0.5-under-v0.6 compatibility drain, dual delivery lanes, overlapping
+Store fail-closed checks, client-reported runtime audit, and per-protocol drain
+metrics. This remains implementation-under-review until its Server and Client
+PRs merge and production verification completes.
+
 ## Purpose
 
 This file is the server-side working plan for the AgentRelay relay project. It is for implementation planning, repository hygiene, validation notes, and server-specific next steps.

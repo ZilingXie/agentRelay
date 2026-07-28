@@ -957,6 +957,23 @@ class V06Store:
         with self.connect() as conn:
             return self._task_detail_conn(conn, task_id)
 
+    def record_client_runtime_audit(
+        self,
+        task_id: str,
+        actor_agent_id: str | None,
+        metadata: dict[str, Any],
+        *,
+        now: int | None = None,
+    ) -> None:
+        timestamp = _now(now)
+        with self.connect() as conn:
+            if not self._task_row_conn(conn, task_id):
+                return
+            self._audit_conn(
+                conn, task_id, "protocol.client_runtime", actor_agent_id, None,
+                {"trust": "client_reported", **metadata}, timestamp,
+            )
+
     def get_agent(self, agent_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute("SELECT agent_id FROM agents WHERE agent_id = ?", (agent_id,)).fetchone()

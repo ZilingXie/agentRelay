@@ -113,6 +113,24 @@ dashboard control. Keep `legacy` until core implementation and Client rehearsal
 are complete, use `closed` for preflight, and switch to `v05` only after every
 enabled Listener passes capability/readiness admission.
 
+### v0.5 Task drain under v0.6
+
+Use the compatibility lane only when open v0.5 Tasks were deliberately left in
+the v0.5 Store and were not copied into the v0.6 Store:
+
+```text
+AGENTRELAY_MUTATION_MODE=v06
+AGENTRELAY_V05_DRAIN_ENABLED=1
+AGENTRELAY_V05_DB_PATH=/home/ubuntu/agentRelay/data/agentrelay-v05.sqlite3
+AGENTRELAY_V06_DB_PATH=/home/ubuntu/agentRelay/data/agentrelay-v06.sqlite3
+```
+
+API and WS refuse to start if any Task ID exists in both Stores. Do not bypass
+that check. First split or archive migrated duplicates, then rerun preflight.
+While drain is active, check `/agentrelay/api/health` and the admin summary's
+`protocol_drain.protocols` counters. Disable drain only when the v0.5 counters
+for open Tasks, parked Events, and terminal notices are all zero.
+
 Run the read-only preflight after the Server is deployed in `closed` mode and
 the upgraded Listeners have published fresh readiness:
 

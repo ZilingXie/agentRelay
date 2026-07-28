@@ -28,6 +28,7 @@ PATCH_CAPABILITY = "dynamic_protocol_bundle_v0.1"
 ADAPTER_CAPABILITY = "semantic_protocol_adapter_v2"
 AUTHORIZATION_CAPABILITY = "local_authorization_v1"
 DYNAMIC_AGENT_TOOL_SCHEMA_CAPABILITY = "dynamic_agent_tool_schema_v1"
+TASK_ROUTABLE_PROTOCOL_VERSIONS = [PROTOCOL_V06, PROTOCOL_V05]
 LEGACY_ADAPTER_CONTRACT_VERSION = 1
 ADAPTER_CONTRACT_VERSION = 2
 AGENT_TOOL_CONTRACT_VERSION = 1
@@ -435,11 +436,16 @@ def negotiate_protocol(
     runtime_version = required_text(payload.get("runtime_version"), "runtime_version")
     capabilities = required_string_list(payload.get("runtime_capabilities"), "runtime_capabilities")
     supported_versions = required_string_list(payload.get("supported_protocol_versions"), "supported_protocol_versions")
+    task_protocol_version = optional_text(payload.get("task_protocol_version"), "task_protocol_version")
     active = payload.get("active")
     if active is not None and not isinstance(active, dict):
         raise ValueError("active must be an object when present")
 
-    if write_mode == "v06":
+    if task_protocol_version == PROTOCOL_V06:
+        target = protocol_manifest_v06(public_base_url, write_mode=write_mode)
+    elif task_protocol_version == PROTOCOL_V05:
+        target = protocol_manifest_v05(public_base_url, write_mode=write_mode)
+    elif write_mode == "v06":
         target = protocol_manifest_v06(public_base_url, write_mode=write_mode)
     elif write_mode in {"closed", "v05"}:
         target = protocol_manifest_v05(public_base_url, write_mode=write_mode)
@@ -454,7 +460,10 @@ def negotiate_protocol(
     missing_capabilities = sorted(set(required_capabilities) - set(capabilities))
     hot_update_enabled = os.environ.get("AGENTRELAY_HOT_UPDATE_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
 
-    if active_version == target["version"] and active_digest == target["bundle_digest"]:
+    if task_protocol_version and task_protocol_version not in TASK_ROUTABLE_PROTOCOL_VERSIONS:
+        action = "task_protocol_retired"
+        reason = "The Task protocol cannot be executed by the current semantic mutation runtime."
+    elif active_version == target["version"] and active_digest == target["bundle_digest"]:
         action = "up_to_date"
         reason = "The active protocol bundle matches the Relay authority."
     elif not hot_update_enabled:
@@ -474,6 +483,7 @@ def negotiate_protocol(
         "action": action,
         "reason": reason,
         "runtime_version": runtime_version,
+        "requested_task_protocol_version": task_protocol_version,
         "missing_capabilities": missing_capabilities,
         "authority": target["authority"],
         "target": {
@@ -794,6 +804,12 @@ def required_text(value: Any, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field} must be a non-empty string")
     return value.strip()
+
+
+def optional_text(value: Any, field: str) -> str | None:
+    if value is None:
+        return None
+    return required_text(value, field)
 
 
 def required_string_list(value: Any, field: str) -> list[str]:

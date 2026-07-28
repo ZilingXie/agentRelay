@@ -19,11 +19,14 @@ from server.app import (
     load_auth_identities,
     parse_required_positive_int_query,
     query_params,
+    validate_protocol_drain_stores,
 )
 from server.delivery_coordinator import DeliveryCoordinator
 from server.store import ConflictError, Store
 from server.store_v05 import V05Store
 from server.store_v06 import V06Store
+from server.protocol_v05 import PROTOCOL_V05
+from server.protocol_v06 import PROTOCOL_V06
 
 
 DEFAULT_DB_PATH = "./data/agentrelay.sqlite3"
@@ -37,7 +40,9 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
     v05_store: V05Store | None = None
     v06_store: V06Store | None = None
     coordinator: DeliveryCoordinator | None = None
+    coordinators: dict[str, DeliveryCoordinator] = {}
     mutation_mode: str = "legacy"
+    v05_drain_enabled: bool = False
     auth_identities: dict[str, dict[str, str]] = {}
     auth_required: bool = False
     poll_interval_seconds: float = 2.0
@@ -71,14 +76,19 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
         self._send_lock = threading.Lock()
         self._current_closed = threading.Event()
         if self.mutation_mode in {"closed", "v05", "v06"}:
-            current_store = self.v06_store if self.mutation_mode == "v06" else self.v05_store
-            protocol_version = (
-                "agent-collab-v0.6" if self.mutation_mode == "v06" else "agent-collab-v0.5"
+            query = query_params(self.path)
+            protocol_version = first_query_value(query, "protocol_version") or (
+                PROTOCOL_V06 if self.mutation_mode == "v06" else PROTOCOL_V05
             )
-            if current_store is None or self.coordinator is None:
+            current_store = self.v06_store if protocol_version == PROTOCOL_V06 else self.v05_store
+            coordinator = self.coordinators.get(protocol_version)
+            lane_allowed = protocol_version == PROTOCOL_V06 or (
+                protocol_version == PROTOCOL_V05
+                and (self.mutation_mode in {"closed", "v05"} or self.v05_drain_enabled)
+            )
+            if not lane_allowed or current_store is None or coordinator is None:
                 self.respond_error(503, f"Protocol {protocol_version} delivery is not configured")
                 return
-            query = query_params(self.path)
             instance_id = first_query_value(query, "listener_instance_id")
             if not instance_id:
                 self.respond_error(400, "missing listener_instance_id")
@@ -94,7 +104,9 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
                 )
                 return
             self.accept_websocket(key)
-            self.stream_current_events(agent_id, instance_id, epoch, protocol_version)
+            self.stream_current_events(
+                agent_id, instance_id, epoch, protocol_version, coordinator
+            )
             return
         self.accept_websocket(key)
         self.stream_events(agent_id)
@@ -105,9 +117,9 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
         listener_instance_id: str,
         readiness_epoch: int,
         protocol_version: str,
+        coordinator: DeliveryCoordinator,
     ) -> None:
-        assert self.coordinator is not None
-        registration = self.coordinator.register_socket(
+        registration = coordinator.register_socket(
             agent_id,
             listener_instance_id,
             readiness_epoch,
@@ -136,7 +148,7 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
         except OSError:
             return
         finally:
-            self.coordinator.unregister_socket(registration)
+            coordinator.unregister_socket(registration)
             self.close_connection = True
 
     def send_current_json_frame(self, payload: dict[str, Any]) -> None:
@@ -307,37 +319,50 @@ def create_server() -> ThreadingHTTPServer:
     mutation_mode = os.environ.get("AGENTRELAY_MUTATION_MODE", "legacy").strip().lower()
     if mutation_mode not in {"legacy", "closed", "v05", "v06"}:
         raise ValueError("AGENTRELAY_MUTATION_MODE must be legacy, closed, v05, or v06")
+    v05_drain_enabled = os.environ.get("AGENTRELAY_V05_DRAIN_ENABLED", "0").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    if v05_drain_enabled and mutation_mode != "v06":
+        raise ValueError("AGENTRELAY_V05_DRAIN_ENABLED requires AGENTRELAY_MUTATION_MODE=v06")
     v05_db_path = os.environ.get("AGENTRELAY_V05_DB_PATH", "").strip()
-    if mutation_mode in {"closed", "v05"} and not v05_db_path:
+    if (mutation_mode in {"closed", "v05"} or v05_drain_enabled) and not v05_db_path:
         v05_db_path = DEFAULT_V05_DB_PATH
     v05_store = V05Store(v05_db_path) if v05_db_path else None
     v06_db_path = os.environ.get("AGENTRELAY_V06_DB_PATH", "").strip()
     if mutation_mode == "v06" and not v06_db_path:
         v06_db_path = DEFAULT_V06_DB_PATH
     v06_store = V06Store(v06_db_path) if v06_db_path else None
-    current_store = v06_store if mutation_mode == "v06" else v05_store
-    coordinator = None
-    if current_store is not None and mutation_mode in {"closed", "v05", "v06"}:
-        coordinator_poll_env = (
+    if v05_drain_enabled:
+        validate_protocol_drain_stores(v05_store, v06_store)
+    coordinator_stores = {}
+    if mutation_mode == "v06" and v06_store is not None:
+        coordinator_stores[PROTOCOL_V06] = v06_store
+    elif mutation_mode in {"closed", "v05"} and v05_store is not None:
+        coordinator_stores[PROTOCOL_V05] = v05_store
+    if v05_drain_enabled and v05_store is not None:
+        coordinator_stores[PROTOCOL_V05] = v05_store
+    coordinators = {}
+    for protocol_version, coordinator_store in coordinator_stores.items():
+        poll_env = (
             "AGENTRELAY_V06_COORDINATOR_POLL_SECONDS"
-            if mutation_mode == "v06"
+            if protocol_version == PROTOCOL_V06
             else "AGENTRELAY_V05_COORDINATOR_POLL_SECONDS"
         )
         coordinator = DeliveryCoordinator(
-            current_store,
-            poll_interval_seconds=float(
-                os.environ.get(
-                    coordinator_poll_env,
-                    os.environ.get("AGENTRELAY_V05_COORDINATOR_POLL_SECONDS", "1"),
-                )
-            ),
+            coordinator_store,
+            poll_interval_seconds=float(os.environ.get(poll_env, "1")),
         )
         coordinator.start()
+        coordinators[protocol_version] = coordinator
+    current_protocol = PROTOCOL_V06 if mutation_mode == "v06" else PROTOCOL_V05
+    coordinator = coordinators.get(current_protocol)
     AgentRelayWebSocketHandler.store = store
     AgentRelayWebSocketHandler.v05_store = v05_store
     AgentRelayWebSocketHandler.v06_store = v06_store
     AgentRelayWebSocketHandler.coordinator = coordinator
+    AgentRelayWebSocketHandler.coordinators = coordinators
     AgentRelayWebSocketHandler.mutation_mode = mutation_mode
+    AgentRelayWebSocketHandler.v05_drain_enabled = v05_drain_enabled
     auth_required, identities = load_auth_identities()
     AgentRelayWebSocketHandler.auth_required = auth_required
     AgentRelayWebSocketHandler.auth_identities = identities
@@ -346,8 +371,8 @@ def create_server() -> ThreadingHTTPServer:
     AgentRelayWebSocketHandler.lease_seconds = int(os.environ.get("AGENTRELAY_WS_LEASE_SECONDS", "60"))
     server = ThreadingHTTPServer((host, port), AgentRelayWebSocketHandler)
     server.delivery_coordinator = coordinator  # type: ignore[attr-defined]
-    server.v05_coordinator = coordinator if mutation_mode in {"closed", "v05"} else None  # type: ignore[attr-defined]
-    server.v06_coordinator = coordinator if mutation_mode == "v06" else None  # type: ignore[attr-defined]
+    server.v05_coordinator = coordinators.get(PROTOCOL_V05)  # type: ignore[attr-defined]
+    server.v06_coordinator = coordinators.get(PROTOCOL_V06)  # type: ignore[attr-defined]
     return server
 
 

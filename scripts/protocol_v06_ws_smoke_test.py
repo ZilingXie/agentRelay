@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from server.protocol_v06 import PROTOCOL_V06
+from server.protocol_v05 import PROTOCOL_V05
+from server.store_v05 import V05Store
 from server.store_v06 import V06Store
 
 
@@ -28,8 +30,10 @@ TARGET = "vivi-agent"
 def main() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         root = Path(temp_dir)
+        v05_db = root / "v05.sqlite3"
         v06_db = root / "v06.sqlite3"
         store = V06Store(str(v06_db))
+        v05_store = V05Store(str(v05_db))
         now = int(time.time())
         for agent_id in (REQUESTER, TARGET):
             store.upsert_agent(
@@ -40,12 +44,23 @@ def main() -> None:
                 protocol_capabilities=[PROTOCOL_V06],
                 now=now,
             )
+            v05_store.upsert_agent(
+                agent_id,
+                name=agent_id,
+                owner=agent_id,
+                enabled=True,
+                protocol_capabilities=[PROTOCOL_V06, PROTOCOL_V05],
+                now=now,
+            )
         listener = ready_listener(store, now)
-        process = start_server(root / "legacy.sqlite3", v06_db)
+        v05_requester_listener = ready_listener(v05_store, now, REQUESTER)
+        v05_listener = ready_listener(v05_store, now, TARGET)
+        process = start_server(root / "legacy.sqlite3", v05_db, v06_db)
         connection: socket.socket | None = None
+        v05_connection: socket.socket | None = None
         try:
             wait_health()
-            connection = websocket_connect(listener)
+            connection = websocket_connect(listener, PROTOCOL_V06)
             hello = read_json_frame(connection)
             assert hello["protocolVersion"] == PROTOCOL_V06
             assert hello["readinessEpoch"] == listener[1]
@@ -73,17 +88,41 @@ def main() -> None:
             assert event["inflightVia"] == "push"
             assert "parts" not in event
             assert event["payloadRef"]["method"] == "GET"
+
+            v05_connection = websocket_connect(v05_listener, PROTOCOL_V05)
+            v05_hello = read_json_frame(v05_connection)
+            assert v05_hello["protocolVersion"] == PROTOCOL_V05
+            v05_created = v05_store.create_task(
+                {
+                    "protocol_version": PROTOCOL_V05,
+                    "idempotency_key": "v05-drain-ws-push",
+                    "requester_agent_id": REQUESTER,
+                    "target_agent_id": TARGET,
+                    "done_criteria": "drain listener receives a v0.5 push frame",
+                    "task_expires_at": int(time.time()) + 3600,
+                    "message": {
+                        "subject": "v0.5 drain WebSocket push",
+                        "parts": [{"kind": "text", "text": "push"}],
+                    },
+                }
+            )
+            v05_event = read_json_frame(v05_connection)
+            assert v05_event["protocolVersion"] == PROTOCOL_V05
+            assert v05_event["taskId"] == v05_created["task"]["task_id"]
+            assert "recoveryAttempt" not in v05_event
         finally:
             if connection is not None:
                 connection.close()
+            if v05_connection is not None:
+                v05_connection.close()
             stop_server(process)
     print("protocol v0.6 WebSocket smoke passed")
 
 
-def ready_listener(store: V06Store, now: int) -> tuple[str, int]:
-    instance_id = "listener-vivi-v06-ws"
+def ready_listener(store: V05Store | V06Store, now: int, agent_id: str = TARGET) -> tuple[str, int]:
+    instance_id = f"listener-{agent_id}-{store.__class__.__name__}-ws"
     registered = store.register_listener(
-        TARGET,
+        agent_id,
         listener_instance_id=instance_id,
         client_version="0.6.0",
         workspace_version="2",
@@ -92,7 +131,7 @@ def ready_listener(store: V06Store, now: int) -> tuple[str, int]:
     )
     epoch = registered["readiness_epoch"]
     store.publish_readiness(
-        TARGET,
+        agent_id,
         listener_instance_id=instance_id,
         readiness_epoch=epoch,
         ready=True,
@@ -101,14 +140,16 @@ def ready_listener(store: V06Store, now: int) -> tuple[str, int]:
     return instance_id, epoch
 
 
-def start_server(legacy_db: Path, v06_db: Path) -> subprocess.Popen:
+def start_server(legacy_db: Path, v05_db: Path, v06_db: Path) -> subprocess.Popen:
     env = {
         **os.environ,
         "AGENTRELAY_WS_HOST": HOST,
         "AGENTRELAY_WS_PORT": str(PORT),
         "AGENTRELAY_DB_PATH": str(legacy_db),
+        "AGENTRELAY_V05_DB_PATH": str(v05_db),
         "AGENTRELAY_V06_DB_PATH": str(v06_db),
         "AGENTRELAY_MUTATION_MODE": "v06",
+        "AGENTRELAY_V05_DRAIN_ENABLED": "1",
         "AGENTRELAY_TOKENS": "vivi:vivi-agent:target-token",
         "AGENTRELAY_WS_POLL_SECONDS": "0.05",
         "AGENTRELAY_WS_HEARTBEAT_SECONDS": "60",
@@ -138,13 +179,14 @@ def wait_health() -> None:
     raise RuntimeError("v0.6 WebSocket sidecar did not start")
 
 
-def websocket_connect(listener: tuple[str, int]) -> socket.socket:
+def websocket_connect(listener: tuple[str, int], protocol_version: str) -> socket.socket:
     sock = socket.create_connection((HOST, PORT), timeout=5)
     sock.settimeout(5)
     key = base64.b64encode(os.urandom(16)).decode("ascii")
     path = (
         f"/agentrelay/workers/{TARGET}/events/ws"
         f"?listener_instance_id={listener[0]}&readiness_epoch={listener[1]}"
+        f"&protocol_version={protocol_version}"
     )
     lines = [
         f"GET {path} HTTP/1.1",

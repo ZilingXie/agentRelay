@@ -87,6 +87,42 @@ that mode unless `AGENTRELAY_PROTOCOL_SIGNING_KEY_FILE` and
 Protocol documents and examples are cached for inspection only. They are never
 automatically inserted into Local Agent context.
 
+## Task-Pinned Protocols And Compatibility Drain
+
+A Task keeps the `protocol_version` it had at creation. A Server release never
+rewrites an open Task to the new protocol, and a client never chooses a mutation
+contract from its global configured version. Stable semantic tools first fetch
+the Task, negotiate its exact protocol, load that version's verified bundle,
+and submit the versioned request.
+
+When v0.6 is active, operators may explicitly enable the v0.5 compatibility
+lane with `AGENTRELAY_V05_DRAIN_ENABLED=1`. This mode is fail-closed:
+
+- new Tasks are accepted only as v0.6;
+- existing v0.5 Tasks remain readable and may reply, complete, fail, ACK, NACK,
+  recover, and receive WebSocket delivery through the v0.5 Store;
+- v0.5 follow-ups are rejected because they would create new legacy Tasks;
+- API and WS run separate v0.5/v0.6 readiness epochs and delivery coordinators;
+- startup fails if the two Stores contain overlapping Task IDs;
+- disabling the flag immediately removes the v0.5 mutation and delivery lane.
+
+An upgraded Listener uses v0.6 as its primary lane and may set
+`AGENTRELAY_COMPAT_PROTOCOL_VERSIONS=agent-collab-v0.5` while drain is active.
+Remove the compatibility value only after the Server reports zero open v0.5
+Tasks, zero parked v0.5 Events, and zero unacked terminal notices.
+
+Wire-compatible bundle changes may hot patch and retry once with the original
+idempotency key. Before retry, MCP re-fetches the Task and aborts with
+`CONTEXT_CHANGED_DURING_PROTOCOL_UPDATE` if its guarded context changed.
+Lifecycle, transport, persistence, approval, or executable-runtime changes
+return `client_release_required`; they are not hot patched.
+
+MCP also hashes its installed mutation runtime at process start. If an installer
+changes those files while the old process remains alive, all mutations fail
+locally with `MCP_RESTART_REQUIRED` until Codex restarts. This fence applies to
+releases containing the mechanism; it cannot retroactively constrain older MCP
+versions that never implemented generation checks.
+
 ## Guardrail relationship
 
 Automatic upgrade is a Guardrail subsystem, not a replacement for authorization.
