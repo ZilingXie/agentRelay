@@ -1485,7 +1485,7 @@ def agent_card(agent: dict[str, Any]) -> dict[str, Any]:
             "protocol_capabilities": role_profile["capabilities"],
             "policy": role_profile["policy"],
             "accepted_task_types": accepted_task_types(skills),
-            "scopes": default_agent_scopes(agent_id),
+            "scopes": default_agent_scopes(agent_id, role_profile),
             "human_approval_policy": default_human_approval_policy(agent),
             "endpoints": {
                 "card": agentrelay_url,
@@ -1720,14 +1720,17 @@ def accepted_task_types(skills: list[dict[str, Any]]) -> list[str]:
     return result
 
 
-def default_agent_scopes(agent_id: str) -> list[str]:
-    return [
+def default_agent_scopes(agent_id: str, role_profile: dict[str, Any] | None = None) -> list[str]:
+    scopes = [
         f"agent:{agent_id}:tasks:create",
         f"agent:{agent_id}:tasks:claim",
         f"agent:{agent_id}:artifacts:submit",
         f"agent:{agent_id}:events:read",
         f"agent:{agent_id}:events:ack",
     ]
+    if role_profile and "task_complete_owned" in role_profile.get("capabilities", []):
+        scopes.append(f"agent:{agent_id}:tasks:complete-owned")
+    return scopes
 
 
 def default_human_approval_policy(agent: dict[str, Any]) -> dict[str, Any]:
