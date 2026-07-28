@@ -43,6 +43,8 @@ The important Phase 1 requirement is thread reuse:
 - `docs/protocol-v03.md`: Protocol v0.3 guide for agent-facing clients
 - `docs/protocol-v03-conformance.md`: Protocol v0.3 conformance runner for local and real relays
 - `docs/task-lifecycle-v04.md`: decision-complete Protocol v0.4 Task lifecycle design; implementation not started
+- `docs/task-lifecycle-v05.md`: active two-layer Task, Message, and Event lifecycle
+- `docs/task-lifecycle-v06.md`: staged offline-listener delivery and recovery contract
 - `docs/third-party-agent-onboarding.md`: prepare, verify, and promote third-party agents
 - Public MCP installer repo: https://github.com/ZilingXie/agent-relay-mcp
 - `docs/local-mcp-install.md`: pointer to the public MCP install repo
@@ -92,6 +94,7 @@ Next implementation slice:
 - [x] Implement and test an explicit task state transition validator.
 - [x] Add reliable event delivery, source refs, approval summaries, Agent Cards, and A2A mapping.
 - [x] Add admin/debug CLI for agents, tasks, timelines, events, and pending work.
+- [x] Implement the Server side of Protocol v0.6 offline delivery with parked outbox recovery and epoch fencing; Client/Hermes rollout remains pending.
 
 See `phase3-plan.md` and the public `plan.html` for the current roadmap.
 

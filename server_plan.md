@@ -2,9 +2,9 @@
 
 Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/agentRelay`.
 
-Status date: 2026-07-19.
+Status date: 2026-07-28.
 
-Latest update: Protocol v0.4 is a completed, production-verified historical baseline. The next implementation target is Protocol v0.5, which separates Task lifecycle, Message delivery, and Agent Event outbox truth and will replace active writes during a maintenance-window cutover. The v0.4 contract, schemas, examples, and verification record remain preserved.
+Latest update: Protocol v0.5 remains active in production. Protocol v0.6 offline delivery is implemented and locally verified on `feat/v06-offline-delivery`, but is not merged or deployed. It removes transient Listener readiness from Task admission, parks undelivered Events for epoch-fenced recovery, and keeps transport failures out of Task business state. Client and Hermes changes must follow before rollout.
 
 ## Purpose
 
@@ -34,6 +34,35 @@ After every completed change, and after any explicit planning pass that changes 
 - Protocol v0.3 is the active contract. Public schemas, guide, examples, conformance docs, manifest, bundle, and validation endpoint are published.
 - The relay remains intentionally small: route, persist, authorize, notify, audit, and enforce transport/state invariants. Local inbox and human workflow adapters belong outside the cloud relay.
 - Agent roles are `personal_agent` and `service_agent`; permissions are expressed through `execution_mode`, `protocol_capabilities`, and `policy`.
+
+## Protocol v0.6 Offline Delivery Plan
+
+Status: Server implementation complete on the task branch; PR, Client, Hermes,
+cross-component E2E, and production rollout remain pending.
+
+- `POST /tasks` validates identity, enabled state, authorization, and v0.6
+  capability, but no longer rejects stale or absent Listener readiness.
+- A Message remains `pending` and its Event becomes `parked` when no fresh
+  Listener exists or four real-time pushes fail. Task state remains `open`.
+- Authenticated HTTP recovery is fenced by `listener_instance_id` and
+  `readiness_epoch`. Recovery claims do not reset or increment push attempts;
+  a failed recovery lease returns to `parked`.
+- Task expiry and authorized business failure exhaust obsolete transitionable
+  Events and create terminal informational Events that remain recoverable until
+  ACK. `waiting_listener` is a visibility diagnosis, not persisted Task state.
+- New Message admission is limited at 1,000 recoverable Events per Agent;
+  loss-prevention terminal notices remain writable. Admin summary and Agent
+  views include `parked` in backlog counts.
+- Public v0.6 schemas, examples, manifest/bundle, HTTP API, WebSocket frames,
+  protocol negotiation, and conformance scripts are additive; v0.5 wire frames
+  and closed-mode behavior remain unchanged.
+- Local verification on 2026-07-28: full `npm test` passed; v0.5 Store/API/
+  Delivery baselines stayed at `21/21`, `23/23`, and `20/20`; v0.6 offline
+  state tests passed `6/6` and HTTP conformance passed `6/6`.
+
+Rollout order is Server PR, Client PR, Hermes PR, then an offline/reconnect E2E.
+Do not enable `AGENTRELAY_MUTATION_MODE=v06` in production before all consumers
+advertise and persist the v0.6 contract.
 
 ## Completed Server Milestones
 
@@ -357,8 +386,10 @@ and historical Inbox-title verification passed.
 - Keep `scripts/protocol_v05_preflight.py --allow-existing-collaboration` as the
   post-write production verification gate. Any incident must first switch
   mutations to `closed`, then be repaired forward.
-- Observe the first scheduled Hermes v0.5 daily dispatch and add the remaining
-  WeCom at-most-once send journal plus production visibility/readiness metrics.
+- Merge Hermes PR `ZilingXie/heremes-deploy#7` after Server PR `#74` and Client
+  PR `ZilingXie/agent-relay-mcp#67`; its WeCom at-most-once attempt journal and
+  v0.6 `Delivered / Waiting listener / Expired / Failed` report are implemented
+  and locally verified but not deployed.
 - Support the MCP Service Worker Kit with enough server/dashboard visibility to debug worker runs end to end.
 - Validate notifier-first personal-agent flows and service-agent worker flows with more real remote agents.
 - Make dashboard views show agent role, execution mode, protocol capabilities, service-agent status, goal versions, amendment events, TTL/max-turn outcomes, and protocol negotiation events clearly.

@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 from server.store import ConflictError, Store, read_alias
 from server.store_v05 import V05Store
+from server.store_v06 import V06Store
 from server.transitions import TERMINAL_STATES
 from server.protocol_v03 import (
     ENVELOPE_V03,
@@ -47,6 +48,21 @@ from server.protocol_v05 import (
     validate_task_create as validate_v05_task_create,
     validate_visibility_batch as validate_v05_visibility_batch,
 )
+from server.protocol_v06 import (
+    is_protocol_v06,
+    reject_unknown as reject_unknown_v06,
+    require_string as require_string_v06,
+    validate_ack as validate_v06_ack,
+    validate_complete as validate_v06_complete,
+    validate_delivery_fail as validate_v06_delivery_fail,
+    validate_event_ack as validate_v06_event_ack,
+    validate_fail as validate_v06_fail,
+    validate_message_submit as validate_v06_message_submit,
+    validate_readiness_publish as validate_v06_readiness_publish,
+    validate_readiness_register as validate_v06_readiness_register,
+    validate_task_create as validate_v06_task_create,
+    validate_visibility_batch as validate_v06_visibility_batch,
+)
 from server.protocol_registry import (
     CURRENT_PROTOCOL_SHORT,
     PROTOCOL_NAME,
@@ -57,15 +73,18 @@ from server.protocol_registry import (
     protocol_bundle,
     protocol_bundle_v04,
     protocol_bundle_v05,
+    protocol_bundle_v06,
     protocol_manifest,
     protocol_manifest_v04,
     protocol_manifest_v05,
+    protocol_manifest_v06,
     protocol_summary,
 )
 
 
 DEFAULT_DB_PATH = "./data/agentrelay.sqlite3"
 DEFAULT_V05_DB_PATH = "./data/agentrelay-v05.sqlite3"
+DEFAULT_V06_DB_PATH = "./data/agentrelay-v06.sqlite3"
 DASHBOARD_DIR = Path(__file__).resolve().parents[1] / "dashboard"
 SCHEMA_DIR = Path(__file__).resolve().parents[1] / "schemas"
 DOCS_DIR = Path(__file__).resolve().parents[1] / "docs"
@@ -75,6 +94,7 @@ EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples"
 class AgentRelayHandler(BaseHTTPRequestHandler):
     store: Store
     v05_store: V05Store | None = None
+    v06_store: V06Store | None = None
     mutation_mode: str = "legacy"
     auth_identities: dict[str, dict[str, str]] = {}
     auth_required: bool = False
@@ -153,6 +173,16 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 protocol_bundle_v05(public_base_url(), write_mode=self.mutation_mode)
             )
             return
+        if path == f"/agentrelay/protocols/{PROTOCOL_NAME}/v0.6/manifest":
+            self.respond_json(
+                protocol_manifest_v06(public_base_url(), write_mode=self.mutation_mode)
+            )
+            return
+        if path == f"/agentrelay/protocols/{PROTOCOL_NAME}/v0.6/bundle":
+            self.respond_json(
+                protocol_bundle_v06(public_base_url(), write_mode=self.mutation_mode)
+            )
+            return
         if path in {"/agentrelay/dashboard", "/agentrelay/dashboard/"}:
             self.serve_dashboard_asset("index.html")
             return
@@ -211,8 +241,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             )
             return
         if path == "/agentrelay/agents":
-            if self.mutation_mode in {"closed", "v05"}:
-                store = self.require_v05_store()
+            if self.mutation_mode in {"closed", "v05", "v06"}:
+                store = self.require_current_store()
                 if store is None:
                     return
                 self.respond_json({"agents": store.admin_agents()})
@@ -240,7 +270,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_json(a2a_mapping(agent))
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/visibility", path):
-            store = self.require_v05_store()
+            store = self.require_current_store()
             if store is None:
                 return
             item = store.visibility(match.group(1))
@@ -253,9 +283,9 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         if (
             (match := re.fullmatch(r"/agentrelay/tasks/([^/]+)", path))
-            and self.mutation_mode in {"closed", "v05"}
+            and self.mutation_mode in {"closed", "v05", "v06"}
         ):
-            store = self.require_v05_store()
+            store = self.require_current_store()
             if store is None:
                 return
             detail = store.get_task_detail(match.group(1))
@@ -275,9 +305,9 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         if (
             (match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/lineage", path))
-            and self.mutation_mode in {"closed", "v05"}
+            and self.mutation_mode in {"closed", "v05", "v06"}
         ):
-            store = self.require_v05_store()
+            store = self.require_current_store()
             if store is None:
                 return
             detail = store.get_task_detail(match.group(1))
@@ -317,12 +347,12 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         if (
             (match := re.fullmatch(r"/agentrelay/workers/([^/]+)/events", path))
-            and self.mutation_mode in {"closed", "v05"}
+            and self.mutation_mode in {"closed", "v05", "v06"}
         ):
             agent_id = match.group(1)
             if not self.require_agent(auth, agent_id):
                 return
-            store = self.require_v05_store()
+            store = self.require_current_store()
             if store is None:
                 return
             instance_id = first_query_value(query, "listener_instance_id")
@@ -330,7 +360,15 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             if not instance_id:
                 raise ValueError("missing required query field: listener_instance_id")
             store.assert_listener_epoch(agent_id, instance_id, epoch)
-            event = store.recover_event(agent_id)
+            event = (
+                store.recover_event(
+                    agent_id,
+                    listener_instance_id=instance_id,
+                    readiness_epoch=epoch,
+                )
+                if self.mutation_mode == "v06"
+                else store.recover_event(agent_id)
+            )
             self.respond_json({"events": [event] if event else []})
             return
         if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/events", path):
@@ -370,8 +408,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         self.respond_error(404, "not found")
 
     def route_admin_get(self, path: str, query: dict[str, list[str]]) -> None:
-        if self.mutation_mode in {"closed", "v05"}:
-            store = self.require_v05_store()
+        if self.mutation_mode in {"closed", "v05", "v06"}:
+            store = self.require_current_store()
             if store is None:
                 return
             if path == "/agentrelay/admin/api/summary":
@@ -496,8 +534,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             agent_id = match.group(1)
             if not self.require_agent(auth, agent_id):
                 return
-            validate_v05_readiness_register(payload)
-            store = self.require_v05_store()
+            self.validate_current(validate_v05_readiness_register, validate_v06_readiness_register, payload)
+            store = self.require_current_store()
             if store is None:
                 return
             readiness = store.register_listener(
@@ -514,8 +552,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             agent_id = match.group(1)
             if not self.require_agent(auth, agent_id):
                 return
-            validate_v05_readiness_publish(payload)
-            store = self.require_v05_store()
+            self.validate_current(validate_v05_readiness_publish, validate_v06_readiness_publish, payload)
+            store = self.require_current_store()
             if store is None:
                 return
             readiness = store.publish_readiness(
@@ -527,8 +565,10 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_json({"readiness": readiness})
             return
         if path == "/agentrelay/task-visibility/batch":
-            task_ids = validate_v05_visibility_batch(payload)
-            store = self.require_v05_store()
+            task_ids = self.validate_current(
+                validate_v05_visibility_batch, validate_v06_visibility_batch, payload
+            )
+            store = self.require_current_store()
             if store is None:
                 return
             result = store.visibility_batch(task_ids)
@@ -561,13 +601,15 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             requested_agent_id = read_alias(payload, "requester_agent_id", "requesterAgentId", payload.get("from"))
             if requested_agent_id and not self.require_agent(auth, requested_agent_id):
                 return
-            if self.mutation_mode == "v05":
-                reject_unknown_v05(
+            if self.mutation_mode in {"v05", "v06"}:
+                reject_unknown = reject_unknown_v06 if self.mutation_mode == "v06" else reject_unknown_v05
+                require_string = require_string_v06 if self.mutation_mode == "v06" else require_string_v05
+                reject_unknown(
                     payload,
                     {"idempotency_key", "requester_agent_id", "requesterAgentId", "from"},
                 )
-                key = require_string_v05(payload, "idempotency_key")
-                store = self.require_v05_writes()
+                key = require_string(payload, "idempotency_key")
+                store = self.require_current_writes()
                 if store is None:
                     return
                 self.respond_json(
@@ -590,20 +632,23 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         if path == "/agentrelay/tasks":
             ensure_protocol_compatible(payload)
-            if is_protocol_v05(payload):
-                validate_v05_task_create(payload)
+            if is_protocol_v05(payload) or is_protocol_v06(payload):
+                if (self.mutation_mode == "v06") != is_protocol_v06(payload):
+                    self.reject_retired_protocol_mutation()
+                    return
+                self.validate_current(validate_v05_task_create, validate_v06_task_create, payload)
                 requester_agent_id = payload.get("requester_agent_id")
                 if not self.require_agent(auth, requester_agent_id):
                     return
-                store = self.require_v05_writes()
+                store = self.require_current_writes()
                 if store is None:
                     return
                 self.respond_json(store.create_task(payload), status=201)
                 return
             if self.mutation_mode == "closed":
-                self.require_v05_writes()
+                self.require_current_writes()
                 return
-            if self.mutation_mode == "v05":
+            if self.mutation_mode in {"v05", "v06"}:
                 self.reject_retired_protocol_mutation()
                 return
             if is_protocol_v03(payload):
@@ -617,15 +662,15 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_protocol({"task": task}, status=201)
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/messages", path):
-            if self.mutation_mode == "v05":
+            if self.mutation_mode in {"v05", "v06"}:
                 if "expected_status_version" in payload:
                     self.reject_retired_protocol_mutation()
                     return
-                validate_v05_message_submit(payload)
+                self.validate_current(validate_v05_message_submit, validate_v06_message_submit, payload)
                 actor_agent_id = payload.get("actor_agent_id")
                 if not self.require_agent(auth, actor_agent_id):
                     return
-                store = self.require_v05_writes()
+                store = self.require_current_writes()
                 if store is None:
                     return
                 detail = store.submit_message(match.group(1), payload)
@@ -635,7 +680,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 self.respond_json(detail, status=201)
                 return
             if self.mutation_mode == "closed":
-                self.require_v05_writes()
+                self.require_current_writes()
                 return
             validate_v04_message_submit(payload)
             actor_agent_id = payload.get("actor_agent_id")
@@ -649,16 +694,16 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/messages/([^/]+)/ack", path):
             agent_id, message_id = match.groups()
-            if self.mutation_mode == "v05":
+            if self.mutation_mode in {"v05", "v06"}:
                 if "expected_status_version" in payload:
                     self.reject_retired_protocol_mutation()
                     return
                 if payload.get("message_id") != message_id:
                     raise ValueError("message_id must match the URL path")
-                validate_v05_ack(payload)
+                self.validate_current(validate_v05_ack, validate_v06_ack, payload)
                 if not self.require_agent(auth, agent_id):
                     return
-                store = self.require_v05_writes()
+                store = self.require_current_writes()
                 if store is None:
                     return
                 detail = store.ack_message(agent_id, payload)
@@ -668,7 +713,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 self.respond_json(detail)
                 return
             if self.mutation_mode == "closed":
-                self.require_v05_writes()
+                self.require_current_writes()
                 return
             validate_v04_ack(payload)
             if not self.require_agent(auth, agent_id):
@@ -681,15 +726,15 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/messages/([^/]+)/delivery-fail", path):
             agent_id, message_id = match.groups()
-            if self.mutation_mode != "v05":
-                self.require_v05_writes()
+            if self.mutation_mode not in {"v05", "v06"}:
+                self.require_current_writes()
                 return
             if payload.get("message_id") != message_id:
                 raise ValueError("message_id must match the URL path")
-            validate_v05_delivery_fail(payload)
+            self.validate_current(validate_v05_delivery_fail, validate_v06_delivery_fail, payload)
             if not self.require_agent(auth, agent_id):
                 return
-            store = self.require_v05_writes()
+            store = self.require_current_writes()
             if store is None:
                 return
             detail = store.fail_delivery(agent_id, payload)
@@ -699,15 +744,15 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_json(detail)
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/complete", path):
-            if self.mutation_mode == "v05":
+            if self.mutation_mode in {"v05", "v06"}:
                 if "expected_status_version" in payload:
                     self.reject_retired_protocol_mutation()
                     return
-                validate_v05_complete(payload)
+                self.validate_current(validate_v05_complete, validate_v06_complete, payload)
                 actor_agent_id = payload.get("actor_agent_id")
                 if not self.require_agent(auth, actor_agent_id):
                     return
-                store = self.require_v05_writes()
+                store = self.require_current_writes()
                 if store is None:
                     return
                 detail = store.complete_task(match.group(1), payload)
@@ -717,7 +762,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 self.respond_json(detail)
                 return
             if self.mutation_mode == "closed":
-                self.require_v05_writes()
+                self.require_current_writes()
                 return
             validate_v04_complete(payload)
             actor_agent_id = payload.get("actor_agent_id")
@@ -730,15 +775,15 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_protocol({"task": task})
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/fail", path):
-            if self.mutation_mode == "v05":
+            if self.mutation_mode in {"v05", "v06"}:
                 if "expected_status_version" in payload:
                     self.reject_retired_protocol_mutation()
                     return
-                validate_v05_fail(payload)
+                self.validate_current(validate_v05_fail, validate_v06_fail, payload)
                 actor_agent_id = payload.get("actor_agent_id")
                 if not self.require_agent(auth, actor_agent_id):
                     return
-                store = self.require_v05_writes()
+                store = self.require_current_writes()
                 if store is None:
                     return
                 detail = store.fail_task(match.group(1), payload)
@@ -748,7 +793,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 self.respond_json(detail)
                 return
             if self.mutation_mode == "closed":
-                self.require_v05_writes()
+                self.require_current_writes()
                 return
             validate_v04_fail(payload)
             actor_agent_id = payload.get("actor_agent_id")
@@ -761,8 +806,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_protocol({"task": task})
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/followups", path):
-            if self.mutation_mode == "v05":
-                store = self.require_v05_writes()
+            if self.mutation_mode in {"v05", "v06"}:
+                store = self.require_current_writes()
                 if store is None:
                     return
                 source = store.get_task_detail(match.group(1))
@@ -772,11 +817,11 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 source_task = source["task"]
                 payload = {
                     **payload,
-                    "protocol_version": "agent-collab-v0.5",
+                    "protocol_version": self.current_protocol_version(),
                     "requester_agent_id": source_task["requester_agent_id"],
                     "target_agent_id": source_task["target_agent_id"],
                 }
-                validate_v05_task_create(payload)
+                self.validate_current(validate_v05_task_create, validate_v06_task_create, payload)
                 if not self.require_agent(auth, source_task["requester_agent_id"]):
                     return
                 self.respond_json(
@@ -785,7 +830,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 )
                 return
             if self.mutation_mode == "closed":
-                self.require_v05_writes()
+                self.require_current_writes()
                 return
             source = self.store.get_task(match.group(1))
             if not source:
@@ -891,11 +936,11 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/events/([^/]+)/ack", path):
             agent_id, event_id = match.groups()
-            if self.mutation_mode in {"closed", "v05"}:
-                validate_v05_event_ack(payload)
+            if self.mutation_mode in {"closed", "v05", "v06"}:
+                self.validate_current(validate_v05_event_ack, validate_v06_event_ack, payload)
                 if not self.require_agent(auth, agent_id):
                     return
-                store = self.require_v05_store()
+                store = self.require_current_store()
                 if store is None:
                     return
                 event = store.ack_informational_event(agent_id, event_id, payload)
@@ -1048,35 +1093,47 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return False
         return True
 
-    def require_v05_store(self) -> V05Store | None:
-        if self.v05_store is None:
+    def require_current_store(self) -> V05Store | V06Store | None:
+        store = self.v06_store if self.mutation_mode == "v06" else self.v05_store
+        if store is None:
+            version = "v0.6" if self.mutation_mode == "v06" else "v0.5"
             self.respond_error(
                 503,
-                "Protocol v0.5 storage is not configured",
+                f"Protocol {version} storage is not configured",
                 error_type="service_unavailable",
-                code="V05_STORAGE_UNAVAILABLE",
+                code="V06_STORAGE_UNAVAILABLE" if self.mutation_mode == "v06" else "V05_STORAGE_UNAVAILABLE",
             )
             return None
-        return self.v05_store
+        return store
+
+    def current_protocol_version(self) -> str:
+        return "agent-collab-v0.6" if self.mutation_mode == "v06" else "agent-collab-v0.5"
+
+    def validate_current(self, v05_validator: Any, v06_validator: Any, payload: dict[str, Any]) -> Any:
+        return (v06_validator if self.mutation_mode == "v06" else v05_validator)(payload)
 
     def current_protocol_manifest(self) -> dict[str, Any]:
+        if self.mutation_mode == "v06":
+            return protocol_manifest_v06(public_base_url(), write_mode=self.mutation_mode)
         if self.mutation_mode in {"closed", "v05"}:
             return protocol_manifest_v05(public_base_url(), write_mode=self.mutation_mode)
         return protocol_manifest(public_base_url())
 
     def current_protocol_summary(self) -> dict[str, Any]:
+        if self.mutation_mode == "v06":
+            return protocol_manifest_v06(public_base_url(), write_mode=self.mutation_mode)
         if self.mutation_mode in {"closed", "v05"}:
             return protocol_manifest_v05(public_base_url(), write_mode=self.mutation_mode)
         return protocol_summary(public_base_url())
 
-    def require_v05_writes(self) -> V05Store | None:
-        store = self.require_v05_store()
+    def require_current_writes(self) -> V05Store | V06Store | None:
+        store = self.require_current_store()
         if store is None:
             return None
-        if self.mutation_mode != "v05":
+        if self.mutation_mode not in {"v05", "v06"}:
             self.respond_error(
                 503,
-                "collaboration mutations are closed during Protocol v0.5 rollout",
+                "collaboration mutations are closed during protocol rollout",
                 error_type="service_unavailable",
                 code="mutations_closed",
             )
@@ -1084,11 +1141,11 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         return store
 
     def require_legacy_writes(self) -> bool:
-        if self.mutation_mode == "v05":
+        if self.mutation_mode in {"v05", "v06"}:
             self.reject_retired_protocol_mutation()
             return False
         if self.mutation_mode == "closed":
-            self.require_v05_writes()
+            self.require_current_writes()
             return False
         return True
 
@@ -1896,14 +1953,19 @@ def create_server() -> ThreadingHTTPServer:
     db_path = os.environ.get("AGENTRELAY_DB_PATH", DEFAULT_DB_PATH)
     store = Store(db_path)
     mutation_mode = os.environ.get("AGENTRELAY_MUTATION_MODE", "legacy").strip().lower()
-    if mutation_mode not in {"legacy", "closed", "v05"}:
-        raise ValueError("AGENTRELAY_MUTATION_MODE must be legacy, closed, or v05")
+    if mutation_mode not in {"legacy", "closed", "v05", "v06"}:
+        raise ValueError("AGENTRELAY_MUTATION_MODE must be legacy, closed, v05, or v06")
     v05_db_path = os.environ.get("AGENTRELAY_V05_DB_PATH", "").strip()
     if mutation_mode in {"closed", "v05"} and not v05_db_path:
         v05_db_path = DEFAULT_V05_DB_PATH
     v05_store = V05Store(v05_db_path) if v05_db_path else None
+    v06_db_path = os.environ.get("AGENTRELAY_V06_DB_PATH", "").strip()
+    if mutation_mode == "v06" and not v06_db_path:
+        v06_db_path = DEFAULT_V06_DB_PATH
+    v06_store = V06Store(v06_db_path) if v06_db_path else None
     AgentRelayHandler.store = store
     AgentRelayHandler.v05_store = v05_store
+    AgentRelayHandler.v06_store = v06_store
     AgentRelayHandler.mutation_mode = mutation_mode
     auth_required, identities = load_auth_identities()
     AgentRelayHandler.auth_required = auth_required
