@@ -25,8 +25,7 @@ Task lifecycle state or rewrites Task protocol ownership.
 | Create/reply, Listener fresh | `open` | `pending` | `queued` | Real-time push |
 | Create/reply, Listener absent/stale | `open` | `pending` | `parked` | HTTP recovery only |
 | Real-time claim | unchanged | unchanged | `queued/retry_wait -> inflight` via `push` | Lease-bound |
-| Push/write/ACK-lease failure, attempts 1-3 | unchanged | unchanged | `inflight -> retry_wait` | Timed push retry |
-| Fourth push failure | unchanged | unchanged | `inflight -> parked` | HTTP recovery only |
+| Any push/write/ACK-lease failure | unchanged | unchanged | `inflight -> parked` | HTTP recovery only |
 | HTTP recovery claim | unchanged | unchanged | `parked/queued/retry_wait -> inflight` via `recovery` | Lease-bound |
 | Recovery lease failure or persistence NACK | unchanged | `pending` | `inflight -> parked` | HTTP recovery only |
 | Durable current-epoch ACK | unchanged | `pending -> delivered` | `inflight/retry_wait/parked -> acked` | None |
@@ -49,10 +48,11 @@ to roll back Task expiry or an authorized business terminal transition.
 
 ## Delivery
 
-`outbox_attempts` counts real-time push claims only and never exceeds four.
-Push failure moves `inflight` to `retry_wait`; the fourth failure moves it to
-`parked` without changing the open Task or pending Message. A confirmed local
-persistence NACK also parks the Event.
+`outbox_attempts` counts real-time push claims only. The current v0.6
+coordinator parks an Event after the first push/write/ACK-lease failure, without
+changing the open Task or pending Message. It does not schedule another
+real-time push for that Event. A confirmed local persistence NACK also parks the
+Event.
 
 Authenticated HTTP recovery is fenced by `listener_instance_id` and
 `readiness_epoch`. It may claim `parked` as `inflight` without incrementing
@@ -82,4 +82,5 @@ and remain recoverable until ACK, including after the Task is terminal.
 - A late ACK may win over `retry_wait` or `parked` for the same current Message.
 - Old epochs, stale Messages, stale turns, and stale Task versions remain
   rejected.
-- Real-time retries are bounded; HTTP recovery is explicit and observable.
+- A real-time delivery failure parks the Event immediately; HTTP recovery is
+  explicit and observable.
