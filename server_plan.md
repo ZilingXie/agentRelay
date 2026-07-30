@@ -315,6 +315,9 @@ PR [`agent-relay-mcp#50`](https://github.com/ZilingXie/agent-relay-mcp/pull/50)
 at `087bd2c`. Deployed to production on 2026-07-19; health, current manifest,
 v0.5 bundle, authenticated negotiation, authority/origin, revision, and digest
 were verified with mutation mode preserved at `v05`.
+The current-writer create follow-up merged in Server PR
+[`#84`](https://github.com/ZilingXie/agentRelay/pull/84) at `6871068` on
+2026-07-30; it has not been deployed by this change.
 
 - Relay publishes version-specific schema and canonical bundle digests, stable
   authority/origin metadata, bundle revision, and non-programmable semantic
