@@ -69,6 +69,7 @@ from server.protocol_registry import (
     CURRENT_PROTOCOL_SHORT,
     PROTOCOL_NAME,
     ProtocolNegotiationRequired,
+    ensure_current_task_create_protocol,
     ensure_protocol_compatible,
     negotiate_protocol,
     negotiation_error_detail,
@@ -775,11 +776,19 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             self.respond_protocol(result, status=201)
             return
         if path == "/agentrelay/tasks":
-            ensure_protocol_compatible(payload)
-            if is_protocol_v05(payload) or is_protocol_v06(payload):
-                if (self.mutation_mode == "v06") != is_protocol_v06(payload):
+            if self.mutation_mode in {"v05", "v06"}:
+                if payload.get("protocol_version") and not (is_protocol_v05(payload) or is_protocol_v06(payload)):
+                    ensure_protocol_compatible(payload)
                     self.reject_retired_protocol_mutation()
                     return
+                ensure_current_task_create_protocol(
+                    payload,
+                    self.current_protocol_version(),
+                    self.client_runtime_capabilities(),
+                )
+            else:
+                ensure_protocol_compatible(payload)
+            if is_protocol_v05(payload) or is_protocol_v06(payload):
                 self.validate_current(validate_v05_task_create, validate_v06_task_create, payload)
                 requester_agent_id = payload.get("requester_agent_id")
                 if not self.require_agent(auth, requester_agent_id):
@@ -1294,6 +1303,10 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
 
     def current_protocol_version(self) -> str:
         return "agent-collab-v0.6" if self.mutation_mode == "v06" else "agent-collab-v0.5"
+
+    def client_runtime_capabilities(self) -> set[str]:
+        value = self.headers.get("X-AgentRelay-Runtime-Capabilities", "")[:4096]
+        return {item.strip() for item in value.split(",") if item.strip()}
 
     def validate_current(self, v05_validator: Any, v06_validator: Any, payload: dict[str, Any]) -> Any:
         return (v06_validator if self.mutation_mode == "v06" else v05_validator)(payload)

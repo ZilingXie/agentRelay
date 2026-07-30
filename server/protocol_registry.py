@@ -28,6 +28,7 @@ PATCH_CAPABILITY = "dynamic_protocol_bundle_v0.1"
 ADAPTER_CAPABILITY = "semantic_protocol_adapter_v2"
 AUTHORIZATION_CAPABILITY = "local_authorization_v1"
 DYNAMIC_AGENT_TOOL_SCHEMA_CAPABILITY = "dynamic_agent_tool_schema_v1"
+DETERMINISTIC_SEMANTIC_RETRY_CAPABILITY = "deterministic_semantic_retry_v1"
 TASK_ROUTABLE_PROTOCOL_VERSIONS = [PROTOCOL_V06, PROTOCOL_V05]
 LEGACY_ADAPTER_CONTRACT_VERSION = 1
 ADAPTER_CONTRACT_VERSION = 2
@@ -273,6 +274,7 @@ class ProtocolNegotiationRequired(ValueError):
         client_protocol: str | None,
         status: int = 426,
         hint: str | None = None,
+        required_client_capabilities: list[str] | None = None,
     ):
         super().__init__(message)
         self.code = code
@@ -280,6 +282,7 @@ class ProtocolNegotiationRequired(ValueError):
         self.client_protocol = client_protocol
         self.status = status
         self.hint = hint or "Fetch the current protocol bundle and retry only if the local client can satisfy the required capability."
+        self.required_client_capabilities = required_client_capabilities or []
 
 
 def canonical_digest(value: Any) -> str:
@@ -757,6 +760,52 @@ def ensure_protocol_compatible(payload: dict[str, Any] | None) -> None:
     )
 
 
+def ensure_current_task_create_protocol(
+    payload: dict[str, Any] | None,
+    current_protocol_version: str,
+    runtime_capabilities: set[str],
+) -> None:
+    protocol_version = payload.get("protocol_version") if isinstance(payload, dict) else None
+    if protocol_version == current_protocol_version:
+        return
+    required = [DETERMINISTIC_SEMANTIC_RETRY_CAPABILITY]
+    if protocol_version and is_agent_collab_older_than(protocol_version, current_protocol_version):
+        if DETERMINISTIC_SEMANTIC_RETRY_CAPABILITY in runtime_capabilities:
+            raise ProtocolNegotiationRequired(
+                f"New Tasks must use the Relay current protocol {current_protocol_version}; received {protocol_version}.",
+                code="protocol_patch_required",
+                action="fetch_protocol_and_redraft",
+                client_protocol=protocol_version,
+                hint="Verify and activate the current bundle, rebuild the complete request from retained semantic input, then retry once with the same idempotency_key.",
+                required_client_capabilities=required,
+            )
+        raise ProtocolNegotiationRequired(
+            f"Client protocol {protocol_version} cannot safely reconstruct a {current_protocol_version} Task create request.",
+            code="client_upgrade_required",
+            action="upgrade_mcp_client",
+            client_protocol=protocol_version,
+            hint="Upgrade AgentRelay MCP to a runtime with deterministic semantic retry support.",
+            required_client_capabilities=required,
+        )
+    ensure_protocol_compatible(payload)
+    raise ProtocolNegotiationRequired(
+        f"New Task protocol {protocol_version or 'missing'} is not supported by the current Relay writer {current_protocol_version}.",
+        code="client_upgrade_required",
+        action="upgrade_mcp_client",
+        client_protocol=protocol_version,
+        hint="Upgrade AgentRelay MCP if the current writer requires protocol capabilities that are not installed.",
+        required_client_capabilities=required,
+    )
+
+
+def is_agent_collab_older_than(protocol_version: str, target_version: str) -> bool:
+    version_match = re.fullmatch(r"agent-collab-v(\d+)\.(\d+)", str(protocol_version))
+    target_match = re.fullmatch(r"agent-collab-v(\d+)\.(\d+)", str(target_version))
+    if not version_match or not target_match:
+        return False
+    return tuple(map(int, version_match.groups())) < tuple(map(int, target_match.groups()))
+
+
 def negotiation_error_detail(
     exc: ProtocolNegotiationRequired,
     public_base_url: str | None = None,
@@ -780,10 +829,17 @@ def negotiation_error_detail(
             "action": exc.action,
             "manifest_url": manifest["urls"]["manifest"],
             "bundle_url": manifest["urls"]["bundle"],
-            "required_client_capabilities": manifest["required_client_capabilities"],
+            "required_client_capabilities": list(dict.fromkeys([
+                *manifest["required_client_capabilities"],
+                *exc.required_client_capabilities,
+            ])),
             "authority": manifest["authority"],
         },
         "redraft_policy": manifest["redraft_policy"],
+        "retry_policy": {
+            "max_automatic_retries": 1,
+            "preserve_idempotency_key": True,
+        },
     }
 
 

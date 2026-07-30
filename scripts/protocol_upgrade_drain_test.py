@@ -47,7 +47,7 @@ def main() -> None:
         process = start_server(root / "legacy.sqlite3", v05_path, v06_path)
         try:
             wait_health()
-            run_flow(legacy, v05_store)
+            run_flow(legacy, v05_store, v06_store)
         finally:
             stop_server(process)
         assert_overlapping_task_ids_fail_closed(v05_store, v06_store, legacy["task"]["task_id"])
@@ -131,7 +131,7 @@ def assert_overlapping_task_ids_fail_closed(
         raise AssertionError("protocol drain accepted overlapping Task IDs")
 
 
-def run_flow(legacy: dict, v05_store: V05Store) -> None:
+def run_flow(legacy: dict, v05_store: V05Store, v06_store: V06Store) -> None:
     health = request("GET", "/health", None, {}, 200)
     assert health["protocol"]["version"] == PROTOCOL_V06
     assert health["protocol_drain"]["enabled"] is True
@@ -195,21 +195,53 @@ def run_flow(legacy: dict, v05_store: V05Store) -> None:
     assert mismatch["code"] == "INVALID_TASK_TRANSITION"
     assert mismatch["detail"]["retryable_with_stable_tool"] is True
 
-    retired_create = request(
+    before_tasks, before_idempotency = mutation_counts(v06_store)
+    legacy_client_create = request(
         "POST",
         "/tasks",
         {
             "protocol_version": PROTOCOL_V05,
-            "idempotency_key": "new-v05-after-v06",
+            "idempotency_key": "old-client-v05-after-v06",
             "requester_agent_id": REQUESTER,
             "target_agent_id": TARGET,
             "done_criteria": "must be rejected",
             "message": {"subject": "old", "parts": [{"kind": "text", "text": "old"}]},
         },
         HEADERS[REQUESTER],
-        410,
+        426,
     )
-    assert retired_create["code"] == "protocol_retired"
+    assert legacy_client_create["error"]["code"] == "client_upgrade_required"
+    assert "deterministic_semantic_retry_v1" in legacy_client_create["error"]["detail"]["upgrade"]["required_client_capabilities"]
+
+    patchable_create = request(
+        "POST",
+        "/tasks",
+        {
+            "protocol_version": PROTOCOL_V05,
+            "idempotency_key": "capable-client-v05-after-v06",
+            "requester_agent_id": REQUESTER,
+            "target_agent_id": TARGET,
+            "done_criteria": "must be deterministically rebuilt",
+            "message": {"subject": "old", "parts": [{"kind": "text", "text": "old"}]},
+        },
+        {
+            **HEADERS[REQUESTER],
+            "X-AgentRelay-Runtime-Capabilities": "deterministic_semantic_retry_v1",
+        },
+        426,
+    )
+    negotiation_error = patchable_create["error"]
+    assert negotiation_error["type"] == "protocol_negotiation"
+    assert negotiation_error["code"] == "protocol_patch_required"
+    detail = negotiation_error["detail"]
+    assert detail["server_protocol"]["version"] == PROTOCOL_V06
+    assert detail["upgrade"]["bundle_url"].endswith("/protocols/agent-collab/v0.6/bundle")
+    assert "task_create" in detail["redraft_policy"]["safe_to_auto_redraft"]
+    assert detail["retry_policy"] == {
+        "max_automatic_retries": 1,
+        "preserve_idempotency_key": True,
+    }
+    assert mutation_counts(v06_store) == (before_tasks, before_idempotency)
 
     current = request(
         "POST",
@@ -226,6 +258,13 @@ def run_flow(legacy: dict, v05_store: V05Store) -> None:
         201,
     )
     assert current["task"]["protocol_version"] == PROTOCOL_V06
+
+
+def mutation_counts(store: V06Store) -> tuple[int, int]:
+    with store.connect() as conn:
+        task_count = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+        idempotency_count = conn.execute("SELECT COUNT(*) FROM idempotency_records").fetchone()[0]
+    return task_count, idempotency_count
 
 
 def start_server(legacy_path: Path, v05_path: Path, v06_path: Path) -> subprocess.Popen:
