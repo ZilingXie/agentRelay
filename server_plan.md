@@ -326,6 +326,10 @@ were verified with mutation mode preserved at `v05`.
   idempotency, endpoint allowlists, and local side effects remain in MCP core.
 - Lifecycle, transport, persistence, approval, or local execution changes still
   require an MCP code release; bundle updates cover compatible wire changes.
+- The current-protocol follow-up adds a capability-gated new-Task guardrail:
+  deterministic clients receive a complete 426 patch contract, older clients
+  receive `client_upgrade_required`, and both decisions occur before Task or
+  idempotency persistence. Historical Tasks remain protocol-pinned.
 - Server schema, negotiation smoke, Client runtime/MCP smoke, and a cross-repo
   HTTP negotiation check gate rollout before any bundle is required.
 - Verified 2026-07-19 with the full Server and Client suites plus a real HTTP

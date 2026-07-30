@@ -73,8 +73,23 @@ active pointer under an inter-process lock. The prior verified pointer becomes
 last-known-good. A mutation may retry once with its original idempotency key.
 Failure to verify never changes the active pointer.
 
-Only an explicit Relay `hot_rollback` action may reduce the active revision. The
-client rejects a different digest under the same revision. Operators can set
+New Task creation always targets the Relay current writer. If a create reaches
+Relay with an older protocol, Relay checks the non-authoritative client runtime
+capability header before choosing the recovery response. A client advertising
+`deterministic_semantic_retry_v1` receives HTTP 426
+`protocol_patch_required`; older clients receive `client_upgrade_required` so
+they cannot fall back to changing only `protocol_version`.
+
+The patch response identifies the exact bundle target, required capabilities,
+deterministic `task_create` redraft authority, and one-retry same-idempotency
+policy. MCP retains the original semantic input, verifies and atomically
+activates the current bundle, rebuilds the complete wire payload through its
+compiled adapter, and retries at most once. An LLM Agent never interprets the
+new wire Schema.
+
+Only an explicit Relay `hot_rollback` action may reduce the active revision
+within one protocol version. Bundle revisions are version-scoped; the client
+rejects a different digest under the same version and revision. Operators can set
 `AGENTRELAY_DISABLE_HOT_UPDATE=1` on MCP or
 `AGENTRELAY_HOT_UPDATE_ENABLED=0` on Relay as independent emergency stops.
 Relay additionally keeps `AGENTRELAY_DYNAMIC_AGENT_TOOLS_ENABLED=0` during the
@@ -106,7 +121,8 @@ lane with `AGENTRELAY_V05_DRAIN_ENABLED=1`. This mode is fail-closed:
 - startup fails if the two Stores contain overlapping Task IDs;
 - disabling the flag immediately removes the v0.5 mutation and delivery lane.
 
-An upgraded Listener uses v0.6 as its primary lane and may set
+An upgraded Listener negotiates the Relay current protocol as its primary lane
+and may set
 `AGENTRELAY_COMPAT_PROTOCOL_VERSIONS=agent-collab-v0.5` while drain is active.
 Remove the compatibility value only after the Server reports zero open v0.5
 Tasks, zero parked v0.5 Events, and zero unacked terminal notices.
@@ -116,6 +132,11 @@ idempotency key. Before retry, MCP re-fetches the Task and aborts with
 `CONTEXT_CHANGED_DURING_PROTOCOL_UPDATE` if its guarded context changed.
 Lifecycle, transport, persistence, approval, or executable-runtime changes
 return `client_release_required`; they are not hot patched.
+
+Automatic retry requires an explicit protocol negotiation response. Network
+timeouts, connection loss, non-JSON responses, and other ambiguous failures do
+not trigger cross-protocol reconstruction because the original mutation may
+already have committed.
 
 MCP also hashes its installed mutation runtime at process start. If an installer
 changes those files while the old process remains alive, all mutations fail
