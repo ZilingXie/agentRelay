@@ -585,6 +585,7 @@
                 <li>Hosted install loopback verifies server reachability, listener delivery, inbox write, and close flow in <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/4">agent-relay-mcp#4</a> with server support in <a href="https://github.com/ZilingXie/agentRelay/pull/23">agentRelay#23</a>.</li>
                 <li>Local inbox workflow bindings, expiry notifications, and file access guardrails shipped in <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/6">#6</a>, <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/8">#8</a>, and <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/10">#10</a>.</li>
                 <li>Task amendment, protocol sync recovery, notifier-first inbox behavior, and auto-retry for patchable drift shipped in <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/12">#12</a>, <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/15">#15</a>, <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/16">#16</a>, and <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/17">#17</a>.</li>
+                <li>Listener burst delivery hardening shipped in <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/85">#85</a>: a permanent WebSocket frame reader, bounded queue/backpressure, atomic inbox-before-ACK intake, serial hook execution, event/message deduplication across recovery and restart, and local reader/queue/ACK/hook health.</li>
               </ul>
             </div>
             <div>
@@ -1601,6 +1602,7 @@ AgentRelay records timeline events:
                 <li>Hosted install loopback 已验证 server 可达性、listener delivery、inbox 写入和 close flow：<a href="https://github.com/ZilingXie/agent-relay-mcp/pull/4">agent-relay-mcp#4</a>，server 配套在 <a href="https://github.com/ZilingXie/agentRelay/pull/23">agentRelay#23</a>。</li>
                 <li>Local inbox workflow binding、过期任务通知和本地文件访问白名单已在 <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/6">#6</a>、<a href="https://github.com/ZilingXie/agent-relay-mcp/pull/8">#8</a>、<a href="https://github.com/ZilingXie/agent-relay-mcp/pull/10">#10</a> 完成。</li>
                 <li>Task amendment、protocol sync recovery、notifier-first inbox 和 patchable drift 自动重试已在 <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/12">#12</a>、<a href="https://github.com/ZilingXie/agent-relay-mcp/pull/15">#15</a>、<a href="https://github.com/ZilingXie/agent-relay-mcp/pull/16">#16</a>、<a href="https://github.com/ZilingXie/agent-relay-mcp/pull/17">#17</a> 完成。</li>
+                <li>Listener burst delivery 修复已在 <a href="https://github.com/ZilingXie/agent-relay-mcp/pull/85">#85</a> 完成：永久 WebSocket frame reader、有界 queue/backpressure、Inbox 原子写入后再 ACK、串行 hook、跨 recovery/restart 的 event/message 去重，以及本地 reader/queue/ACK/hook health。</li>
               </ul>
             </div>
             <div>
