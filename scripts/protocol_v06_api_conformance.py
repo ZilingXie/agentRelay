@@ -69,6 +69,8 @@ def run_flow(db_path: Path) -> None:
     )
     assert manifest["version"] == PROTOCOL_V06
     assert manifest["constants"]["max_agent_unacked_events"] == 1000
+    assert manifest["constants"]["default_max_inflight"] == 1
+    assert manifest["constants"]["max_configured_inflight"] == 100
     bundle = request(
         "GET", "/protocols/agent-collab/v0.6/bundle", None, {}, 200
     )

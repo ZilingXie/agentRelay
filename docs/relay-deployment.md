@@ -40,6 +40,8 @@ AGENTRELAY_HOST=127.0.0.1
 AGENTRELAY_PORT=8787
 AGENTRELAY_DB_PATH=/home/ubuntu/agentRelay/data/agentrelay.sqlite3
 AGENTRELAY_V05_DB_PATH=/home/ubuntu/agentRelay/data/agentrelay-v05.sqlite3
+AGENTRELAY_V06_DB_PATH=/home/ubuntu/agentRelay/data/agentrelay-v06.sqlite3
+AGENTRELAY_DELIVERY_CONTROL_DB_PATH=/home/ubuntu/agentRelay/data/agentrelay-delivery-control.sqlite3
 AGENTRELAY_MUTATION_MODE=legacy
 AGENTRELAY_AUTH_FILE=/home/ubuntu/agentRelay/data/agentrelay-auth.json
 ```
@@ -99,6 +101,8 @@ AGENTRELAY_WS_HOST=127.0.0.1
 AGENTRELAY_WS_PORT=8788
 AGENTRELAY_DB_PATH=/home/ubuntu/agentRelay/data/agentrelay.sqlite3
 AGENTRELAY_V05_DB_PATH=/home/ubuntu/agentRelay/data/agentrelay-v05.sqlite3
+AGENTRELAY_V06_DB_PATH=/home/ubuntu/agentRelay/data/agentrelay-v06.sqlite3
+AGENTRELAY_DELIVERY_CONTROL_DB_PATH=/home/ubuntu/agentRelay/data/agentrelay-delivery-control.sqlite3
 AGENTRELAY_MUTATION_MODE=legacy
 AGENTRELAY_AUTH_FILE=/home/ubuntu/agentRelay/data/agentrelay-auth.json
 ```
@@ -130,6 +134,19 @@ that check. First split or archive migrated duplicates, then rerun preflight.
 While drain is active, check `/agentrelay/api/health` and the admin summary's
 `protocol_drain.protocols` counters. Disable drain only when the v0.5 counters
 for open Tasks, parked Events, and terminal notices are all zero.
+
+The v0.5 drain and v0.6 delivery coordinators share one per-Agent admission
+gate. By default, an Agent has at most one combined inflight Event across both
+lanes. Inspect `delivery.agents` in the admin summary and change an explicit
+limit only when operationally required:
+
+```bash
+python3 scripts/set_agent_delivery_limit.py <agent_id> <max_inflight>
+```
+
+Valid limits are 1 through 100 and persist in
+`data/agentrelay-delivery-control.sqlite3`. ACK/NACK, readiness, recovery, and
+lease expiry wake delivery immediately; the one-second poll is the fallback.
 
 Run the read-only preflight after the Server is deployed in `closed` mode and
 the upgraded Listeners have published fresh readiness:

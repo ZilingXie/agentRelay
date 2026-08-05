@@ -39,6 +39,7 @@ class DeliveryCoordinator:
         self._sockets: dict[str, SocketRegistration] = {}
         self._lock = threading.Lock()
         self._stop = threading.Event()
+        self._wake = threading.Event()
         self._thread: threading.Thread | None = None
 
     def register_socket(
@@ -63,6 +64,7 @@ class DeliveryCoordinator:
             self._sockets[agent_id] = registration
         if previous and previous != registration and previous.close:
             previous.close()
+        self.wake()
         return registration
 
     def unregister_socket(self, registration: SocketRegistration) -> None:
@@ -83,8 +85,12 @@ class DeliveryCoordinator:
 
     def stop(self, timeout: float = 5.0) -> None:
         self._stop.set()
+        self._wake.set()
         if self._thread:
             self._thread.join(timeout=timeout)
+
+    def wake(self) -> None:
+        self._wake.set()
 
     def run_once(self, *, now: int | None = None) -> dict[str, int]:
         timestamp = int(time.time()) if now is None else int(now)
@@ -94,6 +100,7 @@ class DeliveryCoordinator:
         delivered = 0
         failed = 0
         claimed = 0
+        blocked_agents: set[str] = set()
 
         while claimed < self.max_events_per_tick:
             due_agents = self.store.list_due_agent_ids(now=timestamp)
@@ -103,6 +110,8 @@ class DeliveryCoordinator:
             for agent_id in due_agents:
                 if claimed >= self.max_events_per_tick:
                     break
+                if agent_id in blocked_agents:
+                    continue
                 event = self.store.claim_due_event(agent_id, now=timestamp)
                 if not event:
                     continue
@@ -114,6 +123,7 @@ class DeliveryCoordinator:
                         event["event_id"], "listener_unavailable", now=timestamp
                     )
                     failed += 1
+                    blocked_agents.add(agent_id)
                     continue
                 try:
                     registration.send(format_event_message(event, self.protocol_version))
@@ -122,6 +132,7 @@ class DeliveryCoordinator:
                         event["event_id"], "socket_write_failed", now=timestamp
                     )
                     failed += 1
+                    blocked_agents.add(agent_id)
                 else:
                     delivered += 1
             if not made_progress:
@@ -137,8 +148,9 @@ class DeliveryCoordinator:
 
     def _run(self) -> None:
         while not self._stop.is_set():
+            self._wake.clear()
             self.run_once()
-            self._stop.wait(self.poll_interval_seconds)
+            self._wake.wait(self.poll_interval_seconds)
 
     def _current_registration(self, agent_id: str) -> SocketRegistration | None:
         with self._lock:

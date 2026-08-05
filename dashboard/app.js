@@ -138,14 +138,21 @@ function renderSummary() {
 function renderAgents() {
   els.agentCount.textContent = `${state.agents.length} agents`;
   els.agentsBody.innerHTML = "";
+  const deliveryByAgent = new Map(
+    (state.summary?.delivery?.agents || []).map((item) => [item.agent_id, item]),
+  );
   for (const agent of state.agents) {
+    const delivery = deliveryByAgent.get(agent.agent_id) || {};
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><strong>${escapeHtml(agent.agent_id)}</strong><div class="muted">${escapeHtml(agent.name || "")}</div></td>
       <td>${escapeHtml(agent.owner || "")}</td>
       <td>${agent.readiness_protocol_version ? badge(agent.readiness_fresh ? "ready" : "stale") : (agent.pending_task_count ?? 0)}</td>
       <td>${agent.active_task_count ?? 0}</td>
-      <td>${agent.pending_event_count ?? agent.unacked_event_count ?? 0}</td>
+      <td>${delivery.max_inflight ?? 1}</td>
+      <td class="mono">${delivery.queued ?? 0} / ${delivery.inflight ?? 0} / ${delivery.parked ?? 0}</td>
+      <td>${formatLatency(delivery.ack_latency_seconds?.p95)}</td>
+      <td>${formatLatency(delivery.recovery_latency_seconds?.p95)}</td>
     `;
     tr.addEventListener("click", () => {
       els.agentFilter.value = agent.agent_id;
@@ -153,6 +160,10 @@ function renderAgents() {
     });
     els.agentsBody.appendChild(tr);
   }
+}
+
+function formatLatency(value) {
+  return Number.isFinite(value) ? `${value}s` : "-";
 }
 
 function renderTasks() {

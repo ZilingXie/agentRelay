@@ -48,6 +48,14 @@ to roll back Task expiry or an authorized business terminal transition.
 
 ## Delivery
 
+Relay applies one persisted per-Agent inflight limit across every active
+delivery lane, including v0.5 compatibility drain and v0.6. The default is
+`max_inflight=1`; operators may configure values from 1 through 100. An Event
+may move into `inflight` only while the Agent's combined inflight count is below
+that limit. The next Event therefore waits until an ACK/NACK releases the
+current lease or the ACK lease expires. This flow-control limit is independent
+from the 1,000-Event admission backlog quota above.
+
 `outbox_attempts` counts real-time push claims only. The current v0.6
 coordinator parks an Event after the first push/write/ACK-lease failure, without
 changing the open Task or pending Message. It does not schedule another
@@ -62,9 +70,21 @@ recovery cannot re-enable periodic push. A durable ACK changes the Event to
 `acked` and the current Message to `delivered` exactly once.
 
 The recovery HTTP endpoint returns at most one Event per request. A Listener
-must call it until the returned `events` array is empty, durably write and read
-back each Event before ACK, then continue the loop. Recovery prioritizes
-transitionable Messages before informational notices.
+must durably write and read back the Event, ACK it, and only then call recovery
+again until the returned `events` array is empty. Recovery prioritizes
+transitionable Messages before informational notices and obeys the same
+per-Agent inflight limit as WebSocket push.
+
+ACK, NACK, Listener registration/readiness, HTTP recovery, WebSocket socket
+registration, and ACK-lease expiry all wake the delivery coordinator. The
+one-second coordinator poll remains a fallback if an internal wake is lost or
+the API-to-WebSocket wake request is unavailable.
+
+The admin delivery summary reports per-Agent `queued`, `inflight`, and `parked`
+counts across active lanes. ACK latency is measured from the most recent claim
+to durable ACK. Recovery latency is measured from the first transition to
+`parked` through the durable ACK that follows a recovery claim. Historical rows
+without reconstructable timestamps are excluded from latency samples.
 
 ## Expiry And Notices
 
@@ -84,3 +104,5 @@ and remain recoverable until ACK, including after the Task is terminal.
   rejected.
 - A real-time delivery failure parks the Event immediately; HTTP recovery is
   explicit and observable.
+- Combined inflight Events across all active protocol lanes never exceed the
+  Agent's persisted `max_inflight`.

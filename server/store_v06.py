@@ -18,6 +18,11 @@ from server.protocol_v06 import (
     PROTOCOL_V06,
     TASK_FAILURE_REASONS,
 )
+from server.delivery_control import (
+    DeliveryClaimContext,
+    DeliveryControl,
+    default_delivery_control,
+)
 from server.store import ConflictError
 
 
@@ -29,10 +34,18 @@ INSTALL_HEALTHCHECK_TTL_SECONDS = 10 * 60
 class V06Store:
     """Native Protocol v0.6 storage for the clean writable database."""
 
-    def __init__(self, db_path: str):
+    def __init__(
+        self,
+        db_path: str,
+        *,
+        delivery_control: DeliveryControl | None = None,
+    ):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.init_db()
+        self.delivery_control = delivery_control or default_delivery_control(
+            self.db_path, PROTOCOL_V06
+        )
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=30)
@@ -129,6 +142,8 @@ class V06Store:
                     recovery_attempts INTEGER NOT NULL DEFAULT 0 CHECK (recovery_attempts >= 0),
                     inflight_via TEXT CHECK (inflight_via IN ('push', 'recovery') OR inflight_via IS NULL),
                     inflight_until INTEGER,
+                    inflight_started_at INTEGER,
+                    parked_at INTEGER,
                     next_retry_at INTEGER,
                     acked_at INTEGER,
                     exhausted_at INTEGER,
@@ -203,6 +218,16 @@ class V06Store:
                 )
             if "inflight_via" not in event_columns:
                 conn.execute("ALTER TABLE agent_events ADD COLUMN inflight_via TEXT")
+            if "inflight_started_at" not in event_columns:
+                conn.execute("ALTER TABLE agent_events ADD COLUMN inflight_started_at INTEGER")
+            if "parked_at" not in event_columns:
+                conn.execute("ALTER TABLE agent_events ADD COLUMN parked_at INTEGER")
+            conn.execute(
+                """
+                UPDATE agent_events SET parked_at = updated_at
+                WHERE outbox_status = 'parked' AND parked_at IS NULL
+                """
+            )
             conn.execute(
                 """
                 UPDATE agents SET enabled = 0, updated_at = ?
@@ -702,6 +727,19 @@ class V06Store:
         now: int | None = None,
     ) -> dict[str, Any] | None:
         timestamp = _now(now)
+        return self.delivery_control.run_claim(
+            agent_id,
+            lambda context: self._claim_due_event(context, timestamp),
+            now=timestamp,
+        )
+
+    def _claim_due_event(
+        self,
+        context: DeliveryClaimContext,
+        timestamp: int,
+    ) -> dict[str, Any] | None:
+        if not context.has_capacity():
+            return None
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
@@ -718,7 +756,7 @@ class V06Store:
                          COALESCE(e.next_retry_at, e.created_at), e.created_at, e.event_id
                 LIMIT 1
                 """,
-                (agent_id, timestamp),
+                (context.agent_id, timestamp),
             ).fetchone()
             if not row:
                 return None
@@ -726,12 +764,14 @@ class V06Store:
                 """
                 UPDATE agent_events
                 SET outbox_status = 'inflight', outbox_attempts = outbox_attempts + 1,
-                    inflight_via = 'push', inflight_until = ?, next_retry_at = NULL,
+                    inflight_via = 'push', inflight_until = ?, inflight_started_at = ?,
+                    next_retry_at = NULL,
                     updated_at = ?
                 WHERE event_id = ? AND outbox_status = ? AND outbox_attempts < ?
                 """,
                 (
-                    timestamp + DELIVERY_ACK_LEASE_SECONDS, timestamp, row["event_id"],
+                    timestamp + DELIVERY_ACK_LEASE_SECONDS, timestamp, timestamp,
+                    row["event_id"],
                     row["outbox_status"], MAX_DELIVERY_ATTEMPTS,
                 ),
             )
@@ -750,10 +790,28 @@ class V06Store:
         now: int | None = None,
     ) -> dict[str, Any] | None:
         timestamp = _now(now)
+        return self.delivery_control.run_claim(
+            agent_id,
+            lambda context: self._recover_event(
+                context,
+                listener_instance_id,
+                readiness_epoch,
+                timestamp,
+            ),
+            now=timestamp,
+        )
+
+    def _recover_event(
+        self,
+        context: DeliveryClaimContext,
+        listener_instance_id: str,
+        readiness_epoch: int,
+        timestamp: int,
+    ) -> dict[str, Any] | None:
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             self._assert_listener_epoch_conn(
-                conn, agent_id, listener_instance_id, readiness_epoch
+                conn, context.agent_id, listener_instance_id, readiness_epoch
             )
             expired_rows = conn.execute(
                 """
@@ -762,7 +820,7 @@ class V06Store:
                   AND inflight_until <= ?
                 ORDER BY inflight_until, event_id
                 """,
-                (agent_id, timestamp),
+                (context.agent_id, timestamp),
             ).fetchall()
             for expired_row in expired_rows:
                 self._record_attempt_failure_conn(
@@ -775,10 +833,21 @@ class V06Store:
                   AND inflight_until > ?
                 ORDER BY can_transition_message DESC, created_at, event_id LIMIT 1
                 """,
-                (agent_id, timestamp),
+                (context.agent_id, timestamp),
             ).fetchone()
             if row:
                 return self._event_dict(row)
+            local_inflight = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) FROM agent_events
+                    WHERE agent_id = ? AND outbox_status = 'inflight'
+                    """,
+                    (context.agent_id,),
+                ).fetchone()[0]
+            )
+            if not context.has_capacity_for_lane(self.db_path, local_inflight):
+                return None
             row = conn.execute(
                 """
                 SELECT e.* FROM agent_events e
@@ -789,7 +858,7 @@ class V06Store:
                 ORDER BY e.can_transition_message DESC, e.created_at, e.event_id
                 LIMIT 1
                 """,
-                (agent_id,),
+                (context.agent_id,),
             ).fetchone()
             if not row:
                 return None
@@ -797,12 +866,14 @@ class V06Store:
                 """
                 UPDATE agent_events
                 SET outbox_status = 'inflight', recovery_attempts = recovery_attempts + 1,
-                    inflight_via = 'recovery', inflight_until = ?, next_retry_at = NULL,
+                    inflight_via = 'recovery', inflight_until = ?, inflight_started_at = ?,
+                    next_retry_at = NULL,
                     updated_at = ?
                 WHERE event_id = ? AND outbox_status = ?
                 """,
                 (
                     timestamp + DELIVERY_ACK_LEASE_SECONDS,
+                    timestamp,
                     timestamp,
                     row["event_id"],
                     row["outbox_status"],
@@ -1361,10 +1432,12 @@ class V06Store:
                     """
                     UPDATE agent_events SET outbox_status = 'parked', inflight_until = NULL,
                         inflight_via = NULL, next_retry_at = NULL, exhausted_at = NULL,
-                        exhaustion_reason = NULL, last_error = ?, updated_at = ?
+                        exhaustion_reason = NULL,
+                        parked_at = COALESCE(parked_at, ?),
+                        last_error = ?, updated_at = ?
                     WHERE event_id = ?
                     """,
-                    (reason, timestamp, event["event_id"]),
+                    (timestamp, reason, timestamp, event["event_id"]),
                 )
                 audit_type = "message.delivery_parked"
                 result_version = int(task["task_version"])
@@ -1531,19 +1604,21 @@ class V06Store:
             conn.execute(
                 """
                 UPDATE agent_events SET outbox_status = 'parked', inflight_until = NULL,
-                    inflight_via = NULL, next_retry_at = NULL, last_error = ?, updated_at = ?
+                    inflight_via = NULL, next_retry_at = NULL,
+                    parked_at = COALESCE(parked_at, ?), last_error = ?, updated_at = ?
                 WHERE event_id = ?
                 """,
-                (error, now, event["event_id"]),
+                (now, error, now, event["event_id"]),
             )
             return
         conn.execute(
             """
             UPDATE agent_events SET outbox_status = 'parked', inflight_until = NULL,
                 inflight_via = NULL, next_retry_at = NULL, exhausted_at = NULL,
-                exhaustion_reason = NULL, last_error = ?, updated_at = ? WHERE event_id = ?
+                exhaustion_reason = NULL, parked_at = COALESCE(parked_at, ?),
+                last_error = ?, updated_at = ? WHERE event_id = ?
             """,
-            (error, now, event["event_id"]),
+            (now, error, now, event["event_id"]),
         )
         if event["can_transition_message"]:
             message = self._message_row_conn(conn, event["message_id"])
@@ -1769,6 +1844,11 @@ class V06Store:
                 f"v06:{message_id}:pending", initial_status, now, now,
             ),
         )
+        if initial_status == "parked":
+            conn.execute(
+                "UPDATE agent_events SET parked_at = ? WHERE event_id = ?",
+                (now, event_id),
+            )
 
     def _insert_info_event_conn(
         self,
@@ -1800,6 +1880,14 @@ class V06Store:
                 idempotency_key, initial_status, now, now,
             ),
         )
+        if initial_status == "parked":
+            conn.execute(
+                """
+                UPDATE agent_events SET parked_at = ?
+                WHERE agent_id = ? AND idempotency_key = ?
+                """,
+                (now, agent_id, idempotency_key),
+            )
 
     def _notify_task_status_conn(
         self,

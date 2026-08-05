@@ -88,6 +88,20 @@ def main() -> None:
             assert event["inflightVia"] == "push"
             assert "parts" not in event
             assert event["payloadRef"]["method"] == "GET"
+            task = created["task"]
+            store.ack_message(
+                TARGET,
+                {
+                    "task_id": task["task_id"],
+                    "event_id": event["eventId"],
+                    "message_id": task["current_message_id"],
+                    "turn_sequence": task["turn_sequence"],
+                    "expected_task_version": task["task_version"],
+                    "idempotency_key": "v06-ws-push-ack",
+                    "listener_instance_id": listener[0],
+                    "readiness_epoch": listener[1],
+                },
+            )
 
             v05_connection = websocket_connect(v05_listener, PROTOCOL_V05)
             v05_hello = read_json_frame(v05_connection)

@@ -18,6 +18,11 @@ from server.protocol_v05 import (
     RETRY_BACKOFF_SECONDS,
     TASK_FAILURE_REASONS,
 )
+from server.delivery_control import (
+    DeliveryClaimContext,
+    DeliveryControl,
+    default_delivery_control,
+)
 from server.store import ConflictError
 
 
@@ -29,10 +34,18 @@ INSTALL_HEALTHCHECK_TTL_SECONDS = 10 * 60
 class V05Store:
     """Native Protocol v0.5 storage for the clean writable database."""
 
-    def __init__(self, db_path: str):
+    def __init__(
+        self,
+        db_path: str,
+        *,
+        delivery_control: DeliveryControl | None = None,
+    ):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.init_db()
+        self.delivery_control = delivery_control or default_delivery_control(
+            self.db_path, PROTOCOL_V05
+        )
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=30)
@@ -127,6 +140,7 @@ class V05Store:
                     outbox_status TEXT NOT NULL CHECK (outbox_status IN ('queued', 'inflight', 'acked', 'retry_wait', 'exhausted')),
                     outbox_attempts INTEGER NOT NULL CHECK (outbox_attempts BETWEEN 0 AND 4),
                     inflight_until INTEGER,
+                    inflight_started_at INTEGER,
                     next_retry_at INTEGER,
                     acked_at INTEGER,
                     exhausted_at INTEGER,
@@ -192,6 +206,11 @@ class V05Store:
                 conn.execute("ALTER TABLE messages ADD COLUMN subject TEXT")
             if "metadata_json" not in message_columns:
                 conn.execute("ALTER TABLE messages ADD COLUMN metadata_json TEXT")
+            event_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(agent_events)").fetchall()
+            }
+            if "inflight_started_at" not in event_columns:
+                conn.execute("ALTER TABLE agent_events ADD COLUMN inflight_started_at INTEGER")
             conn.execute(
                 """
                 UPDATE agents SET enabled = 0, updated_at = ?
@@ -691,6 +710,19 @@ class V05Store:
         now: int | None = None,
     ) -> dict[str, Any] | None:
         timestamp = _now(now)
+        return self.delivery_control.run_claim(
+            agent_id,
+            lambda context: self._claim_due_event(context, timestamp),
+            now=timestamp,
+        )
+
+    def _claim_due_event(
+        self,
+        context: DeliveryClaimContext,
+        timestamp: int,
+    ) -> dict[str, Any] | None:
+        if not context.has_capacity():
+            return None
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
@@ -707,7 +739,7 @@ class V05Store:
                          COALESCE(e.next_retry_at, e.created_at), e.created_at, e.event_id
                 LIMIT 1
                 """,
-                (agent_id, timestamp),
+                (context.agent_id, timestamp),
             ).fetchone()
             if not row:
                 return None
@@ -715,11 +747,13 @@ class V05Store:
                 """
                 UPDATE agent_events
                 SET outbox_status = 'inflight', outbox_attempts = outbox_attempts + 1,
-                    inflight_until = ?, next_retry_at = NULL, updated_at = ?
+                    inflight_until = ?, inflight_started_at = ?,
+                    next_retry_at = NULL, updated_at = ?
                 WHERE event_id = ? AND outbox_status = ? AND outbox_attempts < ?
                 """,
                 (
-                    timestamp + DELIVERY_ACK_LEASE_SECONDS, timestamp, row["event_id"],
+                    timestamp + DELIVERY_ACK_LEASE_SECONDS, timestamp, timestamp,
+                    row["event_id"],
                     row["outbox_status"], MAX_DELIVERY_ATTEMPTS,
                 ),
             )
@@ -736,6 +770,17 @@ class V05Store:
         now: int | None = None,
     ) -> dict[str, Any] | None:
         timestamp = _now(now)
+        return self.delivery_control.run_claim(
+            agent_id,
+            lambda context: self._recover_event(context, timestamp),
+            now=timestamp,
+        )
+
+    def _recover_event(
+        self,
+        context: DeliveryClaimContext,
+        timestamp: int,
+    ) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute(
                 """
@@ -744,11 +789,11 @@ class V05Store:
                   AND inflight_until > ?
                 ORDER BY can_transition_message DESC, created_at, event_id LIMIT 1
                 """,
-                (agent_id, timestamp),
+                (context.agent_id, timestamp),
             ).fetchone()
             if row:
                 return self._event_dict(row)
-        return self.claim_due_event(agent_id, now=timestamp)
+        return self._claim_due_event(context, timestamp)
 
     def record_attempt_failure(
         self,

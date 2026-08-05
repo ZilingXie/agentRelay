@@ -14,6 +14,7 @@ from server.protocol_v03 import PROTOCOL_V03
 from server.protocol_v04 import PROTOCOL_V04
 from server.protocol_v05 import PROTOCOL_V05
 from server.protocol_v06 import PROTOCOL_V06
+from server.delivery_control import DEFAULT_MAX_INFLIGHT, MAX_CONFIGURED_INFLIGHT
 
 
 PROTOCOL_NAME = "agent-collab"
@@ -40,9 +41,9 @@ BUNDLE_REVISION_V05_COMPATIBLE = 3
 BUNDLE_REVISION_V05 = 5
 BUNDLE_PUBLISHED_AT_V05 = "2026-07-20T00:00:00Z"
 BUNDLE_EXPIRES_AT_V05 = "2027-07-19T00:00:00Z"
-BUNDLE_REVISION_V06 = 8
-BUNDLE_PUBLISHED_AT_V06 = "2026-07-30T00:00:00Z"
-BUNDLE_EXPIRES_AT_V06 = "2027-07-28T00:00:00Z"
+BUNDLE_REVISION_V06 = 9
+BUNDLE_PUBLISHED_AT_V06 = "2026-08-05T00:00:00Z"
+BUNDLE_EXPIRES_AT_V06 = "2027-08-04T00:00:00Z"
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "schemas"
@@ -720,6 +721,8 @@ def protocol_manifest_v06(
         "listener_readiness_max_age_seconds": 300,
         "max_visibility_batch_size": 100,
         "max_agent_unacked_events": 1000,
+        "default_max_inflight": DEFAULT_MAX_INFLIGHT,
+        "max_configured_inflight": MAX_CONFIGURED_INFLIGHT,
     }
     if dynamic_tools:
         manifest["signature"] = sign_protocol_manifest(manifest)
