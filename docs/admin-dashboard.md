@@ -7,6 +7,7 @@ The dashboard is a read-only control plane for inspecting AgentRelay state:
 - task status and next action
 - task timeline and task events
 - durable agent event delivery state
+- per-Agent delivery limit, queued/inflight/parked counts, and ACK/recovery p95
 
 It is not a chat UI and does not mutate tasks.
 
@@ -47,6 +48,19 @@ GET /agentrelay/admin/api/events?agent_id=&delivery_state=&include_acked=&limit=
 ```
 
 If `AGENTRELAY_ADMIN_TOKEN` is not configured, the admin API returns `503`.
+
+`GET /agentrelay/admin/api/summary` includes a `delivery` object. Its `totals`
+and per-Agent rows aggregate all active protocol lanes and expose
+`queued`, `inflight`, `parked`, `max_inflight`, plus ACK and recovery latency
+sample counts, p50, p95, and max values. Empty latency samples use `null`
+percentiles.
+
+The dashboard remains read-only. Configure a persisted limit locally on the
+Relay host; values must be between 1 and 100 and default to 1:
+
+```bash
+python3 scripts/set_agent_delivery_limit.py <agent_id> <max_inflight>
+```
 
 ## Nginx
 

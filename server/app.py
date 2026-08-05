@@ -9,6 +9,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from server.delivery_control import (
+    DeliveryControl,
+    DeliveryLane,
+    resolve_delivery_control_path,
+)
+from server.delivery_wakeup import DeliveryWakeClient
 from server.store import ConflictError, Store, read_alias
 from server.store_v05 import V05Store
 from server.store_v06 import V06Store
@@ -103,6 +109,12 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
     auth_identities: dict[str, dict[str, str]] = {}
     auth_required: bool = False
     admin_token: str = ""
+    delivery_control: DeliveryControl | None = None
+    delivery_wake_client: DeliveryWakeClient | None = None
+
+    def wake_delivery(self, agent_id: str, reason: str) -> None:
+        if self.delivery_wake_client is not None:
+            self.delivery_wake_client.notify(agent_id, reason)
 
     def durable_store_for_protocol(self, protocol_version: str) -> V05Store | V06Store | None:
         if protocol_version == PROTOCOL_V06 and self.mutation_mode == "v06":
@@ -504,6 +516,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 if isinstance(store, V06Store)
                 else store.recover_event(agent_id)
             )
+            self.wake_delivery(agent_id, "http_recovery")
             self.respond_json({"events": [event] if event else []})
             return
         if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/events", path):
@@ -548,7 +561,17 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             if store is None:
                 return
             if path == "/agentrelay/admin/api/summary":
-                self.respond_json({**store.admin_summary(), "protocol_drain": self.protocol_drain_summary()})
+                self.respond_json(
+                    {
+                        **store.admin_summary(),
+                        "delivery": (
+                            self.delivery_control.metrics_summary()
+                            if self.delivery_control is not None
+                            else {"totals": {}, "agents": []}
+                        ),
+                        "protocol_drain": self.protocol_drain_summary(),
+                    }
+                )
                 return
             if path == "/agentrelay/admin/api/agents":
                 self.respond_json({"agents": store.admin_agents()})
@@ -684,6 +707,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 transport=payload["transport"],
                 recover_if_stale=payload.get("recover_if_stale", False),
             )
+            self.wake_delivery(agent_id, "listener_register")
             self.respond_json({"readiness": readiness}, status=201)
             return
         if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/readiness", path):
@@ -702,6 +726,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 readiness_epoch=payload["readiness_epoch"],
                 ready=payload["ready"],
             )
+            self.wake_delivery(agent_id, "listener_readiness")
             self.respond_json({"readiness": readiness})
             return
         if path == "/agentrelay/task-visibility/batch":
@@ -871,6 +896,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                     self.respond_error(404, "task not found", code="task_not_found")
                     return
                 self.record_client_runtime_audit(store, str(payload["task_id"]), agent_id)
+                self.wake_delivery(agent_id, "message_ack")
                 self.respond_json(detail)
                 return
             if self.mutation_mode == "closed":
@@ -906,6 +932,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 self.respond_error(404, "task not found", code="task_not_found")
                 return
             self.record_client_runtime_audit(store, str(payload["task_id"]), agent_id)
+            self.wake_delivery(agent_id, "delivery_nack")
             self.respond_json(detail)
             return
         if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/complete", path):
@@ -1142,6 +1169,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 if not event:
                     self.respond_error(404, "event not found", code="event_not_found")
                     return
+                self.wake_delivery(agent_id, "event_ack")
                 self.respond_json({"event": event})
                 return
             if not self.require_agent(auth, agent_id):
@@ -2165,11 +2193,34 @@ def create_server() -> ThreadingHTTPServer:
     v05_db_path = os.environ.get("AGENTRELAY_V05_DB_PATH", "").strip()
     if (mutation_mode in {"closed", "v05"} or v05_drain_enabled) and not v05_db_path:
         v05_db_path = DEFAULT_V05_DB_PATH
-    v05_store = V05Store(v05_db_path) if v05_db_path else None
     v06_db_path = os.environ.get("AGENTRELAY_V06_DB_PATH", "").strip()
     if mutation_mode == "v06" and not v06_db_path:
         v06_db_path = DEFAULT_V06_DB_PATH
-    v06_store = V06Store(v06_db_path) if v06_db_path else None
+    lane_paths = [
+        DeliveryLane(protocol_version, Path(path))
+        for protocol_version, path in (
+            (PROTOCOL_V05, v05_db_path),
+            (PROTOCOL_V06, v06_db_path),
+        )
+        if path
+    ]
+    delivery_control = (
+        DeliveryControl(
+            resolve_delivery_control_path(
+                os.environ.get("AGENTRELAY_DELIVERY_CONTROL_DB_PATH", ""),
+                lane_paths,
+            ),
+            lane_paths,
+        )
+        if lane_paths
+        else None
+    )
+    v05_store = (
+        V05Store(v05_db_path, delivery_control=delivery_control) if v05_db_path else None
+    )
+    v06_store = (
+        V06Store(v06_db_path, delivery_control=delivery_control) if v06_db_path else None
+    )
     if v05_drain_enabled:
         validate_protocol_drain_stores(v05_store, v06_store)
     AgentRelayHandler.store = store
@@ -2177,10 +2228,16 @@ def create_server() -> ThreadingHTTPServer:
     AgentRelayHandler.v06_store = v06_store
     AgentRelayHandler.mutation_mode = mutation_mode
     AgentRelayHandler.v05_drain_enabled = v05_drain_enabled
+    AgentRelayHandler.delivery_control = delivery_control
     auth_required, identities = load_auth_identities()
     AgentRelayHandler.auth_required = auth_required
     AgentRelayHandler.auth_identities = identities
     AgentRelayHandler.admin_token = os.environ.get("AGENTRELAY_ADMIN_TOKEN", "").strip()
+    AgentRelayHandler.delivery_wake_client = DeliveryWakeClient(
+        os.environ.get("AGENTRELAY_DELIVERY_WAKE_URL", ""),
+        AgentRelayHandler.admin_token,
+        timeout_seconds=float(os.environ.get("AGENTRELAY_DELIVERY_WAKE_TIMEOUT_SECONDS", "0.25")),
+    )
     return ThreadingHTTPServer((host, port), AgentRelayHandler)
 
 

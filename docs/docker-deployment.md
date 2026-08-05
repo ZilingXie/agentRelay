@@ -14,14 +14,17 @@ The container image does not include runtime state. Keep these files on the host
 ```text
 data/agentrelay.sqlite3
 data/agentrelay-v05.sqlite3
+data/agentrelay-v06.sqlite3
+data/agentrelay-delivery-control.sqlite3
 data/agentrelay-auth.json
 ```
 
 Do not commit `data/`, `.env`, tokens, sqlite files, or logs.
 
 The Compose template defaults `AGENTRELAY_MUTATION_MODE=legacy`; rebuilding the
-image does not switch collaboration writes. Protocol v0.5 uses the separate
-`agentrelay-v05.sqlite3` path.
+image does not switch collaboration writes. Protocol v0.5 and v0.6 use separate
+lane databases. Both processes share `agentrelay-delivery-control.sqlite3` for
+persisted per-Agent delivery limits and cross-lane claim serialization.
 
 Valid mutation modes are:
 
@@ -29,10 +32,26 @@ Valid mutation modes are:
 legacy  current v0.3/v0.4 behavior
 closed  readiness and read-only inspection only; collaboration writes return 503
 v05     native v0.5 writes; legacy mutations return 410
+v06     native v0.6 writes; optional v0.5 compatibility drain remains separate
 ```
 
 Use `closed` for maintenance preflight. Do not use `v05` until the complete
 cross-component cutover gate passes.
+
+The API sends authenticated best-effort wake requests to the WebSocket service
+after ACK/NACK, readiness, and recovery mutations. Both services must receive
+the same `AGENTRELAY_ADMIN_TOKEN`; `docker-compose.yml` supplies the internal
+URL and shared control database path. Wake failure does not roll back a
+committed mutation because coordinator polling remains enabled.
+
+Set a non-default Agent limit from the deployment checkout:
+
+```bash
+python3 scripts/set_agent_delivery_limit.py <agent_id> <max_inflight>
+```
+
+The default is 1 and the accepted range is 1 through 100. Restart is not
+required because each claim reads the persisted limit.
 
 ## Files
 

@@ -237,8 +237,10 @@ def main() -> None:
                 v06_manifest = protocol_manifest_v06(
                     "https://example.test/agentrelay", write_mode="v06"
                 )
-                if v06_manifest.get("bundle_revision") != 8:
-                    raise AssertionError("v0.6 bundle revision must be 8")
+                if v06_manifest.get("bundle_revision") != 9:
+                    raise AssertionError("v0.6 bundle revision must be 9")
+                if v06_manifest.get("constants", {}).get("default_max_inflight") != 1:
+                    raise AssertionError("v0.6 must publish default max_inflight 1")
                 if "dynamic_agent_tool_schema_v1" not in dynamic_manifest["required_client_capabilities"]:
                     raise AssertionError("dynamic Agent tool capability is not required")
                 signature = dynamic_manifest.get("signature", {})

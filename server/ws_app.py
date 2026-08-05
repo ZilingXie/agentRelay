@@ -11,8 +11,14 @@ import struct
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 
+from server.delivery_control import (
+    DeliveryControl,
+    DeliveryLane,
+    resolve_delivery_control_path,
+)
 from server.app import (
     clean_path,
     first_query_value,
@@ -48,6 +54,48 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
     poll_interval_seconds: float = 2.0
     heartbeat_seconds: float = 30.0
     lease_seconds: int = 60
+    delivery_control: DeliveryControl | None = None
+    admin_token: str = ""
+
+    def do_POST(self) -> None:
+        path = clean_path(self.path)
+        if path != "/agentrelay/internal/delivery/wake":
+            self.respond_error(404, "not found")
+            return
+        if not self.admin_token:
+            self.respond_error(503, "internal delivery wake is not configured")
+            return
+        authorization = self.headers.get("Authorization", "")
+        prefix = "Bearer "
+        if not authorization.startswith(prefix) or not hmac.compare_digest(
+            authorization[len(prefix):], self.admin_token
+        ):
+            self.respond_error(401, "invalid internal delivery wake token")
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self.respond_error(400, "invalid delivery wake payload size")
+            return
+        if length < 2 or length > 4096:
+            self.respond_error(400, "invalid delivery wake payload size")
+            return
+        try:
+            payload = json.loads(self.rfile.read(length))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self.respond_error(400, "invalid delivery wake payload")
+            return
+        agent_id = payload.get("agent_id") if isinstance(payload, dict) else None
+        reason = payload.get("reason") if isinstance(payload, dict) else None
+        if not isinstance(agent_id, str) or not agent_id or len(agent_id) > 256:
+            self.respond_error(400, "invalid delivery wake agent_id")
+            return
+        if not isinstance(reason, str) or not reason or len(reason) > 64:
+            self.respond_error(400, "invalid delivery wake reason")
+            return
+        for coordinator in self.coordinators.values():
+            coordinator.wake()
+        self.respond_json({"ok": True})
 
     def do_GET(self) -> None:
         path = clean_path(self.path)
@@ -119,13 +167,7 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
         protocol_version: str,
         coordinator: DeliveryCoordinator,
     ) -> None:
-        registration = coordinator.register_socket(
-            agent_id,
-            listener_instance_id,
-            readiness_epoch,
-            self.send_current_json_frame,
-            close=self._current_closed.set,
-        )
+        registration = None
         next_heartbeat_at = time.time() + self.heartbeat_seconds
         try:
             self.send_current_json_frame(
@@ -138,6 +180,13 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
                     "serverTime": int(time.time()),
                 }
             )
+            registration = coordinator.register_socket(
+                agent_id,
+                listener_instance_id,
+                readiness_epoch,
+                self.send_current_json_frame,
+                close=self._current_closed.set,
+            )
             while not self._current_closed.wait(self.poll_interval_seconds):
                 now = time.time()
                 if now >= next_heartbeat_at:
@@ -148,7 +197,8 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
         except OSError:
             return
         finally:
-            coordinator.unregister_socket(registration)
+            if registration is not None:
+                coordinator.unregister_socket(registration)
             self.close_connection = True
 
     def send_current_json_frame(self, payload: dict[str, Any]) -> None:
@@ -327,11 +377,34 @@ def create_server() -> ThreadingHTTPServer:
     v05_db_path = os.environ.get("AGENTRELAY_V05_DB_PATH", "").strip()
     if (mutation_mode in {"closed", "v05"} or v05_drain_enabled) and not v05_db_path:
         v05_db_path = DEFAULT_V05_DB_PATH
-    v05_store = V05Store(v05_db_path) if v05_db_path else None
     v06_db_path = os.environ.get("AGENTRELAY_V06_DB_PATH", "").strip()
     if mutation_mode == "v06" and not v06_db_path:
         v06_db_path = DEFAULT_V06_DB_PATH
-    v06_store = V06Store(v06_db_path) if v06_db_path else None
+    lane_paths = [
+        DeliveryLane(protocol_version, Path(path))
+        for protocol_version, path in (
+            (PROTOCOL_V05, v05_db_path),
+            (PROTOCOL_V06, v06_db_path),
+        )
+        if path
+    ]
+    delivery_control = (
+        DeliveryControl(
+            resolve_delivery_control_path(
+                os.environ.get("AGENTRELAY_DELIVERY_CONTROL_DB_PATH", ""),
+                lane_paths,
+            ),
+            lane_paths,
+        )
+        if lane_paths
+        else None
+    )
+    v05_store = (
+        V05Store(v05_db_path, delivery_control=delivery_control) if v05_db_path else None
+    )
+    v06_store = (
+        V06Store(v06_db_path, delivery_control=delivery_control) if v06_db_path else None
+    )
     if v05_drain_enabled:
         validate_protocol_drain_stores(v05_store, v06_store)
     coordinator_stores = {}
@@ -363,9 +436,13 @@ def create_server() -> ThreadingHTTPServer:
     AgentRelayWebSocketHandler.coordinators = coordinators
     AgentRelayWebSocketHandler.mutation_mode = mutation_mode
     AgentRelayWebSocketHandler.v05_drain_enabled = v05_drain_enabled
+    AgentRelayWebSocketHandler.delivery_control = delivery_control
     auth_required, identities = load_auth_identities()
     AgentRelayWebSocketHandler.auth_required = auth_required
     AgentRelayWebSocketHandler.auth_identities = identities
+    AgentRelayWebSocketHandler.admin_token = os.environ.get(
+        "AGENTRELAY_ADMIN_TOKEN", ""
+    ).strip()
     AgentRelayWebSocketHandler.poll_interval_seconds = float(os.environ.get("AGENTRELAY_WS_POLL_SECONDS", "2"))
     AgentRelayWebSocketHandler.heartbeat_seconds = float(os.environ.get("AGENTRELAY_WS_HEARTBEAT_SECONDS", "30"))
     AgentRelayWebSocketHandler.lease_seconds = int(os.environ.get("AGENTRELAY_WS_LEASE_SECONDS", "60"))

@@ -161,8 +161,14 @@ def _copy_events(source: sqlite3.Connection, destination: sqlite3.Connection) ->
     sql = f"INSERT INTO agent_events ({', '.join(destination_columns)}) VALUES ({placeholders})"
     for row in source.execute("SELECT * FROM agent_events ORDER BY created_at, event_id"):
         values = {column: row[column] for column in source_columns}
+        values.setdefault("inflight_started_at", None)
         values["recovery_attempts"] = 0
         values["inflight_via"] = None
+        values["parked_at"] = (
+            values["updated_at"]
+            if values["outbox_status"] in PARKED_SOURCE_STATUSES
+            else None
+        )
         if values["outbox_status"] in PARKED_SOURCE_STATUSES:
             values["outbox_status"] = "parked"
             values["inflight_until"] = None

@@ -114,6 +114,7 @@ def migration_parks_recoverable_events(root: Path) -> None:
             assert event["inflight_via"] is None
             assert event["inflight_until"] is None
             assert event["next_retry_at"] is None
+            assert event["parked_at"] == event["updated_at"]
 
 
 def migration_requires_exact_enabled_agent_set(root: Path) -> None:

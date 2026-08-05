@@ -2,9 +2,9 @@
 
 Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/agentRelay`.
 
-Status date: 2026-07-28.
+Status date: 2026-08-05.
 
-Latest update: Protocol v0.6 is active in production as of 2026-07-28. The v0.5 database was migrated with the reviewed fail-closed converter from Server PR #76, production runs `write_mode=v06`, and the Task-pinned upgrade-safety release advanced the signed bundle to revision 7. The corrected immediate-park lifecycle contract now advances the signed bundle to revision 8 so one revision never maps to two digests. Zac, Vivi, and Project Hermes publish fresh v0.6 readiness. Server PRs #77 and #78 corrected the earlier bundle-revision monotonicity and parked-delivery semantics found during cutover; Client PR #69 corrected recovery Event protocol stamping. Production Task `task_cb366d360b2d4174a6cddc21de31a0c3` completed the offline-create, Vivi recovery ACK, Vivi reply, Zac ACK, and requester-complete flow. Server PR [#80](https://github.com/ZilingXie/agentRelay/pull/80) now advertises Project Hermes' bounded requester/completion-owner authority through its Agent Card; Client PR [#71](https://github.com/ZilingXie/agent-relay-mcp/pull/71) and Hermes PR [#9](https://github.com/ZilingXie/heremes-deploy/pull/9) consume that authority only when Hermes owns completion and the current delivered Message is a target response.
+Latest update: Protocol v0.6 is active in production as of 2026-07-28. The v0.5 database was migrated with the reviewed fail-closed converter from Server PR #76, production runs `write_mode=v06`, and the Task-pinned upgrade-safety release advanced the signed bundle to revision 7. The corrected immediate-park lifecycle contract advanced the signed bundle to revision 8 so one revision never maps to two digests. The per-Agent delivery flow-control change now prepares revision 9: all active v0.5/v0.6 lanes share a persisted `max_inflight` gate that defaults to 1, coordinator wakeups cover ACK/NACK/readiness/recovery/lease expiry, and the admin summary reports queue and latency metrics. Merge and production deployment remain pending. Zac, Vivi, and Project Hermes publish fresh v0.6 readiness. Server PRs #77 and #78 corrected the earlier bundle-revision monotonicity and parked-delivery semantics found during cutover; Client PR #69 corrected recovery Event protocol stamping. Production Task `task_cb366d360b2d4174a6cddc21de31a0c3` completed the offline-create, Vivi recovery ACK, Vivi reply, Zac ACK, and requester-complete flow. Server PR [#80](https://github.com/ZilingXie/agentRelay/pull/80) now advertises Project Hermes' bounded requester/completion-owner authority through its Agent Card; Client PR [#71](https://github.com/ZilingXie/agent-relay-mcp/pull/71) and Hermes PR [#9](https://github.com/ZilingXie/heremes-deploy/pull/9) consume that authority only when Hermes owns completion and the current delivered Message is a target response.
 
 Current work: `feat/protocol-upgrade-safety` makes Task protocol ownership
 immutable across Server upgrades. It adds Task-aware bundle negotiation,
@@ -113,6 +113,32 @@ Listener epochs; and parks recoverable v0.5 Events with leases cleared. It
 requires the explicitly approved v0.6 Agent set to exactly match all enabled
 source Agents and validates row counts, foreign keys, SQLite integrity, and
 Event reachability before producing a destination database.
+
+## Per-Agent Delivery Flow Control
+
+Status: implementation and focused verification complete on 2026-08-05;
+review, merge, production deployment, and live five-Event acceptance remain
+pending.
+
+- A dedicated SQLite control database persists per-Agent `max_inflight` and
+  serializes claim/recovery admission across the v0.5 drain and v0.6 lanes.
+  Actual `agent_events.outbox_status='inflight'` rows remain authoritative; the
+  control database does not duplicate lease ownership.
+- The default limit is 1 and the supported operator range is 1 through 100.
+  `scripts/set_agent_delivery_limit.py` changes the limit without a restart.
+- Message ACK, informational Event ACK, persistence NACK, Listener registration
+  and readiness, HTTP recovery, WebSocket registration, and ACK-lease expiry
+  all wake delivery. A one-second poll remains the lost-wake fallback.
+- v0.6 `ack_lease_expired` remains `open + pending + parked` with
+  `waiting_listener`; it releases capacity for the next queued Event and never
+  becomes an authorized Task failure.
+- Admin delivery metrics aggregate per-Agent queued/inflight/parked counts
+  across active lanes. ACK latency measures the latest claim through ACK;
+  recovery latency measures the first parked timestamp through a recovery ACK.
+- Focused acceptance covers five due Events with no loss or duplicate Event ID,
+  `max_inflight=2`, independent Agents, concurrent v0.5/v0.6 claims,
+  push/recovery races, duplicate ACK, lease expiry, wake authentication and
+  fallback, and exact count/latency metrics.
 
 ## Completed Server Milestones
 
