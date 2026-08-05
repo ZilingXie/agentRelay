@@ -4,7 +4,7 @@ Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/age
 
 Status date: 2026-08-05.
 
-Latest update: Protocol v0.6 is active in production as of 2026-07-28. The v0.5 database was migrated with the reviewed fail-closed converter from Server PR #76, production runs `write_mode=v06`, and the Task-pinned upgrade-safety release advanced the signed bundle to revision 7. The corrected immediate-park lifecycle contract advanced the signed bundle to revision 8 so one revision never maps to two digests. The per-Agent delivery flow-control change now prepares revision 9: all active v0.5/v0.6 lanes share a persisted `max_inflight` gate that defaults to 1, coordinator wakeups cover ACK/NACK/readiness/recovery/lease expiry, and the admin summary reports queue and latency metrics. Merge and production deployment remain pending. Zac, Vivi, and Project Hermes publish fresh v0.6 readiness. Server PRs #77 and #78 corrected the earlier bundle-revision monotonicity and parked-delivery semantics found during cutover; Client PR #69 corrected recovery Event protocol stamping. Production Task `task_cb366d360b2d4174a6cddc21de31a0c3` completed the offline-create, Vivi recovery ACK, Vivi reply, Zac ACK, and requester-complete flow. Server PR [#80](https://github.com/ZilingXie/agentRelay/pull/80) now advertises Project Hermes' bounded requester/completion-owner authority through its Agent Card; Client PR [#71](https://github.com/ZilingXie/agent-relay-mcp/pull/71) and Hermes PR [#9](https://github.com/ZilingXie/heremes-deploy/pull/9) consume that authority only when Hermes owns completion and the current delivered Message is a target response.
+Latest update: Protocol v0.6 is active in production as of 2026-07-28. The v0.5 database was migrated with the reviewed fail-closed converter from Server PR #76, production runs `write_mode=v06`, and the Task-pinned upgrade-safety release advanced the signed bundle to revision 7. The corrected immediate-park lifecycle contract advanced the signed bundle to revision 8 so one revision never maps to two digests. Per-Agent delivery flow control is now active in production through Server [PR #87](https://github.com/ZilingXie/agentRelay/pull/87) and signed bundle revision 9: all active v0.5/v0.6 lanes share a persisted `max_inflight` gate that defaults to 1, coordinator wakeups cover ACK/NACK/readiness/recovery/lease expiry, and the admin summary reports queue and latency metrics. Zac, Vivi, and Project Hermes publish fresh v0.6 readiness. Server PRs #77 and #78 corrected the earlier bundle-revision monotonicity and parked-delivery semantics found during cutover; Client PR #69 corrected recovery Event protocol stamping. Production Task `task_cb366d360b2d4174a6cddc21de31a0c3` completed the offline-create, Vivi recovery ACK, Vivi reply, Zac ACK, and requester-complete flow. Server PR [#80](https://github.com/ZilingXie/agentRelay/pull/80) now advertises Project Hermes' bounded requester/completion-owner authority through its Agent Card; Client PR [#71](https://github.com/ZilingXie/agent-relay-mcp/pull/71) and Hermes PR [#9](https://github.com/ZilingXie/heremes-deploy/pull/9) consume that authority only when Hermes owns completion and the current delivered Message is a target response.
 
 Current work: `feat/protocol-upgrade-safety` makes Task protocol ownership
 immutable across Server upgrades. It adds Task-aware bundle negotiation,
@@ -116,9 +116,8 @@ Event reachability before producing a destination database.
 
 ## Per-Agent Delivery Flow Control
 
-Status: implementation and focused verification complete on 2026-08-05;
-review, merge, production deployment, and live five-Event acceptance remain
-pending.
+Status: merged in Server [PR #87](https://github.com/ZilingXie/agentRelay/pull/87)
+and active in production as of 2026-08-05.
 
 - A dedicated SQLite control database persists per-Agent `max_inflight` and
   serializes claim/recovery admission across the v0.5 drain and v0.6 lanes.
@@ -139,6 +138,15 @@ pending.
   `max_inflight=2`, independent Agents, concurrent v0.5/v0.6 claims,
   push/recovery races, duplicate ACK, lease expiry, wake authentication and
   fallback, and exact count/latency metrics.
+- The full local `npm test` suite passed. The same focused acceptance passed
+  `6/6` on the production host after deployment. Production health publishes
+  bundle revision 9 and the 1/100 inflight constants; the v0.6 and control
+  SQLite databases passed `quick_check`, the API and WS containers carry the
+  same control code, and internal wake requests return HTTP 200.
+- A consistent pre-deployment data backup is retained outside the repository.
+  The canonical/public roadmap update remains pending because its checkout was
+  18 commits behind `origin/main` with an unconfirmed `plan.html` modification;
+  no existing roadmap edits were overwritten or published.
 
 ## Completed Server Milestones
 
