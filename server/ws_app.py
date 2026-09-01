@@ -23,11 +23,20 @@ from server.app import (
     clean_path,
     first_query_value,
     load_auth_identities,
+    make_v06_task_status_lookup,
     parse_required_positive_int_query,
     query_params,
     validate_protocol_drain_stores,
 )
 from server.delivery_coordinator import DeliveryCoordinator
+from server.files_store import (
+    DEFAULT_BLOBS_DIR,
+    DEFAULT_FILES_DB_PATH,
+    FilesStore,
+    file_orphan_hours_from_env,
+    file_retention_hours_from_env,
+    max_file_bytes_from_env,
+)
 from server.store import ConflictError, Store
 from server.store_v05 import V05Store
 from server.store_v06 import V06Store
@@ -415,6 +424,22 @@ def create_server() -> ThreadingHTTPServer:
     if v05_drain_enabled and v05_store is not None:
         coordinator_stores[PROTOCOL_V05] = v05_store
     coordinators = {}
+    files_store = (
+        FilesStore(
+            os.environ.get("AGENTRELAY_FILES_DB_PATH", DEFAULT_FILES_DB_PATH).strip()
+            or DEFAULT_FILES_DB_PATH,
+            blobs_dir=os.environ.get("AGENTRELAY_BLOBS_DIR", DEFAULT_BLOBS_DIR).strip()
+            or DEFAULT_BLOBS_DIR,
+            max_file_bytes=max_file_bytes_from_env(),
+            retention_hours=file_retention_hours_from_env(),
+            orphan_hours=file_orphan_hours_from_env(),
+            task_status_lookup=(
+                make_v06_task_status_lookup(v06_store) if v06_store is not None else None
+            ),
+        )
+        if mutation_mode == "v06" and v06_store is not None
+        else None
+    )
     for protocol_version, coordinator_store in coordinator_stores.items():
         poll_env = (
             "AGENTRELAY_V06_COORDINATOR_POLL_SECONDS"
@@ -424,6 +449,11 @@ def create_server() -> ThreadingHTTPServer:
         coordinator = DeliveryCoordinator(
             coordinator_store,
             poll_interval_seconds=float(os.environ.get(poll_env, "1")),
+            files_maintenance=(
+                files_store.run_maintenance
+                if files_store is not None and protocol_version == PROTOCOL_V06
+                else None
+            ),
         )
         coordinator.start()
         coordinators[protocol_version] = coordinator

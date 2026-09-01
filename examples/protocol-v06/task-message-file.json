@@ -1,0 +1,18 @@
+{
+  "actor_agent_id": "frank-agent",
+  "message_id": "msg_current",
+  "turn_sequence": 2,
+  "expected_task_version": 3,
+  "idempotency_key": "v06-message-file-example",
+  "parts": [
+    {"kind": "text", "text": "Investigation result with the captured log attached."},
+    {
+      "kind": "file",
+      "file_id": "file_0123456789abcdef0123456789abcdef",
+      "name": "investigation.log",
+      "mime_type": "text/plain",
+      "size_bytes": 2048,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

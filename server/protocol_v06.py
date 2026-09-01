@@ -96,11 +96,46 @@ def reject_unknown(payload: dict[str, Any], allowed: set[str]) -> None:
         raise ValueError(f"unknown fields: {', '.join(unknown)}")
 
 
+FILE_PART_FIELDS = {"kind", "file_id", "name", "mime_type", "size_bytes", "sha256"}
+FILE_ID_PATTERN = re.compile(r"^file_[a-f0-9]{32}$")
+FILE_SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
+FILE_NAME_MAX_LENGTH = 255
+FILE_MIME_MAX_LENGTH = 255
+
+
+def validate_file_part(part: dict[str, Any]) -> None:
+    unknown = sorted(set(part) - FILE_PART_FIELDS)
+    if unknown:
+        raise ValueError(f"file part has unknown fields: {', '.join(unknown)}")
+    file_id = part.get("file_id")
+    if not isinstance(file_id, str) or not FILE_ID_PATTERN.fullmatch(file_id):
+        raise ValueError("file part file_id must match ^file_[a-f0-9]{32}$")
+    name = part.get("name")
+    if not isinstance(name, str) or not name.strip() or len(name) > FILE_NAME_MAX_LENGTH:
+        raise ValueError(
+            f"file part name must be a non-empty string of at most {FILE_NAME_MAX_LENGTH} characters"
+        )
+    mime_type = part.get("mime_type")
+    if mime_type is not None and (
+        not isinstance(mime_type, str) or len(mime_type) > FILE_MIME_MAX_LENGTH
+    ):
+        raise ValueError(f"file part mime_type must be a string of at most {FILE_MIME_MAX_LENGTH} characters")
+    size_bytes = part.get("size_bytes")
+    if isinstance(size_bytes, bool) or not isinstance(size_bytes, int) or size_bytes < 1:
+        raise ValueError("file part size_bytes must be a positive integer")
+    sha256 = part.get("sha256")
+    if not isinstance(sha256, str) or not FILE_SHA256_PATTERN.fullmatch(sha256):
+        raise ValueError("file part sha256 must match ^[a-f0-9]{64}$")
+
+
 def validate_message_parts(parts: Any) -> list[dict[str, Any]]:
     if not isinstance(parts, list) or not parts:
         raise ValueError("parts must be a non-empty array")
     if not all(isinstance(part, dict) and part for part in parts):
         raise ValueError("parts entries must be non-empty objects")
+    for part in parts:
+        if part.get("kind") == "file":
+            validate_file_part(part)
     return parts
 
 

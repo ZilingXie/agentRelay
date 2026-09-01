@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import hmac
 import os
@@ -7,7 +8,7 @@ import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from server.delivery_control import (
     DeliveryControl,
@@ -15,6 +16,17 @@ from server.delivery_control import (
     resolve_delivery_control_path,
 )
 from server.delivery_wakeup import DeliveryWakeClient
+from server.files_store import (
+    DEFAULT_BLOBS_DIR,
+    DEFAULT_FILES_DB_PATH,
+    FilesStore,
+    TaskStatusLookup,
+    file_orphan_hours_from_env,
+    file_retention_hours_from_env,
+    max_file_bytes_from_env,
+    sanitize_file_mime,
+    sanitize_file_name,
+)
 from server.store import ConflictError, Store, read_alias
 from server.store_v05 import V05Store
 from server.store_v06 import V06Store
@@ -56,6 +68,8 @@ from server.protocol_v05 import (
     validate_visibility_batch as validate_v05_visibility_batch,
 )
 from server.protocol_v06 import (
+    FILE_ID_PATTERN,
+    FILE_SHA256_PATTERN,
     PROTOCOL_V06,
     is_protocol_v06,
     reject_unknown as reject_unknown_v06,
@@ -94,6 +108,7 @@ from server.protocol_registry import (
 DEFAULT_DB_PATH = "./data/agentrelay.sqlite3"
 DEFAULT_V05_DB_PATH = "./data/agentrelay-v05.sqlite3"
 DEFAULT_V06_DB_PATH = "./data/agentrelay-v06.sqlite3"
+FILE_UPLOAD_CHUNK_BYTES = 64 * 1024
 DASHBOARD_DIR = Path(__file__).resolve().parents[1] / "dashboard"
 SCHEMA_DIR = Path(__file__).resolve().parents[1] / "schemas"
 DOCS_DIR = Path(__file__).resolve().parents[1] / "docs"
@@ -104,6 +119,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
     store: Store
     v05_store: V05Store | None = None
     v06_store: V06Store | None = None
+    files_store: FilesStore | None = None
     mutation_mode: str = "legacy"
     v05_drain_enabled: bool = False
     auth_identities: dict[str, dict[str, str]] = {}
@@ -348,6 +364,12 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         auth = self.require_auth()
         if auth is None:
             return
+        if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/files", path):
+            self.handle_list_task_files(auth, match.group(1))
+            return
+        if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/files/([^/]+)", path):
+            self.handle_download_task_file(auth, match.group(1), match.group(2))
+            return
         if match := re.fullmatch(r"/agentrelay/legacy/tasks/([^/]+)", path):
             task = self.store.get_task(match.group(1))
             if not task:
@@ -570,6 +592,11 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                             else {"totals": {}, "agents": []}
                         ),
                         "protocol_drain": self.protocol_drain_summary(),
+                        "files": (
+                            self.files_store.admin_summary()
+                            if self.files_store is not None
+                            else None
+                        ),
                     }
                 )
                 return
@@ -663,6 +690,10 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         query = query_params(self.path)
         auth = self.require_auth()
         if auth is None:
+            return
+        if match := re.fullmatch(r"/agentrelay/tasks/([^/]+)/files", path):
+            # Raw-body upload; must not go through read_json.
+            self.handle_upload_task_file(auth, match.group(1))
             return
         payload = self.read_json()
         self.protocol_v03_response = is_protocol_v03(payload)
@@ -815,6 +846,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 ensure_protocol_compatible(payload)
             if is_protocol_v05(payload) or is_protocol_v06(payload):
                 self.validate_current(validate_v05_task_create, validate_v06_task_create, payload)
+                self.reject_initial_file_parts(payload.get("message"))
                 requester_agent_id = payload.get("requester_agent_id")
                 if not self.require_agent(auth, requester_agent_id):
                     return
@@ -856,6 +888,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                     store, validate_v05_message_submit, validate_v06_message_submit, payload
                 ):
                     return
+                if isinstance(store, V06Store):
+                    self.enforce_file_parts(match.group(1), actor_agent_id, payload.get("parts"))
                 detail = store.submit_message(match.group(1), payload)
                 if not detail:
                     self.respond_error(404, "task not found", code="task_not_found")
@@ -1032,6 +1066,7 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                     "target_agent_id": source_task["target_agent_id"],
                 }
                 self.validate_current(validate_v05_task_create, validate_v06_task_create, payload)
+                self.reject_initial_file_parts(payload.get("message"))
                 if not self.require_agent(auth, source_task["requester_agent_id"]):
                     return
                 self.respond_json(
@@ -1315,6 +1350,252 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             )
             return False
         return True
+
+    def require_v06_file_task(
+        self, auth: dict[str, str], task_id: str
+    ) -> dict[str, Any] | None:
+        """Resolve a Task for file access: files ride the v0.6 lane only."""
+        if self.files_store is None or self.v06_store is None:
+            self.respond_error(
+                503,
+                "file storage is not configured for this relay",
+                error_type="service_unavailable",
+                code="FILES_STORAGE_UNAVAILABLE",
+            )
+            return None
+        detail = self.v06_store.get_task_detail(task_id)
+        if not detail:
+            self.respond_error(404, "task not found", code="task_not_found")
+            return None
+        if not self.require_task_participant(auth, detail["task"]):
+            return None
+        return detail["task"]
+
+    @staticmethod
+    def public_file_record(record: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "file_id": record["file_id"],
+            "task_id": record["task_id"],
+            "uploader_agent_id": record["uploader_agent_id"],
+            "name": record["name"],
+            "mime_type": record["mime_type"],
+            "size_bytes": int(record["size_bytes"]),
+            "sha256": record["sha256"],
+            "referenced_at": record["referenced_at"],
+            "created_at": int(record["created_at"]),
+        }
+
+    def handle_upload_task_file(self, auth: dict[str, str], task_id: str) -> None:
+        task = self.require_v06_file_task(auth, task_id)
+        if task is None:
+            return
+        if task["status"] != "open":
+            self.respond_error(
+                409,
+                "files can only be uploaded while the task is open",
+                error_type="conflict",
+                code="TASK_NOT_OPEN",
+            )
+            return
+        if self.headers.get("Transfer-Encoding", "").strip().lower() == "chunked":
+            self.respond_error(
+                411,
+                "file uploads require an explicit Content-Length",
+                code="LENGTH_REQUIRED",
+            )
+            return
+        try:
+            content_length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            content_length = -1
+        if content_length < 0:
+            self.respond_error(
+                411,
+                "file uploads require an explicit Content-Length",
+                code="LENGTH_REQUIRED",
+            )
+            return
+        if content_length == 0:
+            self.respond_error(
+                422,
+                "empty file uploads are rejected",
+                code="EMPTY_FILE_REJECTED",
+            )
+            return
+        if content_length > self.files_store.max_file_bytes:
+            self.close_connection = True
+            self.respond_error(
+                413,
+                f"file exceeds the relay limit of {self.files_store.max_file_bytes} bytes",
+                code="FILE_TOO_LARGE",
+                hint="Split the payload or raise AGENTRELAY_MAX_FILE_BYTES on the relay server.",
+            )
+            return
+        declared_sha = self.headers.get("X-AgentRelay-File-Sha256", "").strip().lower()
+        if declared_sha and not FILE_SHA256_PATTERN.fullmatch(declared_sha):
+            raise ValueError("X-AgentRelay-File-Sha256 must match ^[a-f0-9]{64}$")
+        raw_name = self.headers.get("X-AgentRelay-File-Name", "").strip()
+        try:
+            decoded_name = unquote(raw_name, encoding="utf-8", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise ValueError("X-AgentRelay-File-Name must be UTF-8 percent-encoded") from exc
+        name = sanitize_file_name(decoded_name)
+        if not name:
+            raise ValueError("X-AgentRelay-File-Name is required for file uploads")
+        mime_type = sanitize_file_mime(
+            self.headers.get("Content-Type", "").split(";", 1)[0].strip()
+        )
+        temp_path = self.files_store.new_temp_path()
+        digest = hashlib.sha256()
+        size_bytes = 0
+        overflowed = False
+        incomplete = False
+        with temp_path.open("wb") as handle:
+            remaining = content_length
+            while remaining > 0:
+                chunk = self.rfile.read(min(FILE_UPLOAD_CHUNK_BYTES, remaining))
+                if not chunk:
+                    incomplete = True
+                    break
+                remaining -= len(chunk)
+                size_bytes += len(chunk)
+                if size_bytes > self.files_store.max_file_bytes:
+                    overflowed = True
+                    break
+                digest.update(chunk)
+                handle.write(chunk)
+        if incomplete or overflowed:
+            self.close_connection = True
+            temp_path.unlink(missing_ok=True)
+            if incomplete:
+                self.respond_error(
+                    400,
+                    "request body ended before Content-Length bytes arrived",
+                    code="INCOMPLETE_UPLOAD",
+                )
+            else:
+                self.respond_error(
+                    413,
+                    f"file exceeds the relay limit of {self.files_store.max_file_bytes} bytes",
+                    code="FILE_TOO_LARGE",
+                )
+            return
+        sha256 = digest.hexdigest()
+        if declared_sha and declared_sha != sha256:
+            temp_path.unlink(missing_ok=True)
+            self.respond_error(
+                422,
+                "uploaded bytes do not match X-AgentRelay-File-Sha256",
+                code="FILE_SHA256_MISMATCH",
+            )
+            return
+        record, deduplicated = self.files_store.create_file(
+            task_id=task_id,
+            uploader_agent_id=auth.get("agent_id") or "",
+            name=name,
+            mime_type=mime_type,
+            size_bytes=size_bytes,
+            sha256=sha256,
+            temp_path=temp_path,
+        )
+        self.respond_json(
+            {"file": self.public_file_record(record), "deduplicated": deduplicated},
+            status=201,
+        )
+
+    def handle_list_task_files(self, auth: dict[str, str], task_id: str) -> None:
+        if self.require_v06_file_task(auth, task_id) is None:
+            return
+        records = self.files_store.list_task_files(task_id)
+        self.respond_json({"files": [self.public_file_record(r) for r in records]})
+
+    def handle_download_task_file(
+        self, auth: dict[str, str], task_id: str, file_id: str
+    ) -> None:
+        if self.require_v06_file_task(auth, task_id) is None:
+            return
+        if not FILE_ID_PATTERN.fullmatch(file_id):
+            self.respond_error(404, "file not found", code="file_not_found")
+            return
+        record = self.files_store.get_file(task_id, file_id)
+        if record is None:
+            self.respond_error(404, "file not found", code="file_not_found")
+            return
+        content_path = self.files_store.blobs_dir / str(record["content_path"])
+        if not content_path.is_file():
+            self.respond_error(404, "file content missing", code="file_not_found")
+            return
+        self.respond_file(
+            content_path,
+            mime_type=str(record["mime_type"]),
+            sha256=str(record["sha256"]),
+            name=str(record["name"]),
+        )
+
+    def respond_file(self, path: Path, *, mime_type: str, sha256: str, name: str) -> None:
+        size = path.stat().st_size
+        encoded_name = quote(name, safe="")
+        ascii_name = name if name.isascii() else "file"
+        ascii_name = ascii_name.replace("\\", "_").replace('"', "'")
+        self.send_response(200)
+        self.send_header("Content-Type", mime_type or "application/octet-stream")
+        self.send_header("Content-Length", str(size))
+        self.send_header("X-AgentRelay-File-Sha256", sha256)
+        self.send_header(
+            "Content-Disposition",
+            f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{encoded_name}',
+        )
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        with path.open("rb") as handle:
+            while True:
+                chunk = handle.read(FILE_UPLOAD_CHUNK_BYTES)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+
+    def enforce_file_parts(
+        self, task_id: str, actor_agent_id: Any, parts: Any
+    ) -> None:
+        """Validate that file parts reference an upload owned by this Task and
+        actor, then mark the blobs as referenced so orphan GC keeps them."""
+        if not isinstance(parts, list):
+            return
+        file_parts = [
+            part for part in parts if isinstance(part, dict) and part.get("kind") == "file"
+        ]
+        if not file_parts:
+            return
+        if self.files_store is None:
+            raise ValueError("file parts require configured file storage")
+        for part in file_parts:
+            record = self.files_store.get_file(task_id, str(part.get("file_id")))
+            if record is None:
+                raise ValueError(f"file part references an unknown file: {part.get('file_id')}")
+            if str(record["uploader_agent_id"]) != str(actor_agent_id or ""):
+                raise ValueError(
+                    f"file part uploader must match the message actor: {part.get('file_id')}"
+                )
+            if int(record["size_bytes"]) != part.get("size_bytes") or str(record["sha256"]) != part.get("sha256"):
+                raise ValueError(
+                    f"file part metadata does not match the uploaded file: {part.get('file_id')}"
+                )
+        self.files_store.mark_referenced([str(part["file_id"]) for part in file_parts])
+
+    @staticmethod
+    def reject_initial_file_parts(message: Any) -> None:
+        """File uploads are Task-scoped, so a Task's initial message (create or
+        follow-up) cannot reference files yet; reply with the file part instead."""
+        if not isinstance(message, dict):
+            return
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            return
+        if any(isinstance(part, dict) and part.get("kind") == "file" for part in parts):
+            raise ValueError(
+                "file parts are not supported in a Task's initial message; "
+                "create the Task first, then reply with the file part"
+            )
 
     def require_current_store(self) -> V05Store | V06Store | None:
         store = self.v06_store if self.mutation_mode == "v06" else self.v05_store
@@ -2223,9 +2504,26 @@ def create_server() -> ThreadingHTTPServer:
     )
     if v05_drain_enabled:
         validate_protocol_drain_stores(v05_store, v06_store)
+    files_store = (
+        FilesStore(
+            os.environ.get("AGENTRELAY_FILES_DB_PATH", DEFAULT_FILES_DB_PATH).strip()
+            or DEFAULT_FILES_DB_PATH,
+            blobs_dir=os.environ.get("AGENTRELAY_BLOBS_DIR", DEFAULT_BLOBS_DIR).strip()
+            or DEFAULT_BLOBS_DIR,
+            max_file_bytes=max_file_bytes_from_env(),
+            retention_hours=file_retention_hours_from_env(),
+            orphan_hours=file_orphan_hours_from_env(),
+            task_status_lookup=(
+                make_v06_task_status_lookup(v06_store) if v06_store is not None else None
+            ),
+        )
+        if mutation_mode == "v06" and v06_store is not None
+        else None
+    )
     AgentRelayHandler.store = store
     AgentRelayHandler.v05_store = v05_store
     AgentRelayHandler.v06_store = v06_store
+    AgentRelayHandler.files_store = files_store
     AgentRelayHandler.mutation_mode = mutation_mode
     AgentRelayHandler.v05_drain_enabled = v05_drain_enabled
     AgentRelayHandler.delivery_control = delivery_control
@@ -2263,6 +2561,31 @@ def validate_protocol_drain_stores(
         raise ValueError(
             "Protocol drain stores contain overlapping Task IDs; split or archive migrated duplicates before enabling drain"
         )
+
+
+def make_v06_task_status_lookup(v06_store: V06Store) -> TaskStatusLookup:
+    """Files GC helper: map task ids to status plus the last observed update time
+    (an upper bound on the terminal transition, so retention never fires early)."""
+
+    def lookup(task_ids: set[str]) -> dict[str, dict[str, Any]]:
+        ids = sorted(task_ids)
+        if not ids:
+            return {}
+        placeholders = ", ".join("?" for _ in ids)
+        with v06_store.connect() as conn:
+            rows = conn.execute(
+                f"SELECT task_id, status, updated_at FROM tasks WHERE task_id IN ({placeholders})",
+                ids,
+            ).fetchall()
+        return {
+            str(row["task_id"]): {
+                "status": str(row["status"]),
+                "terminal_at": int(row["updated_at"]),
+            }
+            for row in rows
+        }
+
+    return lookup
 
 
 def load_auth_identities() -> tuple[bool, dict[str, dict[str, str]]]:
