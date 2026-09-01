@@ -16,6 +16,8 @@ data/agentrelay.sqlite3
 data/agentrelay-v05.sqlite3
 data/agentrelay-v06.sqlite3
 data/agentrelay-delivery-control.sqlite3
+data/agentrelay-files.sqlite3
+data/blobs/
 data/agentrelay-auth.json
 ```
 
@@ -25,6 +27,15 @@ The Compose template defaults `AGENTRELAY_MUTATION_MODE=legacy`; rebuilding the
 image does not switch collaboration writes. Protocol v0.5 and v0.6 use separate
 lane databases. Both processes share `agentrelay-delivery-control.sqlite3` for
 persisted per-Agent delivery limits and cross-lane claim serialization.
+
+In `v06` mode both processes also share the file-attachment store
+(`data/agentrelay-files.sqlite3` plus blob bytes under `data/blobs/`).
+Uploads are capped by `AGENTRELAY_MAX_FILE_BYTES` (default 64 MiB; nginx
+`client_max_body_size` stays 1 MiB above it), unreferenced uploads are swept
+after `AGENTRELAY_FILE_ORPHAN_HOURS` (default 24), and files of Tasks that
+stayed terminal are swept after `AGENTRELAY_FILE_RETENTION_HOURS` (default 72).
+Backups copy the whole `data/` directory, so `data/blobs/` is covered
+automatically.
 
 Valid mutation modes are:
 

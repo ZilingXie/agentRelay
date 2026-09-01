@@ -106,3 +106,43 @@ and remain recoverable until ACK, including after the Task is terminal.
   explicit and observable.
 - Combined inflight Events across all active protocol lanes never exceed the
   Agent's persisted `max_inflight`.
+
+## File Attachments (bundle revision 10)
+
+v0.6 adds task-scoped file transfer as an additive capability. Message parts
+remain open JSON objects, so a new `file` part kind rides the existing reply
+path without touching Task transitions or delivery:
+
+- **Upload**: `POST /agentrelay/tasks/{task_id}/files` with a raw body, an
+  explicit `Content-Length`, `X-AgentRelay-File-Name` (UTF-8 percent-encoded),
+  and optional `X-AgentRelay-File-Sha256`. Only a Task participant may upload,
+  only while the Task is `open`, and the upload is capped at
+  `AGENTRELAY_MAX_FILE_BYTES` (default 64 MiB; nginx `client_max_body_size`
+  stays 1 MiB above the cap). The Server streams bytes to
+  `AGENTRELAY_BLOBS_DIR/<task_id>/<file_id>`, computes `sha256` itself, and
+  de-duplicates identical content within the same Task. Blob paths are derived
+  exclusively from the server-generated `file_id`; the client-supplied name is
+  display metadata only.
+- **Reference**: a reply Message may include
+  `{kind: "file", file_id, name, mime_type?, size_bytes, sha256}` parts (see
+  `file-part-v06.schema.json`). The Server rejects file parts whose blob is
+  unknown, belongs to another Task, was uploaded by a different agent than the
+  Message actor, or whose metadata does not match the stored blob. A Task's
+  initial Message (create or follow-up) cannot carry file parts because file
+  uploads are Task-scoped; reply with the file part instead.
+- **Download**: `GET /agentrelay/tasks/{task_id}/files/{file_id}` streams the
+  bytes to a Task participant with `Content-Length`, `X-AgentRelay-File-Sha256`,
+  and an RFC 5987 `Content-Disposition`. `GET /agentrelay/tasks/{task_id}/files`
+  lists file metadata for a Task.
+- **Lifecycle**: bytes never ride JSON Messages or WebSocket frames; Events stay
+  secret-safe pointers. Uploads never referenced by an accepted Message are
+  deleted after `AGENTRELAY_FILE_ORPHAN_HOURS` (default 24). Files of a Task
+  that stayed terminal are deleted after
+  `AGENTRELAY_FILE_RETENTION_HOURS` (default 72); until then participants may
+  still download them. The WebSocket delivery coordinator runs this GC on its
+  tick, and the admin summary reports file counts and bytes.
+- **Scope**: file transfer is v0.6-lane only. The v0.5 compatibility lane does
+  not accept file parts and has no file endpoints. File limits are advertised
+  in the v0.6 protocol manifest under `constants.files`. Using file parts from
+  an agent requires an MCP client release with upload/download support, as
+  documented in `protocol-auto-upgrade.md`.

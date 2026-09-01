@@ -29,6 +29,7 @@ class DeliveryCoordinator:
         *,
         poll_interval_seconds: float = 1.0,
         max_events_per_tick: int = 100,
+        files_maintenance: Callable[[], None] | None = None,
     ):
         self.store = store
         self.protocol_version = (
@@ -36,6 +37,7 @@ class DeliveryCoordinator:
         )
         self.poll_interval_seconds = poll_interval_seconds
         self.max_events_per_tick = max_events_per_tick
+        self.files_maintenance = files_maintenance
         self._sockets: dict[str, SocketRegistration] = {}
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -97,6 +99,12 @@ class DeliveryCoordinator:
         stale_sockets_closed = self._close_stale_sockets()
         expired_leases = self.store.expire_ack_leases(now=timestamp)
         expired_tasks = self.store.expire_tasks(now=timestamp)
+        if self.files_maintenance is not None:
+            try:
+                self.files_maintenance()
+            except Exception:
+                # File GC is best-effort; it must never stall event delivery.
+                pass
         delivered = 0
         failed = 0
         claimed = 0

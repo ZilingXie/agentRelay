@@ -31,6 +31,9 @@ the compatibility default.
 - `task-detail-v06.schema.json`: full v0.6 Task plus ordered Messages.
 - `task-message-v06.schema.json`: next alternating v0.6 Message.
 - `task-followup-v06.schema.json`: v0.6 follow-up Task creation.
+- `file-part-v06.schema.json`: Message part referencing a task-scoped uploaded
+  file blob (`file_id`, `name`, `mime_type`, `size_bytes`, `sha256`); bytes
+  never ride the JSON Message.
 - `message-ack-v06.schema.json`: epoch-bound durable v0.6 Listener ACK.
 - `message-delivery-fail-v06.schema.json`: recoverable persistence NACK that parks delivery.
 - `event-ack-v06.schema.json`: v0.6 informational Event ACK.

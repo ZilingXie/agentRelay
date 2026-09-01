@@ -72,6 +72,11 @@ The reverse proxy maps:
 /agentrelay/api/* -> http://127.0.0.1:8787/agentrelay/*
 ```
 
+The snippet sets `client_max_body_size 65m` on the API location so v0.6 file
+uploads (`POST /agentrelay/api/tasks/{task_id}/files`, capped at
+`AGENTRELAY_MAX_FILE_BYTES`, default 64 MiB) pass through nginx. After changing
+the snippet, verify with `sudo nginx -t` and `sudo systemctl reload nginx`.
+
 ## WebSocket Notify Container
 
 The `agentrelay-ws` Compose service streams durable `agent_events` rows to

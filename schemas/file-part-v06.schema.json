@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/file-part-v06.schema.json",
+  "title": "AgentRelay Protocol v0.6 File Part",
+  "description": "Message part that references a task-scoped file uploaded via POST /tasks/{task_id}/files. Bytes never ride the JSON message; this part carries metadata plus the retrieval id only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "file_id", "name", "size_bytes", "sha256"],
+  "properties": {
+    "kind": {"const": "file"},
+    "file_id": {"type": "string", "pattern": "^file_[a-f0-9]{32}$"},
+    "name": {"type": "string", "minLength": 1, "maxLength": 255},
+    "mime_type": {"type": "string", "maxLength": 255},
+    "size_bytes": {"type": "integer", "minimum": 1},
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}
