@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from server.app import make_v06_task_status_lookup
+from server.delivery_coordinator import DeliveryCoordinator
 from server.files_store import FilesStore
 from server.protocol_v06 import PROTOCOL_V06
 from server.store_v06 import V06Store
@@ -27,6 +29,8 @@ OUTSIDER = "mallory-agent"
 PORT = 8809
 BASE = f"http://127.0.0.1:{PORT}/agentrelay/api"
 MAX_FILE_BYTES = 4096
+MAX_FILES_PER_MESSAGE = 2
+MAX_TOTAL_FILE_BYTES = 500
 HEADERS = {
     REQUESTER: {"Authorization": "Bearer requester-token"},
     TARGET: {"Authorization": "Bearer target-token"},
@@ -50,6 +54,8 @@ def main() -> None:
             run_flow(v06_db, files_db, blobs_dir)
         finally:
             stop_server(process)
+        test_legacy_files_db_migration(root)
+        test_gc_interval(v06_db)
     print("protocol v0.6 file attachment smoke test passed")
 
 
@@ -129,6 +135,17 @@ def run_flow(v06_db: Path, files_db: Path, blobs_dir: Path) -> None:
     assert duplicate["file"]["file_id"] == file_id
     assert duplicate["deduplicated"] is True
 
+    renamed = upload(task_id, REQUESTER, CONTENT, "report-copy.txt", "text/plain", CONTENT_SHA, 201)
+    assert renamed["file"]["file_id"] != file_id
+    target_copy = upload(task_id, TARGET, CONTENT, "logs/report.txt", "text/plain", CONTENT_SHA, 201)
+    assert target_copy["file"]["file_id"] not in {file_id, renamed["file"]["file_id"]}
+
+    # Upload ownership is private until a committed Message references the file.
+    assert download(task_id, REQUESTER, file_id, 200)["body"] == CONTENT
+    assert download(task_id, TARGET, file_id, 404)["code"] == "file_not_found"
+    target_visible = request("GET", f"/tasks/{task_id}/files", None, HEADERS[TARGET], 200)
+    assert [item["file_id"] for item in target_visible["files"]] == [target_copy["file"]["file_id"]]
+
     bad_sha = hashlib.sha256(b"other").hexdigest()
     mismatch = upload(task_id, REQUESTER, CONTENT, "x.txt", "text/plain", bad_sha, 422)
     assert mismatch["code"] == "FILE_SHA256_MISMATCH"
@@ -145,11 +162,47 @@ def run_flow(v06_db: Path, files_db: Path, blobs_dir: Path) -> None:
     file_part = {
         "kind": "file",
         "file_id": file_id,
-        "name": "report.txt",
+        "name": "logs/report.txt",
         "mime_type": "text/plain",
         "size_bytes": len(CONTENT),
         "sha256": CONTENT_SHA,
     }
+    mismatched_metadata = reply(
+        task_id,
+        REQUESTER,
+        "requester-file-metadata-mismatch",
+        [{**file_part, "name": "renamed-in-message.txt"}],
+        expected_status=400,
+    )
+    assert mismatched_metadata["code"] == "VALIDATION_ERROR"
+
+    too_many = reply(
+        task_id,
+        REQUESTER,
+        "requester-too-many-files",
+        [file_part, file_part, file_part],
+        expected_status=400,
+    )
+    assert too_many["code"] == "VALIDATION_ERROR"
+
+    too_large_together = reply(
+        task_id,
+        REQUESTER,
+        "requester-too-many-file-bytes",
+        [
+            file_part,
+            {
+                "kind": "file",
+                "file_id": renamed["file"]["file_id"],
+                "name": "report-copy.txt",
+                "mime_type": "text/plain",
+                "size_bytes": len(CONTENT),
+                "sha256": CONTENT_SHA,
+            },
+        ],
+        expected_status=400,
+    )
+    assert too_large_together["code"] == "VALIDATION_ERROR"
     sent = reply(
         task_id,
         REQUESTER,
@@ -159,8 +212,11 @@ def run_flow(v06_db: Path, files_db: Path, blobs_dir: Path) -> None:
     assert any(part.get("kind") == "file" for part in sent["messages"][-1]["parts"])
 
     listed = request("GET", f"/tasks/{task_id}/files", None, HEADERS[TARGET], 200)
-    assert [item["file_id"] for item in listed["files"]] == [file_id]
-    assert listed["files"][0]["referenced_at"] is not None
+    listed_ids = [item["file_id"] for item in listed["files"]]
+    assert set(listed_ids) == {file_id, target_copy["file"]["file_id"]}, listed_ids
+    listed_by_id = {item["file_id"]: item for item in listed["files"]}
+    assert listed_by_id[file_id]["referenced_at"] is not None
+    assert listed_by_id[target_copy["file"]["file_id"]]["referenced_at"] is None
 
     downloaded = download(task_id, TARGET, file_id, 200)
     assert downloaded["body"] == CONTENT
@@ -231,9 +287,16 @@ def run_flow(v06_db: Path, files_db: Path, blobs_dir: Path) -> None:
     target_upload_path = blobs_dir / task_id / target_upload["file"]["file_id"]
     assert orphan_path.is_file()
     counts = files_store.run_maintenance(now=NOW + 25 * 3600)
-    assert counts["deleted_orphan_files"] == 2
+    assert counts["deleted_orphan_files"] == 4
     assert not orphan_path.exists()
     assert not target_upload_path.exists()
+
+    untracked = blobs_dir / task_id / "file_untracked_crash_leftover"
+    untracked.write_bytes(b"leftover")
+    os.utime(untracked, (NOW, NOW))
+    counts = files_store.run_maintenance(now=NOW + 25 * 3600)
+    assert counts["deleted_untracked_blobs"] == 1
+    assert not untracked.exists()
 
     # Referenced files survive until their Task stayed terminal past retention.
     detail = task_detail(task_id)
@@ -259,6 +322,63 @@ def run_flow(v06_db: Path, files_db: Path, blobs_dir: Path) -> None:
 
     summary = request("GET", "/admin/api/summary", None, {"X-AgentRelay-Admin-Token": "admin-token"}, 200)
     assert summary["files"]["max_file_bytes"] == MAX_FILE_BYTES
+    assert summary["files"]["max_files_per_message"] == MAX_FILES_PER_MESSAGE
+    assert summary["files"]["max_total_file_bytes"] == MAX_TOTAL_FILE_BYTES
+
+    oversized_json = raw_request(
+        "POST",
+        "/protocols/validate",
+        b'{"padding":"' + b"x" * (1024 * 1024) + b'"}',
+        {**HEADERS[REQUESTER], "Content-Type": "application/json"},
+        413,
+    )
+    assert oversized_json["code"] == "REQUEST_BODY_TOO_LARGE"
+
+
+def test_legacy_files_db_migration(root: Path) -> None:
+    db_path = root / "legacy-files.sqlite3"
+    blobs_dir = root / "legacy-blobs"
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE files (
+                file_id TEXT PRIMARY KEY, task_id TEXT NOT NULL,
+                uploader_agent_id TEXT NOT NULL, name TEXT NOT NULL,
+                mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL,
+                sha256 TEXT NOT NULL, content_path TEXT NOT NULL,
+                referenced_at INTEGER, created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL, UNIQUE (task_id, sha256)
+            );
+            INSERT INTO files VALUES (
+                'file_0123456789abcdef0123456789abcdef', 'task_legacy',
+                'agent-a', 'legacy.txt', 'text/plain', 1,
+                'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'task_legacy/file_0123456789abcdef0123456789abcdef', NULL, 1, 1
+            );
+            """
+        )
+    store = FilesStore(str(db_path), blobs_dir=str(blobs_dir))
+    with store.connect() as conn:
+        sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='files'"
+        ).fetchone()[0]
+        assert "uploader_agent_id, sha256, name, mime_type" in sql
+        assert conn.execute("SELECT COUNT(*) FROM files").fetchone()[0] == 1
+
+
+def test_gc_interval(v06_db: Path) -> None:
+    calls: list[int] = []
+    coordinator = DeliveryCoordinator(
+        V06Store(str(v06_db)),
+        files_maintenance=lambda: calls.append(1),
+        files_maintenance_interval_seconds=3600,
+    )
+    coordinator.run_once(now=10000)
+    coordinator.run_once(now=10001)
+    coordinator.run_once(now=13599)
+    assert len(calls) == 1
+    coordinator.run_once(now=13600)
+    assert len(calls) == 2
 
 
 def task_detail(task_id: str) -> dict:
@@ -458,6 +578,8 @@ def start_server(
         "AGENTRELAY_FILES_DB_PATH": str(files_db),
         "AGENTRELAY_BLOBS_DIR": str(blobs_dir),
         "AGENTRELAY_MAX_FILE_BYTES": str(MAX_FILE_BYTES),
+        "AGENTRELAY_MAX_FILES_PER_MESSAGE": str(MAX_FILES_PER_MESSAGE),
+        "AGENTRELAY_MAX_TOTAL_FILE_BYTES": str(MAX_TOTAL_FILE_BYTES),
         "AGENTRELAY_MUTATION_MODE": "v06",
         "AGENTRELAY_ADMIN_TOKEN": "admin-token",
         "AGENTRELAY_TOKENS": (

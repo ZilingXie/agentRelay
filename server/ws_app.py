@@ -34,8 +34,11 @@ from server.files_store import (
     DEFAULT_FILES_DB_PATH,
     FilesStore,
     file_orphan_hours_from_env,
+    file_gc_interval_seconds_from_env,
     file_retention_hours_from_env,
+    max_files_per_message_from_env,
     max_file_bytes_from_env,
+    max_total_file_bytes_from_env,
 )
 from server.store import ConflictError, Store
 from server.store_v05 import V05Store
@@ -431,6 +434,8 @@ def create_server() -> ThreadingHTTPServer:
             blobs_dir=os.environ.get("AGENTRELAY_BLOBS_DIR", DEFAULT_BLOBS_DIR).strip()
             or DEFAULT_BLOBS_DIR,
             max_file_bytes=max_file_bytes_from_env(),
+            max_files_per_message=max_files_per_message_from_env(),
+            max_total_file_bytes=max_total_file_bytes_from_env(),
             retention_hours=file_retention_hours_from_env(),
             orphan_hours=file_orphan_hours_from_env(),
             task_status_lookup=(
@@ -454,6 +459,7 @@ def create_server() -> ThreadingHTTPServer:
                 if files_store is not None and protocol_version == PROTOCOL_V06
                 else None
             ),
+            files_maintenance_interval_seconds=file_gc_interval_seconds_from_env(),
         )
         coordinator.start()
         coordinators[protocol_version] = coordinator

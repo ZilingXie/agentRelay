@@ -23,7 +23,9 @@ from server.files_store import (
     TaskStatusLookup,
     file_orphan_hours_from_env,
     file_retention_hours_from_env,
+    max_files_per_message_from_env,
     max_file_bytes_from_env,
+    max_total_file_bytes_from_env,
     sanitize_file_mime,
     sanitize_file_name,
 )
@@ -109,10 +111,15 @@ DEFAULT_DB_PATH = "./data/agentrelay.sqlite3"
 DEFAULT_V05_DB_PATH = "./data/agentrelay-v05.sqlite3"
 DEFAULT_V06_DB_PATH = "./data/agentrelay-v06.sqlite3"
 FILE_UPLOAD_CHUNK_BYTES = 64 * 1024
+MAX_JSON_BODY_BYTES = 1024 * 1024
 DASHBOARD_DIR = Path(__file__).resolve().parents[1] / "dashboard"
 SCHEMA_DIR = Path(__file__).resolve().parents[1] / "schemas"
 DOCS_DIR = Path(__file__).resolve().parents[1] / "docs"
 EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples"
+
+
+class RequestBodyTooLarge(ValueError):
+    pass
 
 
 class AgentRelayHandler(BaseHTTPRequestHandler):
@@ -277,6 +284,9 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         self.protocol_v03_response = False
         try:
             self.route_post()
+        except RequestBodyTooLarge as exc:
+            self.close_connection = True
+            self.respond_error(413, str(exc), error_type="validation", code="REQUEST_BODY_TOO_LARGE")
         except ConflictError as exc:
             self.respond_error(
                 409, str(exc), error_type="conflict", code=exc.code,
@@ -888,12 +898,17 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                     store, validate_v05_message_submit, validate_v06_message_submit, payload
                 ):
                     return
+                referenced_file_ids: list[str] = []
                 if isinstance(store, V06Store):
-                    self.enforce_file_parts(match.group(1), actor_agent_id, payload.get("parts"))
+                    referenced_file_ids = self.enforce_file_parts(
+                        match.group(1), actor_agent_id, payload.get("parts")
+                    )
                 detail = store.submit_message(match.group(1), payload)
                 if not detail:
                     self.respond_error(404, "task not found", code="task_not_found")
                     return
+                if referenced_file_ids and self.files_store is not None:
+                    self.files_store.mark_referenced(referenced_file_ids)
                 self.record_client_runtime_audit(store, match.group(1), actor_agent_id)
                 self.respond_json(detail, status=201)
                 return
@@ -1369,7 +1384,27 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return None
         if not self.require_task_participant(auth, detail["task"]):
             return None
-        return detail["task"]
+        return detail
+
+    @staticmethod
+    def referenced_file_ids(detail: dict[str, Any]) -> set[str]:
+        return {
+            str(part["file_id"])
+            for message in detail.get("messages", [])
+            for part in message.get("parts", [])
+            if isinstance(part, dict)
+            and part.get("kind") == "file"
+            and isinstance(part.get("file_id"), str)
+        }
+
+    def can_access_file(
+        self, auth: dict[str, str], detail: dict[str, Any], record: dict[str, Any]
+    ) -> bool:
+        agent_id = auth.get("agent_id") or ""
+        return (
+            str(record["uploader_agent_id"]) == agent_id
+            or str(record["file_id"]) in self.referenced_file_ids(detail)
+        )
 
     @staticmethod
     def public_file_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -1386,9 +1421,10 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         }
 
     def handle_upload_task_file(self, auth: dict[str, str], task_id: str) -> None:
-        task = self.require_v06_file_task(auth, task_id)
-        if task is None:
+        detail = self.require_v06_file_task(auth, task_id)
+        if detail is None:
             return
+        task = detail["task"]
         if task["status"] != "open":
             self.respond_error(
                 409,
@@ -1504,21 +1540,24 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         )
 
     def handle_list_task_files(self, auth: dict[str, str], task_id: str) -> None:
-        if self.require_v06_file_task(auth, task_id) is None:
+        detail = self.require_v06_file_task(auth, task_id)
+        if detail is None:
             return
         records = self.files_store.list_task_files(task_id)
+        records = [record for record in records if self.can_access_file(auth, detail, record)]
         self.respond_json({"files": [self.public_file_record(r) for r in records]})
 
     def handle_download_task_file(
         self, auth: dict[str, str], task_id: str, file_id: str
     ) -> None:
-        if self.require_v06_file_task(auth, task_id) is None:
+        detail = self.require_v06_file_task(auth, task_id)
+        if detail is None:
             return
         if not FILE_ID_PATTERN.fullmatch(file_id):
             self.respond_error(404, "file not found", code="file_not_found")
             return
         record = self.files_store.get_file(task_id, file_id)
-        if record is None:
+        if record is None or not self.can_access_file(auth, detail, record):
             self.respond_error(404, "file not found", code="file_not_found")
             return
         content_path = self.files_store.blobs_dir / str(record["content_path"])
@@ -1556,18 +1595,26 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
 
     def enforce_file_parts(
         self, task_id: str, actor_agent_id: Any, parts: Any
-    ) -> None:
-        """Validate that file parts reference an upload owned by this Task and
-        actor, then mark the blobs as referenced so orphan GC keeps them."""
+    ) -> list[str]:
+        """Validate that file parts reference immutable uploads owned by the
+        Message actor. The caller marks them referenced only after Message commit."""
         if not isinstance(parts, list):
-            return
+            return []
         file_parts = [
             part for part in parts if isinstance(part, dict) and part.get("kind") == "file"
         ]
         if not file_parts:
-            return
+            return []
         if self.files_store is None:
             raise ValueError("file parts require configured file storage")
+        if len(file_parts) > self.files_store.max_files_per_message:
+            raise ValueError(
+                f"a message can reference at most {self.files_store.max_files_per_message} files"
+            )
+        file_ids = [str(part.get("file_id")) for part in file_parts]
+        if len(file_ids) != len(set(file_ids)):
+            raise ValueError("a message cannot reference the same file more than once")
+        total_bytes = 0
         for part in file_parts:
             record = self.files_store.get_file(task_id, str(part.get("file_id")))
             if record is None:
@@ -1576,11 +1623,23 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 raise ValueError(
                     f"file part uploader must match the message actor: {part.get('file_id')}"
                 )
-            if int(record["size_bytes"]) != part.get("size_bytes") or str(record["sha256"]) != part.get("sha256"):
+            expected_mime = str(part.get("mime_type") or "application/octet-stream")
+            if (
+                int(record["size_bytes"]) != part.get("size_bytes")
+                or str(record["sha256"]) != part.get("sha256")
+                or str(record["name"]) != part.get("name")
+                or str(record["mime_type"]) != expected_mime
+            ):
                 raise ValueError(
                     f"file part metadata does not match the uploaded file: {part.get('file_id')}"
                 )
-        self.files_store.mark_referenced([str(part["file_id"]) for part in file_parts])
+            total_bytes += int(record["size_bytes"])
+        if total_bytes > self.files_store.max_total_file_bytes:
+            raise ValueError(
+                "message file bytes exceed the relay limit of "
+                f"{self.files_store.max_total_file_bytes} bytes"
+            )
+        return file_ids
 
     @staticmethod
     def reject_initial_file_parts(message: Any) -> None:
@@ -1666,7 +1725,16 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         )
 
     def read_json(self) -> dict[str, Any]:
-        length = int(self.headers.get("Content-Length", "0"))
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError as exc:
+            raise ValueError("Content-Length must be an integer") from exc
+        if length < 0:
+            raise ValueError("Content-Length cannot be negative")
+        if length > MAX_JSON_BODY_BYTES:
+            raise RequestBodyTooLarge(
+                f"JSON request body exceeds the {MAX_JSON_BODY_BYTES} byte limit"
+            )
         if length == 0:
             return {}
         raw = self.rfile.read(length)
@@ -2511,6 +2579,8 @@ def create_server() -> ThreadingHTTPServer:
             blobs_dir=os.environ.get("AGENTRELAY_BLOBS_DIR", DEFAULT_BLOBS_DIR).strip()
             or DEFAULT_BLOBS_DIR,
             max_file_bytes=max_file_bytes_from_env(),
+            max_files_per_message=max_files_per_message_from_env(),
+            max_total_file_bytes=max_total_file_bytes_from_env(),
             retention_hours=file_retention_hours_from_env(),
             orphan_hours=file_orphan_hours_from_env(),
             task_status_lookup=(
