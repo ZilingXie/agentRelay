@@ -18,7 +18,9 @@ from server.delivery_control import DEFAULT_MAX_INFLIGHT, MAX_CONFIGURED_INFLIGH
 from server.files_store import (
     file_orphan_hours_from_env as files_orphan_hours_from_env,
     file_retention_hours_from_env as files_retention_hours_from_env,
+    max_files_per_message_from_env as files_max_files_per_message_from_env,
     max_file_bytes_from_env as files_max_file_bytes_from_env,
+    max_total_file_bytes_from_env as files_max_total_file_bytes_from_env,
 )
 
 
@@ -46,7 +48,7 @@ BUNDLE_REVISION_V05_COMPATIBLE = 3
 BUNDLE_REVISION_V05 = 5
 BUNDLE_PUBLISHED_AT_V05 = "2026-07-20T00:00:00Z"
 BUNDLE_EXPIRES_AT_V05 = "2027-07-19T00:00:00Z"
-BUNDLE_REVISION_V06 = 10
+BUNDLE_REVISION_V06 = 11
 BUNDLE_PUBLISHED_AT_V06 = "2026-09-01T00:00:00Z"
 BUNDLE_EXPIRES_AT_V06 = "2027-09-01T00:00:00Z"
 
@@ -732,6 +734,8 @@ def protocol_manifest_v06(
             "upload_path": "/tasks/{task_id}/files",
             "download_path": "/tasks/{task_id}/files/{file_id}",
             "max_file_bytes": files_max_file_bytes_from_env(),
+            "max_files_per_message": files_max_files_per_message_from_env(),
+            "max_total_file_bytes_per_message": files_max_total_file_bytes_from_env(),
             "digest": "sha256",
             "retention_hours_after_task_terminal": files_retention_hours_from_env(),
             "orphan_hours_when_unreferenced": files_orphan_hours_from_env(),

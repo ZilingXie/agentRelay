@@ -30,6 +30,7 @@ class DeliveryCoordinator:
         poll_interval_seconds: float = 1.0,
         max_events_per_tick: int = 100,
         files_maintenance: Callable[[], None] | None = None,
+        files_maintenance_interval_seconds: int = 3600,
     ):
         self.store = store
         self.protocol_version = (
@@ -38,6 +39,8 @@ class DeliveryCoordinator:
         self.poll_interval_seconds = poll_interval_seconds
         self.max_events_per_tick = max_events_per_tick
         self.files_maintenance = files_maintenance
+        self.files_maintenance_interval_seconds = files_maintenance_interval_seconds
+        self._last_files_maintenance_at: int | None = None
         self._sockets: dict[str, SocketRegistration] = {}
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -99,7 +102,16 @@ class DeliveryCoordinator:
         stale_sockets_closed = self._close_stale_sockets()
         expired_leases = self.store.expire_ack_leases(now=timestamp)
         expired_tasks = self.store.expire_tasks(now=timestamp)
-        if self.files_maintenance is not None:
+        should_maintain_files = (
+            self.files_maintenance is not None
+            and (
+                self._last_files_maintenance_at is None
+                or timestamp - self._last_files_maintenance_at
+                >= self.files_maintenance_interval_seconds
+            )
+        )
+        if should_maintain_files:
+            self._last_files_maintenance_at = timestamp
             try:
                 self.files_maintenance()
             except Exception:
