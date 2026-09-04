@@ -16,6 +16,39 @@ for (const fileName of readdirSync(schemaDir)) {
   ajv.addSchema(schema);
 }
 
+validate("coordinator-grant-issue-v06.schema.json", {
+  protocol_version: "agent-collab-v0.6",
+  issuance_key: "inv-1-round-1-authority-1",
+  coordinator_agent_id: "project-hermes",
+  investigation_id: "inv-1",
+  round_id: "round-1",
+  approved_plan_digest: `sha256:${"a".repeat(64)}`,
+  authority_ref: "authority-1",
+  target_agent_ids: ["zac-agent"],
+  task_count: 1,
+  task_expires_at: 1784480000,
+  grant_expires_at: 1784480900,
+  operations: ["create", "read", "batch", "complete-own"]
+});
+rejects("coordinator-grant-issue-v06.schema.json", {
+  protocol_version: "agent-collab-v0.6",
+  issuance_key: "inv-1-round-1-authority-1",
+  coordinator_agent_id: "project-hermes",
+  investigation_id: "inv-1",
+  round_id: "round-1",
+  approved_plan_digest: `sha256:${"a".repeat(64)}`,
+  authority_ref: "authority-1",
+  target_agent_ids: ["zac-agent"],
+  task_count: 1,
+  task_expires_at: 1784480000,
+  grant_expires_at: 1784480900,
+  operations: ["create", "read", "batch"]
+});
+validate("coordinator-grant-task-resolve-v06.schema.json", {
+  idempotency_key: "inv-1-round-1-work-1",
+  work_item_id: "work-1"
+});
+
 validate("task-create-v04.schema.json", {
   protocol_version: "agent-collab-v0.4",
   idempotency_key: "schema-v04-create",

@@ -10,14 +10,18 @@ Task-scoped file attachments shipped 2026-09-01 through Server [PR #90](https://
 
 File-transfer hardening for signed bundle revision 11 is implemented by Server [PR #92](https://github.com/ZilingXie/agentRelay/pull/92): upload body allowance is isolated to the file route while JSON remains capped at 1 MiB; deduplication includes uploader plus immutable name/MIME; recipients cannot list/download unreferenced uploads; Messages are capped at 8 files and 64 MiB aggregate; old file databases migrate under an SQLite write lock; stale crash blobs are reclaimed; and GC is throttled to an hourly configurable interval. The paired MCP client 0.5.1 [PR #92](https://github.com/ZilingXie/agent-relay-mcp/pull/92) uses streaming hash/upload/download, sequential bounded uploads, collision-free atomic download paths, exact upload-response metadata checks, and an explicit bounded attachment policy for Project Hermes.
 
-Current implementation branch advances the signed v0.6 bundle to revision 12
-for one-round cross-environment investigation foundations: one authoritative
-Agent List/Card registry with governed static profiles, a transaction-time
-`task_expires_at` fence, preserved investigation/round/work-item metadata, and
-an answered/blocked/failed Result Packet contract. Relay remains transport;
-human round approval and synthesis stay in the future Personal Hermes Prompt.
-`project-hermes` remains a service agent and no Coordinator Grant or Relay
-workflow objects are introduced.
+Bundle revision 12 established the one-round cross-environment investigation
+transport primitives: authoritative Agent List/Card profiles, a
+transaction-time `task_expires_at` fence, preserved
+investigation/round/work-item metadata, and answered/blocked/failed Result
+Packets. The current bounded-coordinator implementation branch advances v0.6
+to revision 13 with an additive Server-authoritative Coordinator Grant. It
+binds `project-hermes` to one approved Investigation Round, target set, exact
+Task count, common deadline, and create/read/batch/complete-own permissions;
+Task creation, quota consumption, idempotency mapping, and audit commit in one
+transaction. Relay still owns only identity, authorization, transport,
+persistence, recovery, and audit. Human authority validation, barrier,
+synthesis, Review Packets, and future rounds remain outside Relay.
 
 Current work: `feat/protocol-upgrade-safety` makes Task protocol ownership
 immutable across Server upgrades. It adds Task-aware bundle negotiation,

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/coordinator-grant-issue-v06.schema.json",
+  "title": "AgentRelay Protocol v0.6 Coordinator Grant Issue",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol_version", "issuance_key", "coordinator_agent_id",
+    "investigation_id", "round_id", "approved_plan_digest", "authority_ref",
+    "target_agent_ids", "task_count", "task_expires_at", "grant_expires_at",
+    "operations"
+  ],
+  "properties": {
+    "protocol_version": {"const": "agent-collab-v0.6"},
+    "issuance_key": {"type": "string", "minLength": 1},
+    "coordinator_agent_id": {"type": "string", "minLength": 1},
+    "investigation_id": {"type": "string", "minLength": 1},
+    "round_id": {"type": "string", "minLength": 1},
+    "approved_plan_digest": {"type": "string", "minLength": 1},
+    "authority_ref": {"type": "string", "minLength": 1},
+    "target_agent_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "task_count": {"type": "integer", "minimum": 1, "maximum": 100},
+    "task_expires_at": {"type": "integer", "minimum": 1},
+    "grant_expires_at": {"type": "integer", "minimum": 1},
+    "operations": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {"enum": ["create", "read", "batch", "complete-own"]},
+      "allOf": [
+        {"contains": {"const": "create"}},
+        {"contains": {"const": "read"}},
+        {"contains": {"const": "batch"}},
+        {"contains": {"const": "complete-own"}}
+      ]
+    }
+  }
+}

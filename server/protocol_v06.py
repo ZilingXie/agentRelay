@@ -7,6 +7,8 @@ from typing import Any
 
 
 PROTOCOL_V06 = "agent-collab-v0.6"
+COORDINATOR_GRANT_OPERATIONS = frozenset({"create", "read", "batch", "complete-own"})
+COORDINATOR_GRANT_MAX_TASKS = 100
 TASK_STATES = {"open", "completed", "expired", "failed"}
 MESSAGE_DELIVERY_STATES = {"pending", "delivered", "failed"}
 OUTBOX_STATES = {"queued", "inflight", "acked", "retry_wait", "parked", "exhausted"}
@@ -234,6 +236,77 @@ def validate_task_create(payload: dict[str, Any]) -> None:
         require_positive_int(payload, "max_turns")
     if "task_expires_at" in payload:
         require_positive_int(payload, "task_expires_at")
+
+
+def validate_coordinator_grant_issue(payload: dict[str, Any]) -> dict[str, Any]:
+    reject_unknown(
+        payload,
+        {
+            "protocol_version",
+            "issuance_key",
+            "coordinator_agent_id",
+            "investigation_id",
+            "round_id",
+            "approved_plan_digest",
+            "authority_ref",
+            "target_agent_ids",
+            "task_count",
+            "task_expires_at",
+            "grant_expires_at",
+            "operations",
+        },
+    )
+    if payload.get("protocol_version") != PROTOCOL_V06:
+        raise ValueError(f"protocol_version must be {PROTOCOL_V06}")
+    for key in (
+        "issuance_key",
+        "coordinator_agent_id",
+        "investigation_id",
+        "round_id",
+        "approved_plan_digest",
+        "authority_ref",
+    ):
+        require_string(payload, key)
+    targets = payload.get("target_agent_ids")
+    if not isinstance(targets, list) or not targets:
+        raise ValueError("target_agent_ids must be a non-empty array")
+    normalized_targets = []
+    for target in targets:
+        if not isinstance(target, str) or not target.strip():
+            raise ValueError("target_agent_ids entries must be non-empty strings")
+        normalized_targets.append(target.strip())
+    if len(set(normalized_targets)) != len(normalized_targets):
+        raise ValueError("target_agent_ids entries must be unique")
+    task_count = require_positive_int(payload, "task_count")
+    if task_count > COORDINATOR_GRANT_MAX_TASKS:
+        raise ValueError(
+            f"task_count must be at most {COORDINATOR_GRANT_MAX_TASKS}"
+        )
+    require_positive_int(payload, "task_expires_at")
+    require_positive_int(payload, "grant_expires_at")
+    operations = payload.get("operations")
+    if (
+        not isinstance(operations, list)
+        or not all(isinstance(item, str) for item in operations)
+        or set(operations) != COORDINATOR_GRANT_OPERATIONS
+    ):
+        raise ValueError(
+            "operations must contain exactly create, read, batch, and complete-own"
+        )
+    if len(operations) != len(COORDINATOR_GRANT_OPERATIONS):
+        raise ValueError("operations entries must be unique")
+    return {
+        **payload,
+        "target_agent_ids": sorted(normalized_targets),
+        "operations": sorted(COORDINATOR_GRANT_OPERATIONS),
+    }
+
+
+def validate_coordinator_grant_resolve(payload: dict[str, Any]) -> None:
+    reject_unknown(payload, {"idempotency_key", "work_item_id"})
+    require_string(payload, "idempotency_key")
+    if "work_item_id" in payload:
+        require_string(payload, "work_item_id")
 
 
 def validate_mutation_context(payload: dict[str, Any]) -> None:

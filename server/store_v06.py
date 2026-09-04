@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 from pathlib import Path
+import secrets
 import sqlite3
 import time
 from typing import Any
 import uuid
 
 from server.protocol_v06 import (
+    COORDINATOR_GRANT_OPERATIONS,
     DELIVERY_ACK_LEASE_SECONDS,
     DELIVERY_FAILURE_REASONS,
     LISTENER_READINESS_MAX_AGE_SECONDS,
@@ -29,6 +32,12 @@ from server.store import ConflictError
 DEFAULT_TASK_TTL_SECONDS = 24 * 60 * 60
 INSTALL_HEALTHCHECK_AGENT_ID = "agentrelay-healthcheck"
 INSTALL_HEALTHCHECK_TTL_SECONDS = 10 * 60
+
+
+class CoordinatorGrantPermissionError(PermissionError):
+    def __init__(self, message: str, *, code: str):
+        super().__init__(message)
+        self.code = code
 
 
 class V06Store:
@@ -193,6 +202,63 @@ class V06Store:
                     FOREIGN KEY (result_message_id) REFERENCES messages(message_id) ON DELETE RESTRICT
                 );
 
+                CREATE TABLE IF NOT EXISTS coordinator_grants (
+                    grant_id TEXT PRIMARY KEY,
+                    issuance_key TEXT NOT NULL,
+                    coordinator_agent_id TEXT NOT NULL,
+                    investigation_id TEXT NOT NULL,
+                    round_id TEXT NOT NULL,
+                    approved_plan_digest TEXT NOT NULL,
+                    authority_ref TEXT NOT NULL,
+                    task_count INTEGER NOT NULL CHECK (task_count >= 1),
+                    task_expires_at INTEGER NOT NULL,
+                    grant_expires_at INTEGER NOT NULL,
+                    operations_json TEXT NOT NULL,
+                    claims_digest TEXT NOT NULL,
+                    token_hash TEXT NOT NULL UNIQUE,
+                    token_version INTEGER NOT NULL CHECK (token_version >= 1),
+                    status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
+                    used_task_count INTEGER NOT NULL DEFAULT 0 CHECK (used_task_count >= 0),
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    UNIQUE (coordinator_agent_id, issuance_key),
+                    UNIQUE (coordinator_agent_id, investigation_id, round_id),
+                    FOREIGN KEY (coordinator_agent_id) REFERENCES agents(agent_id) ON DELETE RESTRICT
+                );
+
+                CREATE TABLE IF NOT EXISTS coordinator_grant_targets (
+                    grant_id TEXT NOT NULL,
+                    target_agent_id TEXT NOT NULL,
+                    PRIMARY KEY (grant_id, target_agent_id),
+                    FOREIGN KEY (grant_id) REFERENCES coordinator_grants(grant_id) ON DELETE RESTRICT,
+                    FOREIGN KEY (target_agent_id) REFERENCES agents(agent_id) ON DELETE RESTRICT
+                );
+
+                CREATE TABLE IF NOT EXISTS coordinator_grant_tasks (
+                    grant_id TEXT NOT NULL,
+                    work_item_id TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    request_hash TEXT NOT NULL,
+                    task_id TEXT NOT NULL UNIQUE,
+                    target_agent_id TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    PRIMARY KEY (grant_id, work_item_id),
+                    UNIQUE (grant_id, idempotency_key),
+                    FOREIGN KEY (grant_id) REFERENCES coordinator_grants(grant_id) ON DELETE RESTRICT,
+                    FOREIGN KEY (task_id) REFERENCES tasks(task_id) ON DELETE RESTRICT,
+                    FOREIGN KEY (target_agent_id) REFERENCES agents(agent_id) ON DELETE RESTRICT
+                );
+
+                CREATE TABLE IF NOT EXISTS coordinator_grant_audit (
+                    audit_id TEXT PRIMARY KEY,
+                    grant_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    actor_agent_id TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    FOREIGN KEY (grant_id) REFERENCES coordinator_grants(grant_id) ON DELETE RESTRICT
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_messages_task_turn
                     ON messages (task_id, turn_sequence, created_at, message_id);
                 CREATE INDEX IF NOT EXISTS idx_agent_events_due
@@ -203,6 +269,10 @@ class V06Store:
                     ON tasks (status, task_expires_at, task_id);
                 CREATE INDEX IF NOT EXISTS idx_tasks_lineage
                     ON tasks (root_task_id, created_at, task_id);
+                CREATE INDEX IF NOT EXISTS idx_coordinator_grants_expiry
+                    ON coordinator_grants (status, grant_expires_at, grant_id);
+                CREATE INDEX IF NOT EXISTS idx_coordinator_grant_tasks_task
+                    ON coordinator_grant_tasks (task_id, grant_id);
 
                 CREATE TRIGGER IF NOT EXISTS prevent_task_hard_delete
                 BEFORE DELETE ON tasks
@@ -426,21 +496,276 @@ class V06Store:
                 raise ConflictError("stale_readiness_epoch", code="stale_readiness_epoch")
             return self._readiness_conn(conn, agent_id)
 
+    def issue_coordinator_grant(
+        self,
+        payload: dict[str, Any],
+        *,
+        now: int | None = None,
+    ) -> dict[str, Any]:
+        timestamp = _now(now)
+        if int(payload["grant_expires_at"]) <= timestamp:
+            raise ValueError("grant_expires_at must be in the future")
+        if int(payload["task_expires_at"]) <= timestamp:
+            raise ValueError("task_expires_at must be in the future")
+        if int(payload["grant_expires_at"]) <= int(payload["task_expires_at"]):
+            raise ValueError("grant_expires_at must be later than task_expires_at")
+        coordinator = str(payload["coordinator_agent_id"])
+        claims = {
+            key: payload[key]
+            for key in (
+                "protocol_version",
+                "coordinator_agent_id",
+                "investigation_id",
+                "round_id",
+                "approved_plan_digest",
+                "authority_ref",
+                "target_agent_ids",
+                "task_count",
+                "task_expires_at",
+                "grant_expires_at",
+                "operations",
+            )
+        }
+        claims_digest = f"sha256:{_fingerprint(claims)}"
+        token = secrets.token_urlsafe(32)
+        token_hash = _coordinator_token_hash(token)
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            self._assert_admission_conn(conn, coordinator, timestamp)
+            for target in payload["target_agent_ids"]:
+                self._assert_admission_conn(conn, str(target), timestamp)
+            existing = conn.execute(
+                """
+                SELECT * FROM coordinator_grants
+                WHERE coordinator_agent_id = ? AND issuance_key = ?
+                """,
+                (coordinator, str(payload["issuance_key"])),
+            ).fetchone()
+            existing_round = conn.execute(
+                """
+                SELECT issuance_key FROM coordinator_grants
+                WHERE coordinator_agent_id = ? AND investigation_id = ? AND round_id = ?
+                """,
+                (
+                    coordinator,
+                    str(payload["investigation_id"]),
+                    str(payload["round_id"]),
+                ),
+            ).fetchone()
+            if existing_round and not existing:
+                raise ConflictError(
+                    "Investigation Round already has a different coordinator grant issuance",
+                    code="coordinator_grant_claim_mismatch",
+                )
+            if existing:
+                if str(existing["claims_digest"]) != claims_digest:
+                    raise ConflictError(
+                        "coordinator grant issuance key was reused with different claims",
+                        code="coordinator_grant_claim_mismatch",
+                    )
+                if str(existing["status"]) != "active":
+                    raise ConflictError(
+                        "revoked coordinator grant issuance cannot be reused",
+                        code="coordinator_grant_revoked",
+                    )
+                token_version = int(existing["token_version"]) + 1
+                grant_id = str(existing["grant_id"])
+                conn.execute(
+                    """
+                    UPDATE coordinator_grants
+                    SET token_hash = ?, token_version = ?, updated_at = ?
+                    WHERE grant_id = ?
+                    """,
+                    (token_hash, token_version, timestamp, grant_id),
+                )
+                self._coordinator_grant_audit_conn(
+                    conn,
+                    grant_id,
+                    "grant.token_rotated",
+                    coordinator,
+                    {"token_version": token_version, "claims_digest": claims_digest},
+                    timestamp,
+                )
+            else:
+                grant_id = f"cgrant_{uuid.uuid4().hex}"
+                token_version = 1
+                conn.execute(
+                    """
+                    INSERT INTO coordinator_grants (
+                        grant_id, issuance_key, coordinator_agent_id,
+                        investigation_id, round_id, approved_plan_digest,
+                        authority_ref, task_count, task_expires_at,
+                        grant_expires_at, operations_json, claims_digest,
+                        token_hash, token_version, status, used_task_count,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 0, ?, ?)
+                    """,
+                    (
+                        grant_id,
+                        str(payload["issuance_key"]),
+                        coordinator,
+                        str(payload["investigation_id"]),
+                        str(payload["round_id"]),
+                        str(payload["approved_plan_digest"]),
+                        str(payload["authority_ref"]),
+                        int(payload["task_count"]),
+                        int(payload["task_expires_at"]),
+                        int(payload["grant_expires_at"]),
+                        json.dumps(payload["operations"], sort_keys=True),
+                        claims_digest,
+                        token_hash,
+                        token_version,
+                        timestamp,
+                        timestamp,
+                    ),
+                )
+                for target in payload["target_agent_ids"]:
+                    conn.execute(
+                        """
+                        INSERT INTO coordinator_grant_targets (grant_id, target_agent_id)
+                        VALUES (?, ?)
+                        """,
+                        (grant_id, str(target)),
+                    )
+                self._coordinator_grant_audit_conn(
+                    conn,
+                    grant_id,
+                    "grant.issued",
+                    coordinator,
+                    {"token_version": token_version, "claims_digest": claims_digest},
+                    timestamp,
+                )
+            grant = self._coordinator_grant_dict_conn(conn, grant_id)
+            return {"grant": grant, "coordinator_grant_token": token}
+
+    def resolve_coordinator_grant_task(
+        self,
+        grant_id: str,
+        coordinator_grant_token: str,
+        coordinator_agent_id: str,
+        *,
+        idempotency_key: str,
+        work_item_id: str | None = None,
+        now: int | None = None,
+    ) -> dict[str, Any]:
+        timestamp = _now(now)
+        with self.connect() as conn:
+            grant = self._require_coordinator_grant_conn(
+                conn,
+                coordinator_grant_token,
+                coordinator_agent_id,
+                "read",
+                timestamp,
+                expected_grant_id=grant_id,
+            )
+            mapping = conn.execute(
+                """
+                SELECT * FROM coordinator_grant_tasks
+                WHERE grant_id = ? AND idempotency_key = ?
+                """,
+                (grant["grant_id"], idempotency_key),
+            ).fetchone()
+            if not mapping:
+                return {"grant": self._coordinator_grant_public(grant), "mapping": None}
+            if work_item_id is not None and str(mapping["work_item_id"]) != work_item_id:
+                raise ConflictError(
+                    "coordinator grant mapping does not match work_item_id",
+                    code="coordinator_grant_claim_mismatch",
+                )
+            return {
+                "grant": self._coordinator_grant_public(grant),
+                "mapping": self._coordinator_mapping_dict(mapping),
+                "task": self._task_detail_conn(conn, str(mapping["task_id"])),
+            }
+
+    def is_coordinator_managed_task(self, task_id: str, coordinator_agent_id: str) -> bool:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT 1 FROM coordinator_grant_tasks m
+                JOIN coordinator_grants g ON g.grant_id = m.grant_id
+                WHERE m.task_id = ? AND g.coordinator_agent_id = ?
+                """,
+                (task_id, coordinator_agent_id),
+            ).fetchone()
+            return row is not None
+
+    def authorize_coordinator_task(
+        self,
+        task_id: str,
+        coordinator_grant_token: str,
+        coordinator_agent_id: str,
+        operation: str,
+        *,
+        now: int | None = None,
+    ) -> dict[str, Any]:
+        with self.connect() as conn:
+            grant, _ = self._require_coordinator_task_conn(
+                conn,
+                task_id,
+                coordinator_grant_token,
+                coordinator_agent_id,
+                operation,
+                _now(now),
+            )
+            return self._coordinator_grant_public(grant)
+
     def create_task(
         self,
         payload: dict[str, Any],
         *,
         source_task_id: str | None = None,
+        coordinator_grant_token: str | None = None,
+        coordinator_agent_id: str | None = None,
         now: int | None = None,
     ) -> dict[str, Any]:
         timestamp = _now(now)
         requester = str(payload["requester_agent_id"])
         target = str(payload["target_agent_id"])
         key = str(payload["idempotency_key"])
-        scope = source_task_id or "__root__"
         request_hash = _fingerprint(payload)
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            grant = None
+            work_item_id = None
+            if coordinator_grant_token is not None:
+                if not coordinator_agent_id:
+                    raise CoordinatorGrantPermissionError(
+                        "coordinator identity is required",
+                        code="coordinator_grant_identity_mismatch",
+                    )
+                if source_task_id:
+                    raise CoordinatorGrantPermissionError(
+                        "coordinator grant does not authorize follow-up Tasks",
+                        code="coordinator_grant_operation_forbidden",
+                    )
+                grant = self._require_coordinator_grant_conn(
+                    conn,
+                    coordinator_grant_token,
+                    coordinator_agent_id,
+                    "create",
+                    timestamp,
+                )
+                work_item_id = self._assert_coordinator_create_claims_conn(
+                    conn, grant, payload
+                )
+                mapping = self._coordinator_mapping_for_create_conn(
+                    conn,
+                    str(grant["grant_id"]),
+                    work_item_id,
+                    key,
+                    request_hash,
+                )
+                if mapping:
+                    return self._task_detail_conn(conn, str(mapping["task_id"]))
+                if int(grant["used_task_count"]) >= int(grant["task_count"]):
+                    raise ConflictError(
+                        "coordinator grant task quota exhausted",
+                        code="coordinator_grant_quota_exhausted",
+                    )
+                scope = f"coordinator_grant:{grant['grant_id']}"
+            else:
+                scope = source_task_id or "__root__"
             existing = self._idempotent_result_conn(
                 conn, "create", requester, scope, key, request_hash
             )
@@ -532,6 +857,45 @@ class V06Store:
                 conn, "create", requester, scope, key, request_hash,
                 task_id, message_id, timestamp,
             )
+            if grant is not None and work_item_id is not None:
+                conn.execute(
+                    """
+                    INSERT INTO coordinator_grant_tasks (
+                        grant_id, work_item_id, idempotency_key, request_hash,
+                        task_id, target_agent_id, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        grant["grant_id"], work_item_id, key, request_hash,
+                        task_id, target, timestamp,
+                    ),
+                )
+                updated = conn.execute(
+                    """
+                    UPDATE coordinator_grants
+                    SET used_task_count = used_task_count + 1, updated_at = ?
+                    WHERE grant_id = ? AND used_task_count < task_count
+                    """,
+                    (timestamp, grant["grant_id"]),
+                )
+                if updated.rowcount != 1:
+                    raise ConflictError(
+                        "coordinator grant task quota exhausted",
+                        code="coordinator_grant_quota_exhausted",
+                    )
+                self._coordinator_grant_audit_conn(
+                    conn,
+                    str(grant["grant_id"]),
+                    "grant.task_created",
+                    requester,
+                    {
+                        "task_id": task_id,
+                        "work_item_id": work_item_id,
+                        "target_agent_id": target,
+                        "used_task_count": int(grant["used_task_count"]) + 1,
+                    },
+                    timestamp,
+                )
             return self._task_detail_conn(conn, task_id)
 
     def create_install_healthcheck(
@@ -1094,9 +1458,18 @@ class V06Store:
         task_id: str,
         payload: dict[str, Any],
         *,
+        coordinator_grant_token: str | None = None,
+        coordinator_agent_id: str | None = None,
         now: int | None = None,
     ) -> dict[str, Any] | None:
-        return self._terminal_task(task_id, payload, completed=True, now=now)
+        return self._terminal_task(
+            task_id,
+            payload,
+            completed=True,
+            coordinator_grant_token=coordinator_grant_token,
+            coordinator_agent_id=coordinator_agent_id,
+            now=now,
+        )
 
     def fail_task(
         self,
@@ -1105,7 +1478,14 @@ class V06Store:
         *,
         now: int | None = None,
     ) -> dict[str, Any] | None:
-        return self._terminal_task(task_id, payload, completed=False, now=now)
+        return self._terminal_task(
+            task_id,
+            payload,
+            completed=False,
+            coordinator_grant_token=None,
+            coordinator_agent_id=None,
+            now=now,
+        )
 
     def expire_tasks(self, *, now: int | None = None) -> int:
         timestamp = _now(now)
@@ -1156,6 +1536,28 @@ class V06Store:
             self._audit_conn(
                 conn, task_id, "protocol.client_runtime", actor_agent_id, None,
                 {"trust": "client_reported", **metadata}, timestamp,
+            )
+
+    def record_coordinator_compatibility_create(
+        self,
+        task_id: str,
+        actor_agent_id: str,
+        *,
+        now: int | None = None,
+    ) -> None:
+        timestamp = _now(now)
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if not self._task_row_conn(conn, task_id):
+                raise ValueError("task not found")
+            self._audit_conn(
+                conn,
+                task_id,
+                "coordinator.compatibility_create",
+                actor_agent_id,
+                None,
+                {"compatibility_mode": True},
+                timestamp,
             )
 
     def get_agent(self, agent_id: str) -> dict[str, Any] | None:
@@ -1651,6 +2053,8 @@ class V06Store:
         payload: dict[str, Any],
         *,
         completed: bool,
+        coordinator_grant_token: str | None,
+        coordinator_agent_id: str | None,
         now: int | None,
     ) -> dict[str, Any] | None:
         timestamp = _now(now)
@@ -1660,6 +2064,20 @@ class V06Store:
         request_hash = _fingerprint(payload)
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            if coordinator_grant_token is not None:
+                if not completed or not coordinator_agent_id:
+                    raise CoordinatorGrantPermissionError(
+                        "coordinator grant operation is forbidden",
+                        code="coordinator_grant_operation_forbidden",
+                    )
+                self._require_coordinator_task_conn(
+                    conn,
+                    task_id,
+                    coordinator_grant_token,
+                    coordinator_agent_id,
+                    "complete-own",
+                    timestamp,
+                )
             existing = self._idempotent_result_conn(
                 conn, operation, actor, task_id, key, request_hash
             )
@@ -2110,6 +2528,260 @@ class V06Store:
             ),
         )
 
+    def _require_coordinator_grant_conn(
+        self,
+        conn: sqlite3.Connection,
+        token: str,
+        coordinator_agent_id: str,
+        operation: str,
+        now: int,
+        *,
+        expected_grant_id: str | None = None,
+    ) -> sqlite3.Row:
+        if operation not in COORDINATOR_GRANT_OPERATIONS:
+            raise CoordinatorGrantPermissionError(
+                "coordinator grant operation is forbidden",
+                code="coordinator_grant_operation_forbidden",
+            )
+        token_hash = _coordinator_token_hash(token)
+        row = conn.execute(
+            "SELECT * FROM coordinator_grants WHERE token_hash = ?",
+            (token_hash,),
+        ).fetchone()
+        if not row or not hmac.compare_digest(str(row["token_hash"]), token_hash):
+            raise CoordinatorGrantPermissionError(
+                "invalid coordinator grant",
+                code="invalid_coordinator_grant",
+            )
+        if expected_grant_id and not hmac.compare_digest(
+            str(row["grant_id"]), expected_grant_id
+        ):
+            raise CoordinatorGrantPermissionError(
+                "coordinator grant does not match requested grant",
+                code="invalid_coordinator_grant",
+            )
+        if str(row["status"]) != "active":
+            raise CoordinatorGrantPermissionError(
+                "coordinator grant is revoked",
+                code="coordinator_grant_revoked",
+            )
+        if int(row["grant_expires_at"]) <= now:
+            raise CoordinatorGrantPermissionError(
+                "coordinator grant is expired",
+                code="coordinator_grant_expired",
+            )
+        if not hmac.compare_digest(
+            str(row["coordinator_agent_id"]), coordinator_agent_id
+        ):
+            raise CoordinatorGrantPermissionError(
+                "coordinator grant identity mismatch",
+                code="coordinator_grant_identity_mismatch",
+            )
+        operations = set(json.loads(str(row["operations_json"])))
+        if operation not in operations:
+            raise CoordinatorGrantPermissionError(
+                "coordinator grant operation is forbidden",
+                code="coordinator_grant_operation_forbidden",
+            )
+        return row
+
+    def _require_coordinator_task_conn(
+        self,
+        conn: sqlite3.Connection,
+        task_id: str,
+        token: str,
+        coordinator_agent_id: str,
+        operation: str,
+        now: int,
+    ) -> tuple[sqlite3.Row, sqlite3.Row]:
+        grant = self._require_coordinator_grant_conn(
+            conn, token, coordinator_agent_id, operation, now
+        )
+        mapping = conn.execute(
+            """
+            SELECT * FROM coordinator_grant_tasks
+            WHERE grant_id = ? AND task_id = ?
+            """,
+            (grant["grant_id"], task_id),
+        ).fetchone()
+        if not mapping:
+            raise ConflictError(
+                "Task is not owned by this coordinator grant",
+                code="coordinator_grant_task_not_owned",
+            )
+        task = self._task_row_conn(conn, task_id)
+        if not task or str(task["requester_agent_id"]) != coordinator_agent_id:
+            raise ConflictError(
+                "Task is not owned by the coordinator identity",
+                code="coordinator_grant_task_not_owned",
+            )
+        return grant, mapping
+
+    def _assert_coordinator_create_claims_conn(
+        self,
+        conn: sqlite3.Connection,
+        grant: sqlite3.Row,
+        payload: dict[str, Any],
+    ) -> str:
+        if str(payload["requester_agent_id"]) != str(grant["coordinator_agent_id"]):
+            raise ConflictError(
+                "Task requester does not match coordinator grant",
+                code="coordinator_grant_claim_mismatch",
+            )
+        target = str(payload["target_agent_id"])
+        allowed_target = conn.execute(
+            """
+            SELECT 1 FROM coordinator_grant_targets
+            WHERE grant_id = ? AND target_agent_id = ?
+            """,
+            (grant["grant_id"], target),
+        ).fetchone()
+        if not allowed_target:
+            raise ConflictError(
+                "Task target is outside coordinator grant target set",
+                code="coordinator_grant_claim_mismatch",
+            )
+        if int(payload.get("max_turns") or 0) != 1:
+            raise ConflictError(
+                "Coordinator Task max_turns must be 1",
+                code="coordinator_grant_claim_mismatch",
+            )
+        if int(payload.get("task_expires_at") or 0) != int(grant["task_expires_at"]):
+            raise ConflictError(
+                "Coordinator Task deadline must match grant deadline",
+                code="coordinator_grant_claim_mismatch",
+            )
+        metadata = payload.get("message", {}).get("metadata")
+        if not isinstance(metadata, dict):
+            raise ConflictError(
+                "Coordinator Task requires correlation metadata",
+                code="coordinator_grant_claim_mismatch",
+            )
+        expected = {
+            "investigation_id": str(grant["investigation_id"]),
+            "round_id": str(grant["round_id"]),
+            "approved_plan_digest": str(grant["approved_plan_digest"]),
+        }
+        if any(metadata.get(key) != value for key, value in expected.items()):
+            raise ConflictError(
+                "Coordinator Task correlation does not match grant claims",
+                code="coordinator_grant_claim_mismatch",
+            )
+        work_item_id = metadata.get("work_item_id")
+        if not isinstance(work_item_id, str) or not work_item_id.strip():
+            raise ConflictError(
+                "Coordinator Task requires work_item_id",
+                code="coordinator_grant_claim_mismatch",
+            )
+        return work_item_id.strip()
+
+    def _coordinator_mapping_for_create_conn(
+        self,
+        conn: sqlite3.Connection,
+        grant_id: str,
+        work_item_id: str,
+        idempotency_key: str,
+        request_hash: str,
+    ) -> sqlite3.Row | None:
+        row = conn.execute(
+            """
+            SELECT * FROM coordinator_grant_tasks
+            WHERE grant_id = ? AND (work_item_id = ? OR idempotency_key = ?)
+            """,
+            (grant_id, work_item_id, idempotency_key),
+        ).fetchone()
+        if not row:
+            return None
+        if (
+            str(row["work_item_id"]) != work_item_id
+            or str(row["idempotency_key"]) != idempotency_key
+            or str(row["request_hash"]) != request_hash
+        ):
+            raise ConflictError(
+                "coordinator grant mapping was reused with different Task claims",
+                code="coordinator_grant_claim_mismatch",
+            )
+        return row
+
+    def _coordinator_grant_dict_conn(
+        self, conn: sqlite3.Connection, grant_id: str
+    ) -> dict[str, Any]:
+        row = conn.execute(
+            "SELECT * FROM coordinator_grants WHERE grant_id = ?", (grant_id,)
+        ).fetchone()
+        if not row:
+            raise ValueError("coordinator grant not found")
+        result = self._coordinator_grant_public(row)
+        result["target_agent_ids"] = [
+            str(item["target_agent_id"])
+            for item in conn.execute(
+                """
+                SELECT target_agent_id FROM coordinator_grant_targets
+                WHERE grant_id = ? ORDER BY target_agent_id
+                """,
+                (grant_id,),
+            ).fetchall()
+        ]
+        return result
+
+    @staticmethod
+    def _coordinator_grant_public(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+        return {
+            "grant_id": str(row["grant_id"]),
+            "coordinator_agent_id": str(row["coordinator_agent_id"]),
+            "investigation_id": str(row["investigation_id"]),
+            "round_id": str(row["round_id"]),
+            "approved_plan_digest": str(row["approved_plan_digest"]),
+            "authority_ref": str(row["authority_ref"]),
+            "task_count": int(row["task_count"]),
+            "used_task_count": int(row["used_task_count"]),
+            "task_expires_at": int(row["task_expires_at"]),
+            "grant_expires_at": int(row["grant_expires_at"]),
+            "operations": json.loads(str(row["operations_json"])),
+            "claims_digest": str(row["claims_digest"]),
+            "token_version": int(row["token_version"]),
+            "status": str(row["status"]),
+            "created_at": int(row["created_at"]),
+            "updated_at": int(row["updated_at"]),
+        }
+
+    @staticmethod
+    def _coordinator_mapping_dict(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+        return {
+            "grant_id": str(row["grant_id"]),
+            "work_item_id": str(row["work_item_id"]),
+            "idempotency_key": str(row["idempotency_key"]),
+            "task_id": str(row["task_id"]),
+            "target_agent_id": str(row["target_agent_id"]),
+            "created_at": int(row["created_at"]),
+        }
+
+    def _coordinator_grant_audit_conn(
+        self,
+        conn: sqlite3.Connection,
+        grant_id: str,
+        event_type: str,
+        actor_agent_id: str,
+        payload: dict[str, Any],
+        created_at: int,
+    ) -> None:
+        conn.execute(
+            """
+            INSERT INTO coordinator_grant_audit (
+                audit_id, grant_id, event_type, actor_agent_id,
+                payload_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"cgaudit_{uuid.uuid4().hex}",
+                grant_id,
+                event_type,
+                actor_agent_id,
+                json.dumps(payload, sort_keys=True),
+                created_at,
+            ),
+        )
+
     def _idempotent_result_conn(
         self,
         conn: sqlite3.Connection,
@@ -2305,6 +2977,10 @@ def _diagnose(task: dict[str, Any], message: dict[str, Any], event: dict[str, An
 def _fingerprint(payload: dict[str, Any]) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _coordinator_token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def _correlation_metadata(metadata: Any) -> dict[str, str]:
