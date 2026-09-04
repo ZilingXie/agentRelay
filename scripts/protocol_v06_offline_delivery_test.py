@@ -31,17 +31,24 @@ def seed(path: Path) -> V06Store:
     return store
 
 
-def create_offline(store: V06Store, *, expires_at: int = BASE + 3600) -> dict:
+def create_offline(
+    store: V06Store,
+    *,
+    expires_at: int = BASE + 3600,
+    key: str = "offline-create",
+    metadata: dict | None = None,
+) -> dict:
     return store.create_task(
         {
             "protocol_version": PROTOCOL_V06,
-            "idempotency_key": "offline-create",
+            "idempotency_key": key,
             "requester_agent_id": REQUESTER,
             "target_agent_id": TARGET,
             "done_criteria": "target receives the request",
             "task_expires_at": expires_at,
             "message": {
                 "subject": "Offline delivery",
+                "metadata": metadata,
                 "parts": [{"kind": "text", "text": "ping"}],
             },
         },
@@ -230,6 +237,272 @@ def recovery_reclaims_its_expired_lease(path: Path) -> None:
     )
     assert delivered["messages"][0]["delivery_status"] == "delivered"
 
+
+def exact_deadline_rejects_late_mutations(path: Path) -> None:
+    store = seed(path)
+    target_listener = register(store, TARGET, "listener-vivi-deadline", BASE)
+
+    late_ack = create_offline(store, expires_at=BASE + 5, key="late-ack")
+    event = store.claim_due_event(TARGET, now=BASE + 1)
+    try:
+        store.ack_message(
+            TARGET,
+            ack_payload(late_ack, event, *target_listener),
+            now=BASE + 5,
+        )
+    except ConflictError as exc:
+        assert exc.code == "task_expired"
+    else:
+        raise AssertionError("ACK at the exact deadline unexpectedly succeeded")
+    assert store.get_task_detail(late_ack["task"]["task_id"])["task"]["status"] == "expired"
+
+    late_reply = create_offline(store, expires_at=BASE + 10, key="late-reply")
+    event = store.claim_due_event(TARGET, now=BASE + 6)
+    delivered = store.ack_message(
+        TARGET,
+        ack_payload(late_reply, event, *target_listener),
+        now=BASE + 7,
+    )
+    current = delivered["task"]
+    try:
+        store.submit_message(
+            current["task_id"],
+            {
+                "actor_agent_id": TARGET,
+                "message_id": current["current_message_id"],
+                "turn_sequence": current["turn_sequence"],
+                "expected_task_version": current["task_version"],
+                "idempotency_key": "late-result",
+                "parts": [{"kind": "result", "status": "answered", "summary": "done"}],
+            },
+            now=BASE + 10,
+        )
+    except ConflictError as exc:
+        assert exc.code == "task_expired"
+    else:
+        raise AssertionError("reply at the exact deadline unexpectedly succeeded")
+
+    completable = create_offline(
+        store,
+        expires_at=BASE + 30,
+        key="late-complete",
+        metadata={
+            "investigation_id": "inv-1",
+            "round_id": "round-1",
+            "work_item_id": "work-1",
+        },
+    )
+    event = store.claim_due_event(TARGET, now=BASE + 11)
+    delivered = store.ack_message(
+        TARGET,
+        ack_payload(completable, event, *target_listener),
+        now=BASE + 12,
+    )
+    current = delivered["task"]
+    replied = store.submit_message(
+        current["task_id"],
+        {
+            "actor_agent_id": TARGET,
+            "message_id": current["current_message_id"],
+            "turn_sequence": current["turn_sequence"],
+            "expected_task_version": current["task_version"],
+            "idempotency_key": "valid-result",
+            "parts": [{"kind": "result", "status": "blocked", "summary": "no access", "blocker": {"code": "access_denied"}}],
+        },
+        now=BASE + 13,
+    )
+    requester_listener = register(store, REQUESTER, "listener-zac-deadline", BASE + 13)
+    event = store.recover_event(
+        REQUESTER,
+        listener_instance_id=requester_listener[0],
+        readiness_epoch=requester_listener[1],
+        now=BASE + 14,
+    )
+    accepted = store.ack_message(
+        REQUESTER,
+        ack_payload(replied, event, *requester_listener),
+        now=BASE + 15,
+    )
+    current = accepted["task"]
+    try:
+        store.complete_task(
+            current["task_id"],
+            {
+                "actor_agent_id": REQUESTER,
+                "message_id": current["current_message_id"],
+                "turn_sequence": current["turn_sequence"],
+                "expected_task_version": current["task_version"],
+                "idempotency_key": "late-completion",
+                "completed_against_message_id": current["current_message_id"],
+            },
+            now=BASE + 30,
+        )
+    except ConflictError as exc:
+        assert exc.code == "task_expired"
+    else:
+        raise AssertionError("completion at the exact deadline unexpectedly succeeded")
+    with store.connect() as conn:
+        audit = conn.execute(
+            "SELECT payload_json FROM task_audit_events WHERE task_id = ? AND event_type = 'task.created'",
+            (current["task_id"],),
+        ).fetchone()
+    assert '"investigation_id": "inv-1"' in audit["payload_json"]
+
+
+def one_round_multi_agent_flow(path: Path) -> None:
+    store = seed(path)
+    targets = ("data-agent", "websdk-agent", "offline-agent")
+    for target in targets:
+        store.upsert_agent(
+            target,
+            name=target,
+            owner=target,
+            enabled=True,
+            protocol_capabilities=[PROTOCOL_V06],
+            now=BASE,
+        )
+    deadline = BASE + 100
+
+    def create(target: str, key: str) -> dict:
+        return store.create_task(
+            {
+                "protocol_version": PROTOCOL_V06,
+                "idempotency_key": key,
+                "requester_agent_id": REQUESTER,
+                "target_agent_id": target,
+                "done_criteria": "return one valid Result Packet",
+                "max_turns": 1,
+                "task_expires_at": deadline,
+                "message": {
+                    "subject": f"Investigate with {target}",
+                    "metadata": {
+                        "investigation_id": "inv-multi",
+                        "round_id": "round-1",
+                        "work_item_id": key,
+                    },
+                    "parts": [{"kind": "text", "text": f"bounded question for {target}"}],
+                },
+            },
+            now=BASE,
+        )
+
+    created = {
+        "data": create("data-agent", "work-data"),
+        "web": create("websdk-agent", "work-web"),
+        "offline": create("offline-agent", "work-offline"),
+    }
+    replayed = create("data-agent", "work-data")
+    assert replayed["task"]["task_id"] == created["data"]["task"]["task_id"]
+    try:
+        store.create_task(
+            {
+                "protocol_version": PROTOCOL_V06,
+                "idempotency_key": "work-data",
+                "requester_agent_id": REQUESTER,
+                "target_agent_id": "data-agent",
+                "done_criteria": "different request",
+                "max_turns": 1,
+                "task_expires_at": deadline,
+                "message": {"subject": "Different", "parts": [{"kind": "text", "text": "different"}]},
+            },
+            now=BASE,
+        )
+    except ConflictError:
+        pass
+    else:
+        raise AssertionError("idempotency key reuse with a different request succeeded")
+
+    requester_listener = register(store, REQUESTER, "listener-requester-multi", BASE + 1)
+
+    def answer(label: str, target: str, packet: dict, at: int) -> None:
+        target_listener = register(store, target, f"listener-{target}", at)
+        event = store.recover_event(
+            target,
+            listener_instance_id=target_listener[0],
+            readiness_epoch=target_listener[1],
+            now=at,
+        )
+        delivered = store.ack_message(
+            target,
+            ack_payload(created[label], event, *target_listener),
+            now=at + 1,
+        )
+        task = delivered["task"]
+        replied = store.submit_message(
+            task["task_id"],
+            {
+                "actor_agent_id": target,
+                "message_id": task["current_message_id"],
+                "turn_sequence": task["turn_sequence"],
+                "expected_task_version": task["task_version"],
+                "idempotency_key": f"result-{label}",
+                "parts": [packet],
+            },
+            now=at + 2,
+        )
+        event = store.recover_event(
+            REQUESTER,
+            listener_instance_id=requester_listener[0],
+            readiness_epoch=requester_listener[1],
+            now=at + 3,
+        )
+        accepted = store.ack_message(
+            REQUESTER,
+            ack_payload(replied, event, *requester_listener),
+            now=at + 4,
+        )
+        task = accepted["task"]
+        completed = store.complete_task(
+            task["task_id"],
+            {
+                "actor_agent_id": REQUESTER,
+                "message_id": task["current_message_id"],
+                "turn_sequence": task["turn_sequence"],
+                "expected_task_version": task["task_version"],
+                "idempotency_key": f"complete-{label}",
+                "completed_against_message_id": task["current_message_id"],
+            },
+            now=at + 5,
+        )
+        assert completed["task"]["status"] == "completed"
+
+    answer(
+        "data",
+        "data-agent",
+        {"kind": "result", "status": "answered", "summary": "three rows", "data": {"rows": 3}},
+        BASE + 2,
+    )
+    answer(
+        "web",
+        "websdk-agent",
+        {"kind": "result", "status": "blocked", "summary": "no trace access", "blocker": {"code": "access_denied"}},
+        BASE + 20,
+    )
+    assert store.expire_tasks(now=deadline) == 1
+    batch = store.visibility_batch(
+        [value["task"]["task_id"] for value in created.values()], now=deadline
+    )
+    assert [item["task"]["status"] for item in batch["items"]] == [
+        "completed", "completed", "expired"
+    ]
+    assert batch["errors"] == []
+
+
+def install_healthcheck_has_governed_profile(path: Path) -> None:
+    store = seed(path)
+    store.create_install_healthcheck(
+        REQUESTER,
+        idempotency_key="install-healthcheck-profile",
+        now=BASE,
+    )
+    profile = store.get_agent_profile("agentrelay-healthcheck")
+    assert profile is not None
+    assert profile["agent_role"] == "service_agent"
+    assert any(
+        agent["agent_id"] == "agentrelay-healthcheck"
+        for agent in store.list_agents(now=BASE)
+    )
+
 def main() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         root = Path(temp_dir)
@@ -239,7 +512,10 @@ def main() -> None:
         push_failure_parks_and_recovery_lease_stays_parked(root / "push.sqlite3")
         business_failure_exhausts_parked_delivery(root / "failed.sqlite3")
         recovery_reclaims_its_expired_lease(root / "recovery-lease.sqlite3")
-    print("protocol v0.6 offline delivery passed (6/6)")
+        exact_deadline_rejects_late_mutations(root / "deadline.sqlite3")
+        one_round_multi_agent_flow(root / "multi-agent.sqlite3")
+        install_healthcheck_has_governed_profile(root / "healthcheck-profile.sqlite3")
+    print("protocol v0.6 offline delivery passed (9/9)")
 
 
 if __name__ == "__main__":

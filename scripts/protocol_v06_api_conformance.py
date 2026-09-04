@@ -58,6 +58,32 @@ def seed_agents(db_path: Path) -> None:
             enabled=True,
             protocol_capabilities=[PROTOCOL_V06],
         )
+    store.upsert_agent(
+        "disabled-agent",
+        name="Disabled Agent",
+        owner="Test",
+        enabled=False,
+        protocol_capabilities=[PROTOCOL_V06],
+    )
+    store.upsert_agent(
+        "legacy-only-agent",
+        name="Legacy Agent",
+        owner="Test",
+        enabled=True,
+        protocol_capabilities=["agent-collab-v0.5"],
+    )
+    initial = store.get_agent_profile(REQUESTER)
+    profile_fields = {
+        "description", "agent_role", "execution_mode", "skills",
+        "accepted_task_types", "input_modes", "output_modes", "data_boundaries",
+        "permission_boundaries", "capabilities", "policy",
+    }
+    profile = {key: initial[key] for key in profile_fields}
+    profile["description"] = "Personal investigation coordinator used by conformance."
+    updated = store.upsert_agent_profile(REQUESTER, profile)
+    replayed = store.upsert_agent_profile(REQUESTER, profile)
+    assert updated["card_revision"] == initial["card_revision"] + 1
+    assert replayed["card_revision"] == updated["card_revision"]
 
 
 def run_flow(db_path: Path) -> None:
@@ -77,6 +103,19 @@ def run_flow(db_path: Path) -> None:
     adapter_json = json.dumps(bundle["adapters"], sort_keys=True)
     assert "-v05.schema.json" not in adapter_json
     assert PROTOCOL_V06 in adapter_json
+    agents = request("GET", "/agents", None, HEADERS[REQUESTER], 200)["agents"]
+    by_id = {agent["agent_id"]: agent for agent in agents}
+    assert set(by_id[REQUESTER]) == {
+        "agent_id", "enabled", "protocol_capabilities", "card_revision",
+        "card_ref", "ready", "readiness_fresh", "observed_at", "active_task_count",
+    }
+    assert not by_id["disabled-agent"]["enabled"]
+    assert PROTOCOL_V06 not in by_id["legacy-only-agent"]["protocol_capabilities"]
+    card = request("GET", f"/agents/{REQUESTER}/card", None, HEADERS[REQUESTER], 200)
+    assert card["protocolVersion"] == "agentrelay-agent-card-v0.6"
+    assert card["agentRelay"]["supported_protocols"] == [PROTOCOL_V06]
+    assert card["agentRelay"]["card_revision"] == by_id[REQUESTER]["card_revision"]
+    assert card["agentRelay"]["card_ref"].endswith(f"/api/agents/{REQUESTER}/card")
 
     created = create_task("offline-create")
     task = created["task"]

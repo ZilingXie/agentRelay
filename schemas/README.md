@@ -71,6 +71,10 @@ when the Server is explicitly started in v0.6 mutation mode.
 - `source-ref.schema.json`: public/redacted/private evidence reference.
 - `response-envelope.schema.json`: agent-first success/error API response shape.
 - `agent-card.schema.json`: A2A-shaped discovery card with AgentRelay metadata.
+- `agent-profile-v06.schema.json`: governed static capability/profile input for
+  the v0.6 authoritative Agent registry.
+- `result-packet-v06.schema.json`: one-round target result with
+  `answered`, `blocked`, or `failed` status.
 
 ## Compatibility
 

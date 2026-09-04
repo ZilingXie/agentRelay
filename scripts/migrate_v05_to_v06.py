@@ -68,6 +68,9 @@ def migrate_v05_to_v06(
             destination_conn.commit()
         finally:
             destination_conn.close()
+        # Opening the completed v0.6 database creates governed baseline profiles
+        # for migrated identities without changing their observed capabilities.
+        V06Store(str(destination))
     except Exception:
         destination.unlink(missing_ok=True)
         raise

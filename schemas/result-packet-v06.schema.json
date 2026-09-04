@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/result-packet-v06.schema.json",
+  "title": "AgentRelay Protocol v0.6 Result Packet",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "status", "summary"],
+  "properties": {
+    "kind": {"const": "result"},
+    "status": {"enum": ["answered", "blocked", "failed"]},
+    "summary": {"type": "string", "minLength": 1},
+    "data": {},
+    "evidence": {"type": "array", "items": {"type": "object"}},
+    "blocker": {"type": "object", "minProperties": 1},
+    "error": {"type": "object", "minProperties": 1}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "blocked"}}},
+      "then": {"required": ["blocker"]}
+    },
+    {
+      "if": {"properties": {"status": {"const": "failed"}}},
+      "then": {"required": ["error"]}
+    }
+  ]
+}

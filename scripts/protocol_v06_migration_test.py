@@ -83,6 +83,7 @@ def migration_preserves_history_and_resets_readiness(root: Path) -> None:
         }
         assert destination_counts == source_counts
         assert conn.execute("SELECT COUNT(*) FROM agent_listener_readiness").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM agent_profiles").fetchone()[0] == len(AGENTS)
         task = conn.execute("SELECT * FROM tasks WHERE task_id = ?", (created["task"]["task_id"],)).fetchone()
         assert task["protocol_version"] == PROTOCOL_V06
         for agent_id in AGENTS:

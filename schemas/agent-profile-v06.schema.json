@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/agent-profile-v06.schema.json",
+  "title": "AgentRelay Governed Agent Profile v0.6",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "description", "agent_role", "execution_mode", "skills",
+    "accepted_task_types", "input_modes", "output_modes", "data_boundaries",
+    "permission_boundaries", "capabilities", "policy"
+  ],
+  "properties": {
+    "description": {"type": "string", "minLength": 1},
+    "agent_role": {"enum": ["personal_agent", "service_agent"]},
+    "execution_mode": {"enum": ["notify_only", "manual", "semi_auto", "autonomous"]},
+    "skills": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "description"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "name": {"type": "string", "minLength": 1},
+          "description": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": true
+      }
+    },
+    "accepted_task_types": {"$ref": "#/$defs/nonEmptyStrings"},
+    "input_modes": {"$ref": "#/$defs/nonEmptyStrings"},
+    "output_modes": {"$ref": "#/$defs/nonEmptyStrings"},
+    "data_boundaries": {"$ref": "#/$defs/nonEmptyStrings"},
+    "permission_boundaries": {"$ref": "#/$defs/nonEmptyStrings"},
+    "capabilities": {"$ref": "#/$defs/nonEmptyStrings"},
+    "policy": {"type": "object"}
+  },
+  "$defs": {
+    "nonEmptyStrings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

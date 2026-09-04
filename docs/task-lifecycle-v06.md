@@ -88,6 +88,12 @@ without reconstructable timestamps are excluded from latency samples.
 
 ## Expiry And Notices
 
+`task_expires_at` is a strict end-to-end deadline. The reply, requester-side
+durable ACK, validation, and requester completion must all commit before it.
+At `now >= task_expires_at`, v0.6 mutation transactions first persist expiry
+and then reject the late ACK/NACK, Message, completion, or failure. Delivery
+claim/recovery also runs expiry before returning transitionable Events.
+
 Task TTL remains authoritative. Expiry atomically changes the Task to
 `expired`, fails an undelivered current Message with `task_expired`, exhausts
 that obsolete transitionable Event, and creates informational terminal Events
@@ -106,6 +112,36 @@ and remain recoverable until ACK, including after the Task is terminal.
   explicit and observable.
 - Combined inflight Events across all active protocol lanes never exceed the
   Agent's persisted `max_inflight`.
+- A mutation committed before the deadline remains idempotently readable after
+  the deadline; an uncommitted mutation at the deadline cannot win over expiry.
+
+## One-Round Investigation Contract (bundle revision 12)
+
+AgentRelay remains a pairwise transport and does not add Investigation, Round,
+barrier, subagent, cancel, or batch-create objects. A Personal Investigation
+Agent creates independent Tasks with the same absolute `task_expires_at` and
+normally `max_turns=1`. The first Message may carry `investigation_id`,
+`round_id`, and `work_item_id` in bounded metadata. Relay preserves these
+values in Task reads and audit records without interpreting them; Event frames
+remain pointer-only.
+
+A target may return a `result-packet-v06.schema.json` part with status
+`answered`, `blocked`, or `failed`. The requester validates the packet and may
+complete its own Task for any accepted status. Relay Task `completed` means the
+remote inquiry contract was accepted, not that the enclosing investigation
+succeeded. Open Tasks expire normally. Human approval to start another round
+belongs to the Personal Agent Prompt and is outside Relay state.
+
+## Agent Discovery
+
+The v0.6 Agent registry is authoritative for both `/agents` and Agent Cards.
+`/agents` exposes only scheduling fields: identity, enabled/protocol support,
+Card revision/reference, readiness freshness/observation, and active Task
+count. Static governed profiles contain role, execution mode, declared skills,
+accepted Task types, input/output modes, data and permission boundaries, and
+policy. Dynamic readiness stays in Presence and observed success never expands
+declared capability. Operators update profiles with
+`scripts/upsert_agent_profile.py`; Agents cannot self-declare broader access.
 
 ## File Attachments (bundle revision 11)
 

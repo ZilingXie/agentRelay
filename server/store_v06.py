@@ -81,6 +81,15 @@ class V06Store:
                     FOREIGN KEY (agent_id) REFERENCES agents(agent_id) ON DELETE RESTRICT
                 );
 
+                CREATE TABLE IF NOT EXISTS agent_profiles (
+                    agent_id TEXT PRIMARY KEY,
+                    card_revision INTEGER NOT NULL CHECK (card_revision >= 1),
+                    profile_json TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    FOREIGN KEY (agent_id) REFERENCES agents(agent_id) ON DELETE RESTRICT
+                );
+
                 CREATE TABLE IF NOT EXISTS tasks (
                     task_id TEXT PRIMARY KEY,
                     root_task_id TEXT NOT NULL,
@@ -235,6 +244,18 @@ class V06Store:
                 """,
                 (int(time.time()), INSTALL_HEALTHCHECK_AGENT_ID),
             )
+            for agent in conn.execute(
+                """SELECT agent_id, name, owner, created_at FROM agents
+                   WHERE agent_id NOT IN (SELECT agent_id FROM agent_profiles)"""
+            ).fetchall():
+                self._upsert_agent_profile_conn(
+                    conn,
+                    str(agent["agent_id"]),
+                    _default_agent_profile(
+                        str(agent["agent_id"]), str(agent["name"]), str(agent["owner"])
+                    ),
+                    int(agent["created_at"]),
+                )
 
     def upsert_agent(
         self,
@@ -244,6 +265,7 @@ class V06Store:
         owner: str,
         enabled: bool,
         protocol_capabilities: list[str],
+        profile: dict[str, Any] | None = None,
         now: int | None = None,
     ) -> dict[str, Any]:
         timestamp = _now(now)
@@ -265,7 +287,66 @@ class V06Store:
                 """,
                 (agent_id, name, owner, int(enabled), capabilities, timestamp, timestamp),
             )
+            if profile is not None:
+                self._upsert_agent_profile_conn(conn, agent_id, profile, timestamp)
+            elif conn.execute(
+                "SELECT 1 FROM agent_profiles WHERE agent_id = ?", (agent_id,)
+            ).fetchone() is None:
+                self._upsert_agent_profile_conn(
+                    conn,
+                    agent_id,
+                    _default_agent_profile(agent_id, name, owner),
+                    timestamp,
+                )
             return self._agent_conn(conn, agent_id)
+
+    def upsert_agent_profile(
+        self,
+        agent_id: str,
+        profile: dict[str, Any],
+        *,
+        now: int | None = None,
+    ) -> dict[str, Any]:
+        timestamp = _now(now)
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            self._require_agent_conn(conn, agent_id)
+            self._upsert_agent_profile_conn(conn, agent_id, profile, timestamp)
+            return self.get_agent_profile(agent_id, conn=conn)
+
+    def get_agent_profile(
+        self,
+        agent_id: str,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, Any] | None:
+        if conn is None:
+            with self.connect() as owned_conn:
+                return self.get_agent_profile(agent_id, conn=owned_conn)
+        row = conn.execute(
+            """
+            SELECT a.agent_id, a.name, a.owner, a.enabled,
+                   a.protocol_capabilities_json, p.card_revision, p.profile_json
+            FROM agents a
+            JOIN agent_profiles p ON p.agent_id = a.agent_id
+            WHERE a.agent_id = ?
+            """,
+            (agent_id,),
+        ).fetchone()
+        return self._agent_profile_dict(row) if row else None
+
+    def list_agent_profiles(self) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT a.agent_id, a.name, a.owner, a.enabled,
+                       a.protocol_capabilities_json, p.card_revision, p.profile_json
+                FROM agents a
+                JOIN agent_profiles p ON p.agent_id = a.agent_id
+                ORDER BY a.agent_id
+                """
+            ).fetchall()
+        return [self._agent_profile_dict(row) for row in rows]
 
     def register_listener(
         self,
@@ -437,6 +518,7 @@ class V06Store:
                     "task_version": 1,
                     "message_subject_present": bool(message_payload.get("subject")),
                     "message_metadata_present": "metadata" in message_payload,
+                    "correlation": _correlation_metadata(message_payload.get("metadata")),
                 },
                 timestamp,
             )
@@ -492,6 +574,20 @@ class V06Store:
                     timestamp,
                 ),
             )
+            if conn.execute(
+                "SELECT 1 FROM agent_profiles WHERE agent_id = ?",
+                (INSTALL_HEALTHCHECK_AGENT_ID,),
+            ).fetchone() is None:
+                self._upsert_agent_profile_conn(
+                    conn,
+                    INSTALL_HEALTHCHECK_AGENT_ID,
+                    _default_agent_profile(
+                        INSTALL_HEALTHCHECK_AGENT_ID,
+                        "AgentRelay Install Healthcheck",
+                        "AgentRelay",
+                    ),
+                    timestamp,
+                )
 
             task_id = f"task_{uuid.uuid4().hex}"
             request_message_id = f"msg_{uuid.uuid4().hex}"
@@ -651,6 +747,7 @@ class V06Store:
             task = self._task_row_conn(conn, task_id)
             if not task:
                 return None
+            self._expire_and_reject_if_due_conn(conn, task, timestamp)
             self._assert_context(task, payload)
             current = self._message_row_conn(conn, task["current_message_id"])
             current_event = self._current_event_conn(conn, task_id, task["current_message_id"])
@@ -727,6 +824,7 @@ class V06Store:
         now: int | None = None,
     ) -> dict[str, Any] | None:
         timestamp = _now(now)
+        self.expire_tasks(now=timestamp)
         return self.delivery_control.run_claim(
             agent_id,
             lambda context: self._claim_due_event(context, timestamp),
@@ -790,6 +888,7 @@ class V06Store:
         now: int | None = None,
     ) -> dict[str, Any] | None:
         timestamp = _now(now)
+        self.expire_tasks(now=timestamp)
         return self.delivery_control.run_claim(
             agent_id,
             lambda context: self._recover_event(
@@ -1023,6 +1122,20 @@ class V06Store:
             for row in rows:
                 self._expire_task_conn(conn, dict(row), timestamp)
             return len(rows)
+
+    def expire_task_if_due(self, task_id: str, *, now: int | None = None) -> bool:
+        timestamp = _now(now)
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            task = self._task_row_conn(conn, task_id)
+            if (
+                not task
+                or task["status"] != "open"
+                or int(task["task_expires_at"]) > timestamp
+            ):
+                return False
+            self._expire_task_conn(conn, dict(task), timestamp)
+            return True
 
     def get_task_detail(self, task_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
@@ -1274,6 +1387,47 @@ class V06Store:
             values.append(value)
         return values
 
+    def list_agents(self, *, now: int | None = None) -> list[dict[str, Any]]:
+        timestamp = _now(now)
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT a.agent_id, a.enabled, a.protocol_capabilities_json,
+                       p.card_revision, r.ready, r.observed_at,
+                       (SELECT COUNT(*) FROM tasks t
+                        WHERE t.status = 'open'
+                          AND t.task_expires_at > ?
+                          AND (t.requester_agent_id = a.agent_id OR t.target_agent_id = a.agent_id)) AS active_task_count
+                FROM agents a
+                JOIN agent_profiles p ON p.agent_id = a.agent_id
+                LEFT JOIN agent_listener_readiness r ON r.agent_id = a.agent_id
+                ORDER BY a.agent_id
+                """,
+                (timestamp,),
+            ).fetchall()
+        agents = []
+        for row in rows:
+            observed_at = int(row["observed_at"]) if row["observed_at"] is not None else None
+            ready = bool(row["ready"]) if row["ready"] is not None else False
+            agents.append(
+                {
+                    "agent_id": str(row["agent_id"]),
+                    "enabled": bool(row["enabled"]),
+                    "protocol_capabilities": json.loads(row["protocol_capabilities_json"]),
+                    "card_revision": int(row["card_revision"]),
+                    "card_ref": f"/agentrelay/api/agents/{row['agent_id']}/card",
+                    "ready": ready,
+                    "readiness_fresh": bool(
+                        ready
+                        and observed_at is not None
+                        and observed_at >= timestamp - LISTENER_READINESS_MAX_AGE_SECONDS
+                    ),
+                    "observed_at": observed_at,
+                    "active_task_count": int(row["active_task_count"]),
+                }
+            )
+        return agents
+
     def admin_tasks(
         self,
         *,
@@ -1397,14 +1551,12 @@ class V06Store:
             if existing:
                 return self._task_detail_conn(conn, existing)
             self._assert_listener_epoch_conn(
-                conn,
-                agent_id,
-                str(payload["listener_instance_id"]),
-                int(payload["readiness_epoch"]),
+                conn, agent_id, str(payload["listener_instance_id"]), int(payload["readiness_epoch"])
             )
             task = self._task_row_conn(conn, task_id)
             if not task:
                 return None
+            self._expire_and_reject_if_due_conn(conn, task, timestamp)
             self._assert_context(task, payload)
             if task["to_agent_id"] != agent_id:
                 raise ConflictError("only current to_agent_id may ACK/NACK")
@@ -1516,6 +1668,7 @@ class V06Store:
             task = self._task_row_conn(conn, task_id)
             if not task:
                 return None
+            self._expire_and_reject_if_due_conn(conn, task, timestamp)
             self._assert_context(task, payload)
             message = self._message_row_conn(conn, task["current_message_id"])
             event = self._current_event_conn(conn, task_id, task["current_message_id"])
@@ -1682,6 +1835,22 @@ class V06Store:
             )
             self._notify_task_status_conn(
                 conn, task, "expired", "task_timeout", None, next_version, now
+            )
+
+    def _expire_and_reject_if_due_conn(
+        self,
+        conn: sqlite3.Connection,
+        task: sqlite3.Row | dict[str, Any],
+        now: int,
+    ) -> None:
+        if task["status"] == "open" and int(task["task_expires_at"]) <= now:
+            self._expire_task_conn(conn, dict(task), now)
+            expired = self._task_row_conn(conn, str(task["task_id"]))
+            conn.commit()
+            raise ConflictError(
+                "task is terminal: expired",
+                code="task_expired",
+                current_task=self._task_dict(expired),
             )
 
     def _assert_failure_authority(
@@ -2028,6 +2197,46 @@ class V06Store:
             raise ValueError(f"unknown agent: {agent_id}")
         return row
 
+    def _upsert_agent_profile_conn(
+        self,
+        conn: sqlite3.Connection,
+        agent_id: str,
+        profile: dict[str, Any],
+        now: int,
+    ) -> None:
+        normalized = _normalize_agent_profile(profile)
+        encoded = json.dumps(normalized, sort_keys=True)
+        existing = conn.execute(
+            "SELECT card_revision, profile_json, created_at FROM agent_profiles WHERE agent_id = ?",
+            (agent_id,),
+        ).fetchone()
+        if existing and str(existing["profile_json"]) == encoded:
+            return
+        revision = int(existing["card_revision"]) + 1 if existing else 1
+        created_at = int(existing["created_at"]) if existing else now
+        conn.execute(
+            """
+            INSERT INTO agent_profiles (
+                agent_id, card_revision, profile_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(agent_id) DO UPDATE SET
+                card_revision = excluded.card_revision,
+                profile_json = excluded.profile_json,
+                updated_at = excluded.updated_at
+            """,
+            (agent_id, revision, encoded, created_at, now),
+        )
+
+    @staticmethod
+    def _agent_profile_dict(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+        value = dict(row)
+        profile = json.loads(value.pop("profile_json"))
+        value["enabled"] = bool(value["enabled"])
+        value["protocol_capabilities"] = json.loads(
+            value.pop("protocol_capabilities_json")
+        )
+        return {**value, **profile}
+
     def _agent_conn(self, conn: sqlite3.Connection, agent_id: str) -> dict[str, Any]:
         row = self._require_agent_conn(conn, agent_id)
         value = dict(row)
@@ -2096,6 +2305,108 @@ def _diagnose(task: dict[str, Any], message: dict[str, Any], event: dict[str, An
 def _fingerprint(payload: dict[str, Any]) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _correlation_metadata(metadata: Any) -> dict[str, str]:
+    if not isinstance(metadata, dict):
+        return {}
+    return {
+        key: str(metadata[key])
+        for key in ("investigation_id", "round_id", "work_item_id")
+        if isinstance(metadata.get(key), str) and metadata[key]
+    }
+
+
+def _default_agent_profile(agent_id: str, name: str, owner: str) -> dict[str, Any]:
+    is_service = agent_id in {INSTALL_HEALTHCHECK_AGENT_ID, "project-hermes"}
+    role = "service_agent" if is_service else "personal_agent"
+    return {
+        "description": f"{'Service' if is_service else 'Personal'} agent for {owner}.",
+        "agent_role": role,
+        "execution_mode": "autonomous" if is_service else "notify_only",
+        "skills": [
+            {
+                "id": "service-collaboration" if is_service else "general-collaboration",
+                "name": "Service collaboration" if is_service else "General collaboration",
+                "description": f"Handle bounded AgentRelay work for {name}.",
+            }
+        ],
+        "accepted_task_types": ["agent.task"],
+        "input_modes": ["application/json", "text/plain"],
+        "output_modes": ["application/json", "text/plain"],
+        "data_boundaries": ["Only data available in the Agent's governed environment."],
+        "permission_boundaries": ["No authority beyond the Agent's configured local policy."],
+        "capabilities": (
+            ["task_claim", "task_execute", "artifact_submit", "task_complete_owned"]
+            if agent_id == "project-hermes"
+            else (["task_claim", "task_execute", "artifact_submit"] if is_service else ["task_create", "task_review", "task_complete_owned"])
+        ),
+        "policy": {
+            "autonomous_execution_allowed": is_service,
+            "can_amend_goal": False if is_service else True,
+            "can_close_owned_task": agent_id == "project-hermes" or not is_service,
+            "high_impact_requires_approval": True,
+            "secret_safe_push_only": True,
+        },
+    }
+
+
+def _normalize_agent_profile(profile: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(profile, dict):
+        raise ValueError("agent profile must be an object")
+    required_strings = ("description", "agent_role", "execution_mode")
+    normalized = dict(profile)
+    for field in required_strings:
+        value = normalized.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"agent profile {field} must be a non-empty string")
+        normalized[field] = value.strip()
+    if normalized["agent_role"] not in {"personal_agent", "service_agent"}:
+        raise ValueError("agent profile agent_role is invalid")
+    if normalized["execution_mode"] not in {"notify_only", "manual", "semi_auto", "autonomous"}:
+        raise ValueError("agent profile execution_mode is invalid")
+    for field in (
+        "skills",
+        "accepted_task_types",
+        "input_modes",
+        "output_modes",
+        "data_boundaries",
+        "permission_boundaries",
+        "capabilities",
+    ):
+        value = normalized.get(field)
+        if not isinstance(value, list) or not value:
+            raise ValueError(f"agent profile {field} must be a non-empty array")
+    if any(
+        not isinstance(item, str) or not item.strip()
+        for field in (
+            "accepted_task_types",
+            "input_modes",
+            "output_modes",
+            "data_boundaries",
+            "permission_boundaries",
+            "capabilities",
+        )
+        for item in normalized[field]
+    ):
+        raise ValueError("agent profile string arrays must contain non-empty strings")
+    for skill in normalized["skills"]:
+        if not isinstance(skill, dict) or any(
+            not isinstance(skill.get(field), str) or not skill[field].strip()
+            for field in ("id", "name", "description")
+        ):
+            raise ValueError("agent profile skills require id, name, and description")
+    if not isinstance(normalized.get("policy"), dict):
+        raise ValueError("agent profile policy must be an object")
+    allowed = {
+        "description", "agent_role", "execution_mode", "skills",
+        "accepted_task_types", "input_modes", "output_modes", "data_boundaries",
+        "permission_boundaries", "capabilities", "policy",
+    }
+    unknown = sorted(set(normalized) - allowed)
+    if unknown:
+        raise ValueError(f"unknown agent profile fields: {unknown}")
+    return normalized
 
 
 def _now(value: int | None) -> int:
