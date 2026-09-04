@@ -48,8 +48,8 @@ BUNDLE_REVISION_V05_COMPATIBLE = 3
 BUNDLE_REVISION_V05 = 5
 BUNDLE_PUBLISHED_AT_V05 = "2026-07-20T00:00:00Z"
 BUNDLE_EXPIRES_AT_V05 = "2027-07-19T00:00:00Z"
-BUNDLE_REVISION_V06 = 11
-BUNDLE_PUBLISHED_AT_V06 = "2026-09-01T00:00:00Z"
+BUNDLE_REVISION_V06 = 12
+BUNDLE_PUBLISHED_AT_V06 = "2026-09-04T00:00:00Z"
 BUNDLE_EXPIRES_AT_V06 = "2027-09-01T00:00:00Z"
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -360,6 +360,28 @@ def _v06_contract(value: Any) -> Any:
     return value
 
 
+def _v06_agent_tools() -> dict[str, Any]:
+    tools = _v06_contract(V05_AGENT_TOOLS)
+    create = tools["tools"]["agentrelay_create_task"]["input_schema"]["properties"]
+    create["clientRequestId"] = {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256,
+        "description": "Stable caller id for replaying the same create across MCP calls and restarts.",
+    }
+    create["message"]["properties"]["metadata"] = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [],
+        "properties": {
+            "investigation_id": {"type": "string", "minLength": 1, "maxLength": 256},
+            "round_id": {"type": "string", "minLength": 1, "maxLength": 256},
+            "work_item_id": {"type": "string", "minLength": 1, "maxLength": 256},
+        },
+    }
+    return tools
+
+
 def v06_content(*, dynamic_tools: bool | None = None) -> dict[str, Any]:
     enabled = dynamic_agent_tools_enabled() if dynamic_tools is None else dynamic_tools
     content = {
@@ -371,7 +393,7 @@ def v06_content(*, dynamic_tools: bool | None = None) -> dict[str, Any]:
         "adapters": _v06_contract(V05_OPERATION_ADAPTERS if enabled else V05_LEGACY_OPERATION_ADAPTERS),
     }
     if enabled:
-        content["agent_tools"] = _v06_contract(V05_AGENT_TOOLS)
+        content["agent_tools"] = _v06_agent_tools()
     return content
 
 

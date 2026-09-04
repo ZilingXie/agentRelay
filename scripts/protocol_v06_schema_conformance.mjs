@@ -54,4 +54,19 @@ for (const transportReason of [
   }
 }
 
-console.log("protocol v0.6 schema conformance passed (6 examples)");
+for (const packet of [
+  { kind: "result", status: "answered", summary: "Data returned.", data: { rows: 3 } },
+  { kind: "result", status: "blocked", summary: "Access is missing.", blocker: { code: "access_denied" } },
+  { kind: "result", status: "failed", summary: "Query failed.", error: { code: "query_failed" } },
+]) {
+  const validate = ajv.getSchema(schemas.get("result-packet-v06.schema.json").$id);
+  if (!validate(packet)) {
+    throw new Error(`Result Packet failed validation: ${ajv.errorsText(validate.errors)}`);
+  }
+}
+const validateResult = ajv.getSchema(schemas.get("result-packet-v06.schema.json").$id);
+if (validateResult({ kind: "result", status: "blocked", summary: "Missing blocker." })) {
+  throw new Error("blocked Result Packet must require blocker");
+}
+
+console.log("protocol v0.6 schema conformance passed (6 examples, 3 Result Packets)");

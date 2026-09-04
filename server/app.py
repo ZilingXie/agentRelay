@@ -416,17 +416,27 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 store = self.require_current_store()
                 if store is None:
                     return
-                self.respond_json({"agents": store.admin_agents()})
+                agents = store.list_agents() if isinstance(store, V06Store) else store.admin_agents()
+                self.respond_json({"agents": agents})
                 return
             self.respond_json({"agents": self.store.list_agents()})
             return
         if path == "/agentrelay/agents/cards":
-            cards = [agent_card(agent) for agent in self.store.list_agents()]
+            agents = (
+                self.v06_store.list_agent_profiles()
+                if self.mutation_mode == "v06" and self.v06_store is not None
+                else self.store.list_agents()
+            )
+            cards = [agent_card(agent) for agent in agents]
             self.respond_json({"agentCards": cards, "agent_cards": cards})
             return
         if match := re.fullmatch(r"/agentrelay/agents/([^/]+)/card", path):
             agent_id = match.group(1)
-            agent = self.store.get_agent(agent_id)
+            agent = (
+                self.v06_store.get_agent_profile(agent_id)
+                if self.mutation_mode == "v06" and self.v06_store is not None
+                else self.store.get_agent(agent_id)
+            )
             if not agent:
                 self.respond_error(404, "agent not found")
                 return
@@ -1424,6 +1434,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         detail = self.require_v06_file_task(auth, task_id)
         if detail is None:
             return
+        if self.v06_store is not None and self.v06_store.expire_task_if_due(task_id):
+            detail = self.v06_store.get_task_detail(task_id)
         task = detail["task"]
         if task["status"] != "open":
             self.respond_error(
@@ -1994,9 +2006,12 @@ def agent_card(agent: dict[str, Any]) -> dict[str, Any]:
     a2a_url = f"{api_base_url}/a2a/{agent_id}"
     agentrelay_url = f"{api_base_url}/agents/{agent_id}/card"
     role_profile = agent_role_profile(agent)
-    skills = default_agent_skills(agent)
+    skills = agent.get("skills") or default_agent_skills(agent)
+    supported_protocols = agent.get("protocol_capabilities") or ["agent-collab-v0.3"]
+    current_protocol = supported_protocols[-1]
+    card_revision = int(agent.get("card_revision") or 1)
     return {
-        "protocolVersion": "agentrelay-agent-card-v0.3",
+        "protocolVersion": "agentrelay-agent-card-v0.6" if "agent-collab-v0.6" in supported_protocols else "agentrelay-agent-card-v0.3",
         "a2aProtocolVersion": "0.3",
         "name": agent["name"],
         "description": agent["description"],
@@ -2008,18 +2023,21 @@ def agent_card(agent: dict[str, Any]) -> dict[str, Any]:
                 "url": a2a_url,
                 "tenant": agent_id,
             },
-            {
-                "protocolBinding": "AGENTRELAY_HTTP",
-                "protocolVersion": "agent-collab-v0.3",
-                "url": api_base_url,
-                "tenant": agent_id,
-            },
+            *[
+                {
+                    "protocolBinding": "AGENTRELAY_HTTP",
+                    "protocolVersion": protocol_version,
+                    "url": api_base_url,
+                    "tenant": agent_id,
+                }
+                for protocol_version in supported_protocols
+            ],
         ],
         "provider": {
             "organization": agent["owner"],
             "url": relay_base_url.rstrip("/"),
         },
-        "version": "agentrelay-agent-card-v0.3",
+        "version": f"agentrelay-agent-card-r{card_revision}",
         "documentationUrl": f"{relay_base_url.rstrip('/')}/plan.html",
         "capabilities": {
             "streaming": False,
@@ -2028,7 +2046,7 @@ def agent_card(agent: dict[str, Any]) -> dict[str, Any]:
             "extendedAgentCard": False,
             "extensions": [
                 {
-                    "uri": "https://server.stellarix.space/agentrelay/protocol/agent-collab-v0.3",
+                    "uri": f"{relay_base_url.rstrip('/')}/protocol/{current_protocol}",
                     "description": "AgentRelay two-agent collaboration semantics over HTTP relay events.",
                     "required": False,
                     "params": {
@@ -2049,8 +2067,8 @@ def agent_card(agent: dict[str, Any]) -> dict[str, Any]:
             }
         },
         "securityRequirements": [{"bearerAuth": []}],
-        "defaultInputModes": ["application/json", "text/plain"],
-        "defaultOutputModes": ["application/json", "text/plain"],
+        "defaultInputModes": agent.get("input_modes") or ["application/json", "text/plain"],
+        "defaultOutputModes": agent.get("output_modes") or ["application/json", "text/plain"],
         "skills": skills,
         "agentRelay": {
             "agent_id": agent_id,
@@ -2060,7 +2078,12 @@ def agent_card(agent: dict[str, Any]) -> dict[str, Any]:
             "role_description": role_profile["role_description"],
             "protocol_capabilities": role_profile["capabilities"],
             "policy": role_profile["policy"],
-            "accepted_task_types": accepted_task_types(skills),
+            "accepted_task_types": agent.get("accepted_task_types") or accepted_task_types(skills),
+            "data_boundaries": agent.get("data_boundaries", []),
+            "permission_boundaries": agent.get("permission_boundaries", []),
+            "supported_protocols": supported_protocols,
+            "card_revision": card_revision,
+            "card_ref": agentrelay_url,
             "scopes": default_agent_scopes(agent_id, role_profile),
             "human_approval_policy": default_human_approval_policy(agent),
             "endpoints": {
@@ -2076,8 +2099,8 @@ def agent_card(agent: dict[str, Any]) -> dict[str, Any]:
 def agent_role_profile(agent: dict[str, Any]) -> dict[str, Any]:
     agent_role = str(agent.get("agent_role") or "personal_agent")
     execution_mode = str(agent.get("execution_mode") or ("autonomous" if agent_role == "service_agent" else "notify_only"))
-    capabilities = parse_json_list(agent.get("capabilities_json")) or default_protocol_capabilities(agent_role)
-    policy = parse_json_object(agent.get("policy_json")) or default_role_policy(agent_role)
+    capabilities = agent.get("capabilities") or parse_json_list(agent.get("capabilities_json")) or default_protocol_capabilities(agent_role)
+    policy = agent.get("policy") or parse_json_object(agent.get("policy_json")) or default_role_policy(agent_role)
     role_description = (
         "Autonomous or semi-autonomous service agent. It can claim assigned work and submit artifacts, but it must not change requester-owned goals."
         if agent_role == "service_agent"
