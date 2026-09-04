@@ -505,8 +505,6 @@ class V06Store:
         timestamp = _now(now)
         if int(payload["grant_expires_at"]) <= timestamp:
             raise ValueError("grant_expires_at must be in the future")
-        if int(payload["task_expires_at"]) <= timestamp:
-            raise ValueError("task_expires_at must be in the future")
         if int(payload["grant_expires_at"]) <= int(payload["task_expires_at"]):
             raise ValueError("grant_expires_at must be later than task_expires_at")
         coordinator = str(payload["coordinator_agent_id"])
@@ -587,6 +585,8 @@ class V06Store:
                     timestamp,
                 )
             else:
+                if int(payload["task_expires_at"]) <= timestamp:
+                    raise ValueError("task_expires_at must be in the future")
                 grant_id = f"cgrant_{uuid.uuid4().hex}"
                 token_version = 1
                 conn.execute(
@@ -1795,7 +1795,9 @@ class V06Store:
             rows = conn.execute(
                 """
                 SELECT a.agent_id, a.enabled, a.protocol_capabilities_json,
-                       p.card_revision, r.ready, r.observed_at,
+                       p.card_revision, r.protocol_version AS readiness_protocol_version,
+                       r.workspace_version, r.listener_instance_id, r.readiness_epoch,
+                       r.transport, r.ready, r.observed_at,
                        (SELECT COUNT(*) FROM tasks t
                         WHERE t.status = 'open'
                           AND t.task_expires_at > ?
@@ -1824,6 +1826,15 @@ class V06Store:
                         and observed_at is not None
                         and observed_at >= timestamp - LISTENER_READINESS_MAX_AGE_SECONDS
                     ),
+                    "readiness_protocol_version": row["readiness_protocol_version"],
+                    "workspace_version": row["workspace_version"],
+                    "listener_instance_id": row["listener_instance_id"],
+                    "readiness_epoch": (
+                        int(row["readiness_epoch"])
+                        if row["readiness_epoch"] is not None
+                        else None
+                    ),
+                    "transport": row["transport"],
                     "observed_at": observed_at,
                     "active_task_count": int(row["active_task_count"]),
                 }

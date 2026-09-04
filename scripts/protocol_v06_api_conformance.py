@@ -108,7 +108,14 @@ def run_flow(db_path: Path) -> None:
     assert set(by_id[REQUESTER]) == {
         "agent_id", "enabled", "protocol_capabilities", "card_revision",
         "card_ref", "ready", "readiness_fresh", "observed_at", "active_task_count",
+        "readiness_protocol_version", "workspace_version", "listener_instance_id",
+        "readiness_epoch", "transport",
     }
+    assert by_id[REQUESTER]["readiness_protocol_version"] is None
+    assert by_id[REQUESTER]["workspace_version"] is None
+    assert by_id[REQUESTER]["listener_instance_id"] is None
+    assert by_id[REQUESTER]["readiness_epoch"] is None
+    assert by_id[REQUESTER]["transport"] is None
     assert not by_id["disabled-agent"]["enabled"]
     assert PROTOCOL_V06 not in by_id["legacy-only-agent"]["protocol_capabilities"]
     card = request("GET", f"/agents/{REQUESTER}/card", None, HEADERS[REQUESTER], 200)

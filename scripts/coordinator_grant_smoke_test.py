@@ -40,9 +40,29 @@ AUTH = {
 def main() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         root = Path(temp_dir)
+        verify_reissue_after_task_deadline(root / "reissue.sqlite3")
         run_production_style(root / "production")
         run_compatibility_style(root / "compatibility")
     print("coordinator grant smoke passed (production compatibility=false, test compatibility=true)")
+
+
+def verify_reissue_after_task_deadline(db_path: Path) -> None:
+    seed_agents(db_path)
+    store = V06Store(str(db_path))
+    claims = grant_claims(1_800_000_000, "deadline-recovery", task_count=1)
+    first = store.issue_coordinator_grant(claims, now=1_800_000_001)
+    rotated = store.issue_coordinator_grant(
+        claims, now=int(claims["task_expires_at"]) + 1
+    )
+    assert rotated["grant"]["grant_id"] == first["grant"]["grant_id"]
+    assert rotated["grant"]["token_version"] == 2
+    stale_new = grant_claims(1_800_000_000, "stale-new", task_count=1)
+    try:
+        store.issue_coordinator_grant(stale_new, now=int(stale_new["task_expires_at"]) + 1)
+    except ValueError as exc:
+        assert str(exc) == "task_expires_at must be in the future"
+    else:
+        raise AssertionError("new Coordinator Grant accepted an expired task deadline")
 
 
 def run_production_style(root: Path) -> None:
