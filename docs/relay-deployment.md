@@ -46,6 +46,22 @@ AGENTRELAY_MUTATION_MODE=legacy
 AGENTRELAY_AUTH_FILE=/home/ubuntu/agentRelay/data/agentrelay-auth.json
 ```
 
+For a v0.6 Investigation coordinator, explicitly configure the authenticated
+service identity allowlist. Direct create compatibility is off by default and
+must remain off in production-style operation:
+
+```text
+AGENTRELAY_COORDINATOR_AGENT_IDS=project-hermes
+AGENTRELAY_COORDINATOR_DIRECT_CREATE_COMPATIBILITY=0
+```
+
+On first v0.6 Store open, the additive schema initialization creates the
+`coordinator_grants`, `coordinator_grant_targets`,
+`coordinator_grant_tasks`, and `coordinator_grant_audit` tables and their
+indexes. Back up the v0.6 SQLite file and stop API/WS writers before applying
+this schema in an existing environment. No destructive down migration is
+provided; rollback keeps the new tables and disables the coordinator allowlist.
+
 ## HTTPS public API
 
 Nginx exposes the local relay through:

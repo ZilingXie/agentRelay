@@ -115,7 +115,36 @@ and remain recoverable until ACK, including after the Task is terminal.
 - A mutation committed before the deadline remains idempotently readable after
   the deadline; an uncommitted mutation at the deadline cannot win over expiry.
 
-## One-Round Investigation Contract (bundle revision 12)
+## Bounded Coordinator Grants (bundle revision 13)
+
+An operator-configured coordinator identity may create a root Task only with an
+opaque grant sent in `X-AgentRelay-Coordinator-Grant`. Grant issuance is
+authenticated at `POST /coordinator-grants` and binds the coordinator identity,
+Investigation and Round ids, approved plan digest, human authority reference,
+target set, exact Task count, common absolute `task_expires_at`, grant expiry,
+and exactly `create`, `read`, `batch`, and `complete-own` operations.
+
+The Server stores only a SHA-256 token hash. Reissuing the same issuance key
+with identical claims returns the same `grant_id` and rotates `token_version`;
+changed claims conflict. Task create validates and consumes quota in the same
+`BEGIN IMMEDIATE` transaction that writes the Task, first Message, Event,
+idempotency record, and grant-to-Task mapping. A create must use `max_turns=1`,
+the exact common deadline, an allowed target, and matching
+`investigation_id`, `round_id`, `work_item_id`, and `approved_plan_digest`
+metadata. `POST /coordinator-grants/{grant_id}/tasks/resolve` recovers an
+unknown create outcome by its original idempotency key; it never creates a new
+Task.
+
+The grant cannot authorize reply, follow-up, goal or participant mutation,
+failure, completion of another Task, or another Round. Missing grants return
+401; invalid, expired, revoked, wrong-identity, and forbidden-operation grants
+return 403; claim mismatch, exhausted quota, and not-owned Task access return
+409. `AGENTRELAY_COORDINATOR_AGENT_IDS` is the explicit identity allowlist.
+`AGENTRELAY_COORDINATOR_DIRECT_CREATE_COMPATIBILITY` defaults off; when
+explicitly enabled, each grantless coordinator create writes a
+`coordinator.compatibility_create` Task audit event.
+
+## One-Round Investigation Contract (bundle revision 13)
 
 AgentRelay remains a pairwise transport and does not add Investigation, Round,
 barrier, subagent, cancel, or batch-create objects. A Personal Investigation

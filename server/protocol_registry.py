@@ -48,7 +48,7 @@ BUNDLE_REVISION_V05_COMPATIBLE = 3
 BUNDLE_REVISION_V05 = 5
 BUNDLE_PUBLISHED_AT_V05 = "2026-07-20T00:00:00Z"
 BUNDLE_EXPIRES_AT_V05 = "2027-07-19T00:00:00Z"
-BUNDLE_REVISION_V06 = 12
+BUNDLE_REVISION_V06 = 13
 BUNDLE_PUBLISHED_AT_V06 = "2026-09-04T00:00:00Z"
 BUNDLE_EXPIRES_AT_V06 = "2027-09-01T00:00:00Z"
 
@@ -762,6 +762,14 @@ def protocol_manifest_v06(
             "retention_hours_after_task_terminal": files_retention_hours_from_env(),
             "orphan_hours_when_unreferenced": files_orphan_hours_from_env(),
             "notes": "Task-scoped, participant-gated file blobs referenced by file parts in reply messages; initial Task messages cannot carry file parts.",
+        },
+        "coordinator_grants": {
+            "issue_path": "/coordinator-grants",
+            "resolve_path": "/coordinator-grants/{grant_id}/tasks/resolve",
+            "header": "X-AgentRelay-Coordinator-Grant",
+            "operations": ["create", "read", "batch", "complete-own"],
+            "max_tasks": 100,
+            "direct_create_compatibility_default": False,
         },
     }
     if dynamic_tools:

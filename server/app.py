@@ -31,7 +31,7 @@ from server.files_store import (
 )
 from server.store import ConflictError, Store, read_alias
 from server.store_v05 import V05Store
-from server.store_v06 import V06Store
+from server.store_v06 import CoordinatorGrantPermissionError, V06Store
 from server.transitions import TERMINAL_STATES
 from server.protocol_v03 import (
     ENVELOPE_V03,
@@ -77,6 +77,8 @@ from server.protocol_v06 import (
     reject_unknown as reject_unknown_v06,
     require_string as require_string_v06,
     validate_ack as validate_v06_ack,
+    validate_coordinator_grant_issue,
+    validate_coordinator_grant_resolve,
     validate_complete as validate_v06_complete,
     validate_delivery_fail as validate_v06_delivery_fail,
     validate_event_ack as validate_v06_event_ack,
@@ -134,6 +136,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
     admin_token: str = ""
     delivery_control: DeliveryControl | None = None
     delivery_wake_client: DeliveryWakeClient | None = None
+    coordinator_agent_ids: set[str] = set()
+    coordinator_direct_create_compatibility: bool = False
 
     def wake_delivery(self, agent_id: str, reason: str) -> None:
         if self.delivery_wake_client is not None:
@@ -266,6 +270,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         self.protocol_v03_response = False
         try:
             self.route_get()
+        except CoordinatorGrantPermissionError as exc:
+            self.respond_error(403, str(exc), error_type="permission", code=exc.code)
         except ConflictError as exc:
             self.respond_error(
                 409, str(exc), error_type="conflict", code=exc.code,
@@ -287,6 +293,8 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         except RequestBodyTooLarge as exc:
             self.close_connection = True
             self.respond_error(413, str(exc), error_type="validation", code="REQUEST_BODY_TOO_LARGE")
+        except CoordinatorGrantPermissionError as exc:
+            self.respond_error(403, str(exc), error_type="permission", code=exc.code)
         except ConflictError as exc:
             self.respond_error(
                 409, str(exc), error_type="conflict", code=exc.code,
@@ -460,6 +468,10 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 return
             if not self.require_task_participant(auth, item["task"]):
                 return
+            if not self.authorize_coordinator_task_if_managed(
+                auth, store, match.group(1), "read"
+            ):
+                return
             self.respond_json(item)
             return
         if (
@@ -474,6 +486,10 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 self.respond_error(404, "task not found", code="task_not_found")
                 return
             if not self.require_task_participant(auth, detail["task"]):
+                return
+            if not self.authorize_coordinator_task_if_managed(
+                auth, store, match.group(1), "read"
+            ):
                 return
             self.respond_json(detail)
             return
@@ -496,6 +512,10 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 self.respond_error(404, "task not found", code="task_not_found")
                 return
             if not self.require_task_participant(auth, detail["task"]):
+                return
+            if not self.authorize_coordinator_task_if_managed(
+                auth, store, match.group(1), "read"
+            ):
                 return
             self.respond_json({"tasks": store.get_lineage(match.group(1))})
             return
@@ -717,6 +737,51 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return
         payload = self.read_json()
         self.protocol_v03_response = is_protocol_v03(payload)
+        if path == "/agentrelay/coordinator-grants":
+            if self.mutation_mode != "v06" or self.v06_store is None:
+                self.respond_error(
+                    409,
+                    "coordinator grants require Protocol v0.6 write mode",
+                    error_type="protocol_mismatch",
+                    code="coordinator_grant_requires_v06",
+                )
+                return
+            if not self.require_coordinator_identity(auth):
+                return
+            normalized = validate_coordinator_grant_issue(payload)
+            if not self.require_agent(auth, normalized["coordinator_agent_id"]):
+                return
+            self.respond_json(
+                self.v06_store.issue_coordinator_grant(normalized), status=201
+            )
+            return
+        if match := re.fullmatch(
+            r"/agentrelay/coordinator-grants/([^/]+)/tasks/resolve", path
+        ):
+            if self.mutation_mode != "v06" or self.v06_store is None:
+                self.respond_error(
+                    409,
+                    "coordinator grants require Protocol v0.6 write mode",
+                    error_type="protocol_mismatch",
+                    code="coordinator_grant_requires_v06",
+                )
+                return
+            if not self.require_coordinator_identity(auth):
+                return
+            validate_coordinator_grant_resolve(payload)
+            token = self.require_coordinator_grant_header()
+            if token is None:
+                return
+            self.respond_json(
+                self.v06_store.resolve_coordinator_grant_task(
+                    match.group(1),
+                    token,
+                    auth["agent_id"],
+                    idempotency_key=payload["idempotency_key"],
+                    work_item_id=payload.get("work_item_id"),
+                )
+            )
+            return
         if path == "/agentrelay/protocols/negotiate":
             self.respond_json(
                 negotiate_protocol(
@@ -792,6 +857,10 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                     continue
                 item = store.visibility(str(task_id))
                 if item:
+                    if not self.authorize_coordinator_task_if_managed(
+                        auth, store, str(task_id), "batch"
+                    ):
+                        return
                     result["items"].append(item)
             if self.auth_required:
                 permitted = []
@@ -873,7 +942,42 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 store = self.require_current_writes()
                 if store is None:
                     return
-                detail = store.create_task(payload)
+                coordinator_token = None
+                compatibility_create = False
+                if isinstance(store, V06Store) and auth.get("agent_id") in self.coordinator_agent_ids:
+                    coordinator_token = self.headers.get(
+                        "X-AgentRelay-Coordinator-Grant", ""
+                    ).strip()
+                    if not coordinator_token:
+                        if not self.coordinator_direct_create_compatibility:
+                            self.respond_error(
+                                401,
+                                "missing coordinator grant",
+                                error_type="auth_error",
+                                code="missing_coordinator_grant",
+                            )
+                            return
+                        compatibility_create = True
+                elif self.headers.get("X-AgentRelay-Coordinator-Grant", "").strip():
+                    self.respond_error(
+                        403,
+                        "identity is not an allowed coordinator",
+                        error_type="permission",
+                        code="coordinator_identity_not_allowed",
+                    )
+                    return
+                if isinstance(store, V06Store):
+                    detail = store.create_task(
+                        payload,
+                        coordinator_grant_token=coordinator_token or None,
+                        coordinator_agent_id=auth.get("agent_id") or None,
+                    )
+                else:
+                    detail = store.create_task(payload)
+                if compatibility_create:
+                    store.record_coordinator_compatibility_create(
+                        detail["task"]["task_id"], requester_agent_id
+                    )
                 self.record_client_runtime_audit(store, detail["task"]["task_id"], requester_agent_id)
                 self.respond_json(detail, status=201)
                 return
@@ -903,6 +1007,10 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                     return
                 store = self.require_durable_task_store(match.group(1))
                 if store is None:
+                    return
+                if self.reject_forbidden_coordinator_task_operation(
+                    auth, store, match.group(1)
+                ):
                     return
                 if not self.validate_for_store(
                     store, validate_v05_message_submit, validate_v06_message_submit, payload
@@ -1007,7 +1115,23 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                     return
                 if not self.validate_for_store(store, validate_v05_complete, validate_v06_complete, payload):
                     return
-                detail = store.complete_task(match.group(1), payload)
+                coordinator_token = None
+                if (
+                    isinstance(store, V06Store)
+                    and store.is_coordinator_managed_task(match.group(1), actor_agent_id)
+                ):
+                    coordinator_token = self.require_coordinator_grant_header()
+                    if coordinator_token is None:
+                        return
+                if isinstance(store, V06Store):
+                    detail = store.complete_task(
+                        match.group(1),
+                        payload,
+                        coordinator_grant_token=coordinator_token,
+                        coordinator_agent_id=actor_agent_id if coordinator_token else None,
+                    )
+                else:
+                    detail = store.complete_task(match.group(1), payload)
                 if not detail:
                     self.respond_error(404, "task not found", code="task_not_found")
                     return
@@ -1037,6 +1161,10 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                     return
                 store = self.require_durable_task_store(match.group(1))
                 if store is None:
+                    return
+                if self.reject_forbidden_coordinator_task_operation(
+                    auth, store, match.group(1)
+                ):
                     return
                 if not self.validate_for_store(store, validate_v05_fail, validate_v06_fail, payload):
                     return
@@ -1070,6 +1198,10 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                     self.respond_error(404, "task not found", code="task_not_found")
                     return
                 source_task = source["task"]
+                if self.reject_forbidden_coordinator_task_operation(
+                    auth, store, source_task["task_id"]
+                ):
+                    return
                 if self.mutation_mode == "v06" and isinstance(store, V05Store):
                     self.respond_error(
                         409,
@@ -1358,6 +1490,71 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def require_coordinator_identity(self, auth: dict[str, str]) -> bool:
+        agent_id = auth.get("agent_id", "")
+        if agent_id not in self.coordinator_agent_ids:
+            self.respond_error(
+                403,
+                "identity is not an allowed coordinator",
+                error_type="permission",
+                code="coordinator_identity_not_allowed",
+            )
+            return False
+        return True
+
+    def require_coordinator_grant_header(self) -> str | None:
+        token = self.headers.get("X-AgentRelay-Coordinator-Grant", "").strip()
+        if not token:
+            self.respond_error(
+                401,
+                "missing coordinator grant",
+                error_type="auth_error",
+                code="missing_coordinator_grant",
+            )
+            return None
+        return token
+
+    def authorize_coordinator_task_if_managed(
+        self,
+        auth: dict[str, str],
+        store: V05Store | V06Store,
+        task_id: str,
+        operation: str,
+    ) -> bool:
+        agent_id = auth.get("agent_id", "")
+        if (
+            not isinstance(store, V06Store)
+            or not agent_id
+            or not store.is_coordinator_managed_task(task_id, agent_id)
+        ):
+            return True
+        token = self.require_coordinator_grant_header()
+        if token is None:
+            return False
+        store.authorize_coordinator_task(task_id, token, agent_id, operation)
+        return True
+
+    def reject_forbidden_coordinator_task_operation(
+        self,
+        auth: dict[str, str],
+        store: V05Store | V06Store,
+        task_id: str,
+    ) -> bool:
+        agent_id = auth.get("agent_id", "")
+        if (
+            isinstance(store, V06Store)
+            and agent_id
+            and store.is_coordinator_managed_task(task_id, agent_id)
+        ):
+            self.respond_error(
+                403,
+                "coordinator grant does not authorize this operation",
+                error_type="permission",
+                code="coordinator_grant_operation_forbidden",
+            )
+            return True
+        return False
+
     def require_task_participant(
         self, auth: dict[str, str], task: dict[str, Any]
     ) -> bool:
@@ -1433,6 +1630,10 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
     def handle_upload_task_file(self, auth: dict[str, str], task_id: str) -> None:
         detail = self.require_v06_file_task(auth, task_id)
         if detail is None:
+            return
+        if self.reject_forbidden_coordinator_task_operation(
+            auth, self.v06_store, task_id
+        ):
             return
         if self.v06_store is not None and self.v06_store.expire_task_if_due(task_id):
             detail = self.v06_store.get_task_detail(task_id)
@@ -1555,6 +1756,10 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
         detail = self.require_v06_file_task(auth, task_id)
         if detail is None:
             return
+        if not self.authorize_coordinator_task_if_managed(
+            auth, self.v06_store, task_id, "read"
+        ):
+            return
         records = self.files_store.list_task_files(task_id)
         records = [record for record in records if self.can_access_file(auth, detail, record)]
         self.respond_json({"files": [self.public_file_record(r) for r in records]})
@@ -1564,6 +1769,10 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
     ) -> None:
         detail = self.require_v06_file_task(auth, task_id)
         if detail is None:
+            return
+        if not self.authorize_coordinator_task_if_managed(
+            auth, self.v06_store, task_id, "read"
+        ):
             return
         if not FILE_ID_PATTERN.fullmatch(file_id):
             self.respond_error(404, "file not found", code="file_not_found")
@@ -2623,6 +2832,26 @@ def create_server() -> ThreadingHTTPServer:
     auth_required, identities = load_auth_identities()
     AgentRelayHandler.auth_required = auth_required
     AgentRelayHandler.auth_identities = identities
+    coordinator_agent_ids = {
+        item.strip()
+        for item in os.environ.get("AGENTRELAY_COORDINATOR_AGENT_IDS", "").split(",")
+        if item.strip()
+    }
+    if coordinator_agent_ids and mutation_mode != "v06":
+        raise ValueError("AGENTRELAY_COORDINATOR_AGENT_IDS requires v0.6 write mode")
+    if coordinator_agent_ids and not auth_required:
+        raise ValueError("Coordinator Grants require AgentRelay authentication")
+    configured_agent_ids = {identity["agent_id"] for identity in identities.values()}
+    unknown_coordinators = sorted(coordinator_agent_ids - configured_agent_ids)
+    if unknown_coordinators:
+        raise ValueError(
+            "Coordinator allowlist identities are missing from AgentRelay auth: "
+            + ", ".join(unknown_coordinators)
+        )
+    AgentRelayHandler.coordinator_agent_ids = coordinator_agent_ids
+    AgentRelayHandler.coordinator_direct_create_compatibility = os.environ.get(
+        "AGENTRELAY_COORDINATOR_DIRECT_CREATE_COMPATIBILITY", "0"
+    ).strip().lower() in {"1", "true", "yes", "on"}
     AgentRelayHandler.admin_token = os.environ.get("AGENTRELAY_ADMIN_TOKEN", "").strip()
     AgentRelayHandler.delivery_wake_client = DeliveryWakeClient(
         os.environ.get("AGENTRELAY_DELIVERY_WAKE_URL", ""),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import sqlite3
@@ -325,10 +326,9 @@ def run_flow(v06_db: Path, files_db: Path, blobs_dir: Path) -> None:
     assert summary["files"]["max_files_per_message"] == MAX_FILES_PER_MESSAGE
     assert summary["files"]["max_total_file_bytes"] == MAX_TOTAL_FILE_BYTES
 
-    oversized_json = raw_request(
-        "POST",
+    oversized_json = oversized_json_header_request(
         "/protocols/validate",
-        b'{"padding":"' + b"x" * (1024 * 1024) + b'"}',
+        1024 * 1024 + 15,
         {**HEADERS[REQUESTER], "Content-Type": "application/json"},
         413,
     )
@@ -555,6 +555,33 @@ def raw_request(
     if status != expected_status:
         raise AssertionError(
             f"{method} {path}: expected {expected_status}, got {status}: {result}"
+        )
+    return result
+
+
+def oversized_json_header_request(
+    path: str,
+    declared_length: int,
+    headers: dict[str, str],
+    expected_status: int,
+) -> dict:
+    parsed = urllib.parse.urlparse(BASE)
+    connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=10)
+    try:
+        connection.putrequest("POST", f"{parsed.path}{path}")
+        for name, value in headers.items():
+            connection.putheader(name, value)
+        connection.putheader("Content-Length", str(declared_length))
+        connection.putheader("Connection", "close")
+        connection.endheaders()
+        response = connection.getresponse()
+        status = response.status
+        result = maybe_json(response.read())
+    finally:
+        connection.close()
+    if status != expected_status:
+        raise AssertionError(
+            f"POST {path}: expected {expected_status}, got {status}: {result}"
         )
     return result
 

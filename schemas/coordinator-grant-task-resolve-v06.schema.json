@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://server.stellarix.space/agentrelay/schemas/coordinator-grant-task-resolve-v06.schema.json",
+  "title": "AgentRelay Protocol v0.6 Coordinator Grant Task Resolve",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["idempotency_key"],
+  "properties": {
+    "idempotency_key": {"type": "string", "minLength": 1},
+    "work_item_id": {"type": "string", "minLength": 1}
+  }
+}
