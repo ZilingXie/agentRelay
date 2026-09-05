@@ -181,6 +181,7 @@ def run_production_style(root: Path) -> None:
 
         other_claims = {
             **grant_claims(now, "other-round", task_count=1),
+            "investigation_id": "inv-other-case",
             "round_id": "round-other",
             "approved_plan_digest": "sha256:" + "b" * 64,
         }
@@ -291,6 +292,16 @@ def run_production_style(root: Path) -> None:
             200,
         )
         assert completed["task"]["status"] == "completed"
+        duplicate_completion = request(
+            base,
+            "POST",
+            f"/tasks/{current['task_id']}/complete",
+            complete_payload,
+            grant_headers(COORDINATOR, token),
+            200,
+        )
+        assert duplicate_completion["task"]["task_id"] == current["task_id"]
+        assert duplicate_completion["task"]["status"] == "completed"
 
         expired_claims = grant_claims(now, "expired-grant", task_count=1)
         expired_grant = request(
