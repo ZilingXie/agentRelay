@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from server.delivery_coordinator import DeliveryCoordinator
+from server.delivery_coordinator import DeliveryCoordinator, TransportLease
 from server.protocol_v05 import PROTOCOL_V05
 from server.store_v05 import V05Store
 
@@ -23,6 +24,7 @@ def main() -> None:
         socket_delivery_and_lease(Path(tmp) / "socket.sqlite3")
         lease_exhaustion(Path(tmp) / "lease-exhaustion.sqlite3")
         epoch_replacement(Path(tmp) / "epoch.sqlite3")
+        transport_lease_expiry(Path(tmp) / "transport-lease.sqlite3")
         restart_retry_persistence(Path(tmp) / "restart.sqlite3")
         informational_event_exhaustion(Path(tmp) / "informational.sqlite3")
     print("protocol v0.5 delivery coordinator passed (20/20)")
@@ -172,6 +174,32 @@ def lease_exhaustion(path: Path) -> None:
         event["type"] == "task.status_changed" and not event["canTransitionMessage"]
         for event in sent
     )
+
+
+def transport_lease_expiry(path: Path) -> None:
+    now = BASE + 4500
+    store, listeners = prepare(path, now)
+    task = create(store, "transport-lease-expiry", now)
+    sent: list[dict] = []
+    closed: list[bool] = []
+    coordinator = DeliveryCoordinator(store)
+    stale_lease = TransportLease(
+        started_at=time.time() - 120, pong_timeout_seconds=60
+    )
+    coordinator.register_socket(
+        B,
+        *listeners[B],
+        sent.append,
+        close=lambda: closed.append(True),
+        transport_session_id="ts-stale",
+        lease=stale_lease,
+    )
+    result = coordinator.run_once(now=now)
+    assert result["sent"] == 0 and result["attempt_failures"] >= 1
+    assert closed == [True], "an expired transport lease must close the socket"
+    assert sent == []
+    visibility = store.visibility(task["task"]["task_id"], now=now)
+    assert visibility["outbox"]["last_error"] == "listener_unavailable"
 
 
 def restart_retry_persistence(path: Path) -> None:

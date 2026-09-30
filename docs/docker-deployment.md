@@ -49,6 +49,30 @@ v06     native v0.6 writes; optional v0.5 compatibility drain remains separate
 Use `closed` for maintenance preflight. Do not use `v05` until the complete
 cross-component cutover gate passes.
 
+## Listener Transport Online Status
+
+Each durable lane keeps an `agent_listener_transport` row per agent
+(inside `agentrelay-v05.sqlite3` / `agentrelay-v06.sqlite3`; created
+additively at first open). The WebSocket service records transport
+`connected`/`disconnected` state, `last_pong_at`, and a `disconnect_reason`
+(`heartbeat_timeout`, `client_close`, `unexpected_data_frame`, `superseded`,
+or `connection_lost`) fenced by `listener_instance_id + readiness_epoch +
+transport_session_id`, so a superseded connection cannot clear the state of
+its replacement. Online status never replaces ACK: an Event is successful
+only after its HTTP ACK.
+
+Transport keep-alive knobs (WebSocket service):
+
+```text
+AGENTRELAY_WS_HEARTBEAT_SECONDS      text heartbeat + WebSocket Ping cadence (default 30)
+AGENTRELAY_WS_PONG_TIMEOUT_SECONDS   no Pong for this long => transport offline (default 90)
+```
+
+Set `AGENTRELAY_WS_PONG_TIMEOUT_SECONDS` to the same value in both services;
+the API container uses it only to evaluate the reported `transport_online`
+fields. A connection whose Pong times out is closed and its Events fall back
+to the existing ACK-lease retry/park/recovery paths.
+
 The API sends authenticated best-effort wake requests to the WebSocket service
 after ACK/NACK, readiness, and recovery mutations. Both services must receive
 the same `AGENTRELAY_ADMIN_TOKEN`; `docker-compose.yml` supplies the internal

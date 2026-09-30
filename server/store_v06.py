@@ -26,6 +26,10 @@ from server.delivery_control import (
     DeliveryControl,
     default_delivery_control,
 )
+from server.transport_status import (
+    combine_listener_status,
+    transport_pong_timeout_seconds,
+)
 from server.store import ConflictError
 
 
@@ -86,6 +90,21 @@ class V06Store:
                     transport TEXT NOT NULL,
                     ready INTEGER NOT NULL CHECK (ready IN (0, 1)),
                     observed_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    FOREIGN KEY (agent_id) REFERENCES agents(agent_id) ON DELETE RESTRICT
+                );
+
+                CREATE TABLE IF NOT EXISTS agent_listener_transport (
+                    agent_id TEXT PRIMARY KEY,
+                    protocol_version TEXT NOT NULL,
+                    listener_instance_id TEXT NOT NULL,
+                    readiness_epoch INTEGER NOT NULL CHECK (readiness_epoch >= 1),
+                    transport_session_id TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK (state IN ('connected', 'disconnected')),
+                    connected_at INTEGER NOT NULL,
+                    last_pong_at INTEGER,
+                    disconnected_at INTEGER,
+                    disconnect_reason TEXT,
                     updated_at INTEGER NOT NULL,
                     FOREIGN KEY (agent_id) REFERENCES agents(agent_id) ON DELETE RESTRICT
                 );
@@ -495,6 +514,102 @@ class V06Store:
             if cursor.rowcount != 1:
                 raise ConflictError("stale_readiness_epoch", code="stale_readiness_epoch")
             return self._readiness_conn(conn, agent_id)
+
+    def record_transport_connected(
+        self,
+        agent_id: str,
+        *,
+        listener_instance_id: str,
+        readiness_epoch: int,
+        transport_session_id: str,
+        now: int | None = None,
+    ) -> dict[str, Any]:
+        timestamp = _now(now)
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            self._require_agent_conn(conn, agent_id)
+            conn.execute(
+                """
+                INSERT INTO agent_listener_transport (
+                    agent_id, protocol_version, listener_instance_id, readiness_epoch,
+                    transport_session_id, state, connected_at, last_pong_at,
+                    disconnected_at, disconnect_reason, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 'connected', ?, ?, NULL, NULL, ?)
+                ON CONFLICT(agent_id) DO UPDATE SET
+                    protocol_version = excluded.protocol_version,
+                    listener_instance_id = excluded.listener_instance_id,
+                    readiness_epoch = excluded.readiness_epoch,
+                    transport_session_id = excluded.transport_session_id,
+                    state = 'connected',
+                    connected_at = excluded.connected_at,
+                    last_pong_at = excluded.last_pong_at,
+                    disconnected_at = NULL,
+                    disconnect_reason = NULL,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    agent_id, PROTOCOL_V06, listener_instance_id, readiness_epoch,
+                    transport_session_id, timestamp, timestamp, timestamp,
+                ),
+            )
+            return self._transport_conn(conn, agent_id)
+
+    def record_transport_pong(
+        self,
+        agent_id: str,
+        *,
+        listener_instance_id: str,
+        readiness_epoch: int,
+        transport_session_id: str,
+        now: int | None = None,
+    ) -> bool:
+        timestamp = _now(now)
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE agent_listener_transport
+                SET last_pong_at = ?, updated_at = ?
+                WHERE agent_id = ? AND listener_instance_id = ?
+                  AND readiness_epoch = ? AND transport_session_id = ?
+                """,
+                (
+                    timestamp, timestamp, agent_id, listener_instance_id,
+                    readiness_epoch, transport_session_id,
+                ),
+            )
+            return cursor.rowcount == 1
+
+    def record_transport_disconnected(
+        self,
+        agent_id: str,
+        *,
+        listener_instance_id: str,
+        readiness_epoch: int,
+        transport_session_id: str,
+        reason: str,
+        now: int | None = None,
+    ) -> bool:
+        timestamp = _now(now)
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE agent_listener_transport
+                SET state = 'disconnected', disconnected_at = ?,
+                    disconnect_reason = ?, updated_at = ?
+                WHERE agent_id = ? AND listener_instance_id = ?
+                  AND readiness_epoch = ? AND transport_session_id = ?
+                  AND state = 'connected'
+                """,
+                (
+                    timestamp, reason, timestamp, agent_id, listener_instance_id,
+                    readiness_epoch, transport_session_id,
+                ),
+            )
+            return cursor.rowcount == 1
+
+    def get_transport(self, agent_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            return self._transport_conn(conn, agent_id)
 
     def issue_coordinator_grant(
         self,
@@ -1764,30 +1879,110 @@ class V06Store:
                 SELECT a.*, r.protocol_version AS readiness_protocol_version,
                        r.client_version, r.workspace_version, r.listener_instance_id,
                        r.readiness_epoch, r.transport, r.ready, r.observed_at,
-                       (SELECT COUNT(*) FROM tasks t
-                        WHERE t.status = 'open'
-                          AND (t.requester_agent_id = a.agent_id OR t.target_agent_id = a.agent_id)) AS active_task_count,
+                       t.transport_session_id, t.state AS transport_state,
+                       t.connected_at, t.last_pong_at, t.disconnected_at,
+                       t.disconnect_reason, t.protocol_version AS transport_protocol_version,
+                       (SELECT COUNT(*) FROM tasks t0
+                        WHERE t0.status = 'open'
+                          AND (t0.requester_agent_id = a.agent_id OR t0.target_agent_id = a.agent_id)) AS active_task_count,
                        (SELECT COUNT(*) FROM agent_events e
                         WHERE e.agent_id = a.agent_id
-                          AND e.outbox_status IN ('queued', 'inflight', 'retry_wait', 'parked')) AS pending_event_count
+                          AND e.outbox_status IN ('queued', 'inflight', 'retry_wait', 'parked')) AS pending_event_count,
+                       (SELECT COUNT(*) FROM agent_events e
+                        WHERE e.agent_id = a.agent_id
+                          AND e.outbox_status = 'inflight') AS inflight_event_count
                 FROM agents a
                 LEFT JOIN agent_listener_readiness r ON r.agent_id = a.agent_id
+                LEFT JOIN agent_listener_transport t ON t.agent_id = a.agent_id
                 ORDER BY a.agent_id
                 """
             ).fetchall()
         values = []
         for row in rows:
-            value = dict(row)
-            value["enabled"] = bool(value["enabled"])
-            value["protocol_capabilities"] = json.loads(value.pop("protocol_capabilities_json"))
-            value["ready"] = bool(value["ready"]) if value["ready"] is not None else False
-            value["readiness_fresh"] = bool(
-                value["ready"]
-                and value["observed_at"] is not None
-                and int(value["observed_at"]) >= timestamp - LISTENER_READINESS_MAX_AGE_SECONDS
-            )
-            values.append(value)
+            values.append(self._admin_agent_value(row, timestamp))
         return values
+
+    def admin_agent_status(self, agent_id: str, *, now: int | None = None) -> dict[str, Any] | None:
+        timestamp = _now(now)
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT a.*, r.protocol_version AS readiness_protocol_version,
+                       r.client_version, r.workspace_version, r.listener_instance_id,
+                       r.readiness_epoch, r.transport, r.ready, r.observed_at,
+                       t.transport_session_id, t.state AS transport_state,
+                       t.connected_at, t.last_pong_at, t.disconnected_at,
+                       t.disconnect_reason, t.protocol_version AS transport_protocol_version,
+                       (SELECT COUNT(*) FROM tasks t0
+                        WHERE t0.status = 'open'
+                          AND (t0.requester_agent_id = a.agent_id OR t0.target_agent_id = a.agent_id)) AS active_task_count,
+                       (SELECT COUNT(*) FROM agent_events e
+                        WHERE e.agent_id = a.agent_id
+                          AND e.outbox_status IN ('queued', 'inflight', 'retry_wait', 'parked')) AS pending_event_count,
+                       (SELECT COUNT(*) FROM agent_events e
+                        WHERE e.agent_id = a.agent_id
+                          AND e.outbox_status = 'inflight') AS inflight_event_count
+                FROM agents a
+                LEFT JOIN agent_listener_readiness r ON r.agent_id = a.agent_id
+                LEFT JOIN agent_listener_transport t ON t.agent_id = a.agent_id
+                WHERE a.agent_id = ?
+                """,
+                (agent_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        value = self._admin_agent_value(row, timestamp)
+        value["generated_at"] = timestamp
+        return value
+
+    def _admin_agent_value(self, row: sqlite3.Row, timestamp: int) -> dict[str, Any]:
+        value = dict(row)
+        value["enabled"] = bool(value["enabled"])
+        value["protocol_capabilities"] = json.loads(value.pop("protocol_capabilities_json"))
+        value["ready"] = bool(value["ready"]) if value["ready"] is not None else False
+        value["readiness_fresh"] = bool(
+            value["ready"]
+            and value["observed_at"] is not None
+            and int(value["observed_at"]) >= timestamp - LISTENER_READINESS_MAX_AGE_SECONDS
+        )
+        transport = (
+            {
+                "agent_id": value["agent_id"],
+                "protocol_version": value.get("transport_protocol_version"),
+                "listener_instance_id": value.get("listener_instance_id"),
+                "readiness_epoch": value.get("readiness_epoch"),
+                "transport_session_id": value.get("transport_session_id"),
+                "state": value.get("transport_state"),
+                "connected_at": value.get("connected_at"),
+                "last_pong_at": value.get("last_pong_at"),
+                "disconnected_at": value.get("disconnected_at"),
+                "disconnect_reason": value.get("disconnect_reason"),
+            }
+            if value.get("transport_state") is not None
+            else None
+        )
+        readiness = (
+            {
+                "listener_instance_id": value.get("listener_instance_id"),
+                "readiness_epoch": value.get("readiness_epoch"),
+                "ready": value["ready"],
+                "observed_at": value.get("observed_at"),
+            }
+            if value.get("readiness_protocol_version") is not None
+            else None
+        )
+        value.update(
+            combine_listener_status(
+                readiness=readiness,
+                transport=transport,
+                pending_event_count=int(value.get("pending_event_count") or 0),
+                now=timestamp,
+                pong_timeout_seconds=transport_pong_timeout_seconds(),
+                readiness_max_age_seconds=LISTENER_READINESS_MAX_AGE_SECONDS,
+            )
+        )
+        value["transport_connected"] = bool(transport and transport["state"] == "connected")
+        return value
 
     def list_agents(self, *, now: int | None = None) -> list[dict[str, Any]]:
         timestamp = _now(now)
@@ -2935,6 +3130,19 @@ class V06Store:
             raise ValueError(f"listener readiness not found: {agent_id}")
         value = dict(row)
         value["ready"] = bool(value["ready"])
+        return value
+
+    def _transport_conn(self, conn: sqlite3.Connection, agent_id: str) -> dict[str, Any] | None:
+        row = conn.execute(
+            "SELECT * FROM agent_listener_transport WHERE agent_id = ?", (agent_id,)
+        ).fetchone()
+        if not row:
+            return None
+        value = dict(row)
+        value["readiness_epoch"] = int(value["readiness_epoch"])
+        for key in ("connected_at", "last_pong_at", "disconnected_at", "updated_at"):
+            if value.get(key) is not None:
+                value[key] = int(value[key])
         return value
 
     @staticmethod

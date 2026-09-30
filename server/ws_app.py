@@ -10,6 +10,7 @@ import socket
 import struct
 import threading
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -28,7 +29,7 @@ from server.app import (
     query_params,
     validate_protocol_drain_stores,
 )
-from server.delivery_coordinator import DeliveryCoordinator
+from server.delivery_coordinator import DeliveryCoordinator, TransportLease
 from server.files_store import (
     DEFAULT_BLOBS_DIR,
     DEFAULT_FILES_DB_PATH,
@@ -45,12 +46,28 @@ from server.store_v05 import V05Store
 from server.store_v06 import V06Store
 from server.protocol_v05 import PROTOCOL_V05
 from server.protocol_v06 import PROTOCOL_V06
+from server.transport_status import transport_pong_timeout_seconds
 
 
 DEFAULT_DB_PATH = "./data/agentrelay.sqlite3"
 DEFAULT_V05_DB_PATH = "./data/agentrelay-v05.sqlite3"
 DEFAULT_V06_DB_PATH = "./data/agentrelay-v06.sqlite3"
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+
+class DisconnectReason:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._reason: str | None = None
+
+    def set_once(self, reason: str) -> None:
+        with self._lock:
+            if self._reason is None:
+                self._reason = reason
+
+    def get(self) -> str | None:
+        with self._lock:
+            return self._reason
 
 
 class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
@@ -65,6 +82,7 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
     auth_required: bool = False
     poll_interval_seconds: float = 2.0
     heartbeat_seconds: float = 30.0
+    pong_timeout_seconds: float = 90.0
     lease_seconds: int = 60
     delivery_control: DeliveryControl | None = None
     admin_token: str = ""
@@ -165,7 +183,7 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
                 return
             self.accept_websocket(key)
             self.stream_current_events(
-                agent_id, instance_id, epoch, protocol_version, coordinator
+                agent_id, instance_id, epoch, protocol_version, coordinator, current_store
             )
             return
         self.accept_websocket(key)
@@ -178,8 +196,34 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
         readiness_epoch: int,
         protocol_version: str,
         coordinator: DeliveryCoordinator,
+        store: V05Store | V06Store,
     ) -> None:
         registration = None
+        transport_session_id = f"ts_{uuid.uuid4().hex}"
+        lease = TransportLease(
+            started_at=time.time(), pong_timeout_seconds=self.pong_timeout_seconds
+        )
+        disconnect_reason = DisconnectReason()
+        superseded = threading.Event()
+
+        def mark_superseded() -> None:
+            superseded.set()
+            self._current_closed.set()
+
+        reader_thread = threading.Thread(
+            target=self._read_transport_frames,
+            args=(
+                agent_id,
+                listener_instance_id,
+                readiness_epoch,
+                transport_session_id,
+                store,
+                lease,
+                disconnect_reason,
+            ),
+            name=f"agentrelay-ws-transport-{agent_id}",
+            daemon=True,
+        )
         next_heartbeat_at = time.time() + self.heartbeat_seconds
         try:
             self.send_current_json_frame(
@@ -197,12 +241,25 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
                 listener_instance_id,
                 readiness_epoch,
                 self.send_current_json_frame,
-                close=self._current_closed.set,
+                close=mark_superseded,
+                transport_session_id=transport_session_id,
+                lease=lease,
             )
+            store.record_transport_connected(
+                agent_id,
+                listener_instance_id=listener_instance_id,
+                readiness_epoch=readiness_epoch,
+                transport_session_id=transport_session_id,
+            )
+            reader_thread.start()
             while not self._current_closed.wait(self.poll_interval_seconds):
                 now = time.time()
                 if now >= next_heartbeat_at:
                     self.send_current_json_frame({"type": "heartbeat", "serverTime": int(now)})
+                    self.send_control_frame(0x9)
+                    if not lease.is_valid(now):
+                        disconnect_reason.set_once("heartbeat_timeout")
+                        break
                     next_heartbeat_at = now + self.heartbeat_seconds
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, socket.timeout):
             return
@@ -211,7 +268,111 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
         finally:
             if registration is not None:
                 coordinator.unregister_socket(registration)
+            if not lease.is_valid():
+                # Either this loop or the coordinator stale sweep noticed the
+                # expired lease; the coordinator's close callback cannot tell
+                # the two apart, so resolve it here.
+                disconnect_reason.set_once("heartbeat_timeout")
+            reason = disconnect_reason.get() or (
+                "superseded" if superseded.is_set() else "connection_lost"
+            )
+            try:
+                store.record_transport_disconnected(
+                    agent_id,
+                    listener_instance_id=listener_instance_id,
+                    readiness_epoch=readiness_epoch,
+                    transport_session_id=transport_session_id,
+                    reason=reason,
+                )
+            except Exception:
+                # Disconnect bookkeeping is observability; it must not mask the
+                # original connection failure or block socket teardown.
+                pass
+            self._force_close_socket()
             self.close_connection = True
+
+    def _read_transport_frames(
+        self,
+        agent_id: str,
+        listener_instance_id: str,
+        readiness_epoch: int,
+        transport_session_id: str,
+        store: V05Store | V06Store,
+        lease: TransportLease,
+        disconnect_reason: DisconnectReason,
+    ) -> None:
+        try:
+            while True:
+                _, opcode, payload = self._read_ws_frame()
+                if opcode == 0x9:
+                    self.send_control_frame(0xA, payload)
+                    continue
+                if opcode == 0xA:
+                    lease.record_pong()
+                    store.record_transport_pong(
+                        agent_id,
+                        listener_instance_id=listener_instance_id,
+                        readiness_epoch=readiness_epoch,
+                        transport_session_id=transport_session_id,
+                    )
+                    continue
+                if opcode == 0x8:
+                    disconnect_reason.set_once("client_close")
+                    try:
+                        self.send_control_frame(0x8, payload[:2])
+                    except OSError:
+                        pass
+                    break
+                disconnect_reason.set_once("unexpected_data_frame")
+                try:
+                    self.send_control_frame(0x8, struct.pack("!H", 1002))
+                except OSError:
+                    pass
+                break
+        except (OSError, ValueError):
+            disconnect_reason.set_once("connection_lost")
+        finally:
+            self._current_closed.set()
+            self._force_close_socket()
+
+    def _read_ws_frame(self) -> tuple[bool, int, bytes]:
+        header = self._read_ws_exact(2)
+        fin = bool(header[0] & 0x80)
+        opcode = header[0] & 0x0F
+        masked = bool(header[1] & 0x80)
+        length = header[1] & 0x7F
+        if length == 126:
+            length = struct.unpack("!H", self._read_ws_exact(2))[0]
+        elif length == 127:
+            length = struct.unpack("!Q", self._read_ws_exact(8))[0]
+        if opcode in (0x8, 0x9, 0xA) and (not fin or length > 125):
+            raise ValueError("invalid WebSocket control frame")
+        mask = self._read_ws_exact(4) if masked else None
+        payload = self._read_ws_exact(length) if length else b""
+        if mask:
+            payload = bytes(
+                byte ^ mask[index % 4] for index, byte in enumerate(payload)
+            )
+        return fin, opcode, payload
+
+    def _read_ws_exact(self, size: int) -> bytes:
+        data = bytearray()
+        while len(data) < size:
+            chunk = self.rfile.read(size - len(data))
+            if not chunk:
+                raise ConnectionAbortedError("connection closed while reading frame")
+            data.extend(chunk)
+        return bytes(data)
+
+    def _force_close_socket(self) -> None:
+        try:
+            self.connection.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            self.connection.close()
+        except OSError:
+            pass
 
     def send_current_json_frame(self, payload: dict[str, Any]) -> None:
         try:
@@ -285,6 +446,18 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
             return
         with lock:
             self.wfile.write(bytes(header) + payload)
+            self.wfile.flush()
+
+    def send_control_frame(self, opcode: int, payload: bytes = b"") -> None:
+        payload = bytes(payload[:125])
+        header = bytes([0x80 | (opcode & 0x0F), len(payload)])
+        lock = getattr(self, "_send_lock", None)
+        if lock is None:
+            self.wfile.write(header + payload)
+            self.wfile.flush()
+            return
+        with lock:
+            self.wfile.write(header + payload)
             self.wfile.flush()
 
     def require_auth(self) -> dict[str, str] | None:
@@ -481,6 +654,7 @@ def create_server() -> ThreadingHTTPServer:
     ).strip()
     AgentRelayWebSocketHandler.poll_interval_seconds = float(os.environ.get("AGENTRELAY_WS_POLL_SECONDS", "2"))
     AgentRelayWebSocketHandler.heartbeat_seconds = float(os.environ.get("AGENTRELAY_WS_HEARTBEAT_SECONDS", "30"))
+    AgentRelayWebSocketHandler.pong_timeout_seconds = transport_pong_timeout_seconds()
     AgentRelayWebSocketHandler.lease_seconds = int(os.environ.get("AGENTRELAY_WS_LEASE_SECONDS", "60"))
     server = ThreadingHTTPServer((host, port), AgentRelayWebSocketHandler)
     server.delivery_coordinator = coordinator  # type: ignore[attr-defined]

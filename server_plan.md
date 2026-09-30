@@ -2,7 +2,7 @@
 
 Audience: Codex and maintainers working in `/home/ubuntu/projects/agentrelay/agentRelay`.
 
-Status date: 2026-09-04.
+Status date: 2026-09-30.
 
 Latest update: Protocol v0.6 is active in production as of 2026-07-28. The v0.5 database was migrated with the reviewed fail-closed converter from Server PR #76, production runs `write_mode=v06`, and the Task-pinned upgrade-safety release advanced the signed bundle to revision 7. The corrected immediate-park lifecycle contract advanced the signed bundle to revision 8 so one revision never maps to two digests. Per-Agent delivery flow control is now active in production through Server [PR #87](https://github.com/ZilingXie/agentRelay/pull/87) and signed bundle revision 9: all active v0.5/v0.6 lanes share a persisted `max_inflight` gate that defaults to 1, coordinator wakeups cover ACK/NACK/readiness/recovery/lease expiry, and the admin summary reports queue and latency metrics. Zac, Vivi, and Project Hermes publish fresh v0.6 readiness. Server PRs #77 and #78 corrected the earlier bundle-revision monotonicity and parked-delivery semantics found during cutover; Client PR #69 corrected recovery Event protocol stamping. Production Task `task_cb366d360b2d4174a6cddc21de31a0c3` completed the offline-create, Vivi recovery ACK, Vivi reply, Zac ACK, and requester-complete flow. Server PR [#80](https://github.com/ZilingXie/agentRelay/pull/80) now advertises Project Hermes' bounded requester/completion-owner authority through its Agent Card; Client PR [#71](https://github.com/ZilingXie/agent-relay-mcp/pull/71) and Hermes PR [#9](https://github.com/ZilingXie/heremes-deploy/pull/9) consume that authority only when Hermes owns completion and the current delivered Message is a target response.
 
@@ -29,6 +29,27 @@ explicit v0.5-under-v0.6 compatibility drain, dual delivery lanes, overlapping
 Store fail-closed checks, client-reported runtime audit, and per-protocol drain
 metrics. This remains implementation-under-review until its Server and Client
 PRs merge and production verification completes.
+
+Listener transport online status shipped through Server PR #PRN and Client PR
+#PRN: durable lanes persist per-agent transport sessions in an additive
+`agent_listener_transport` table fenced by `listener_instance_id +
+readiness_epoch + transport_session_id`, so a superseded connection cannot
+clear its replacement's state. The WebSocket service sends RFC 6455 control
+Pings on the heartbeat cadence, reads Pong/Ping/Close control frames in a
+per-connection reader thread, closes Pong-silent sockets after
+`AGENTRELAY_WS_PONG_TIMEOUT_SECONDS` (default 90) with
+`disconnect_reason=heartbeat_timeout`, and the delivery coordinator refuses to
+send through an expired transport lease. The admin Agents API, the read-only
+`GET /agentrelay/workers/{agent_id}/status` endpoint, and the dashboard expose
+the split transport/readiness model (`online_ready`, `online_not_ready`,
+`offline_with_pending`, `offline_idle`, `unknown`) with `last_pong_at` shown
+separately from readiness `observed_at`. Online status never replaces ACK.
+Verified by `npm test` including the new
+`scripts/protocol_v06_transport_status_test.py` (store fencing for both lanes,
+live WS keep-alive/Pong bookkeeping, Pong-timeout close, newest-session
+delivery, clean close reasons, offline parked recovery, and the v0.5 drain
+lane) plus a coordinator lease-expiry scenario in
+`scripts/protocol_v05_delivery_coordinator_test.py`.
 
 ## Purpose
 

@@ -55,6 +55,39 @@ and per-Agent rows aggregate all active protocol lanes and expose
 sample counts, p50, p95, and max values. Empty latency samples use `null`
 percentiles.
 
+## Listener Transport Status
+
+`GET /agentrelay/admin/api/agents` rows for durable lanes additionally expose
+the split listener status model:
+
+```text
+transport_state        connected / disconnected from agent_listener_transport
+transport_connected    boolean mirror of transport_state
+transport_online       transport session alive AND last Pong within the pong timeout
+listener_ready         readiness ready flag (local processing capability)
+readiness_fresh        readiness observed within LISTENER_READINESS_MAX_AGE_SECONDS
+can_receive_push       transport_online AND listener_ready AND readiness_fresh
+status                 online_ready | online_not_ready | offline_with_pending
+                       | offline_idle | unknown
+connected_at / last_pong_at / disconnected_at / disconnect_reason
+pending_event_count / inflight_event_count
+```
+
+`last_pong_at` (transport keep-alive) and `observed_at` (readiness) are
+independent clocks and are shown separately; transport online status never
+implies delivery success — only an ACK does.
+
+Agents can read their own combined status with a worker token via:
+
+```text
+GET /agentrelay/workers/{agent_id}/status?protocol_version=agent-collab-v0.6
+```
+
+The endpoint is read-only and returns the same combined fields plus
+`generated_at`; it never changes Event delivery state. The dashboard Agents
+table shows the combined `status` badge, last Pong, last readiness, disconnect
+reason, and pending/inflight counts.
+
 The dashboard remains read-only. Configure a persisted limit locally on the
 Relay host; values must be between 1 and 100 and default to 1:
 

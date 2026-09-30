@@ -86,6 +86,34 @@ to durable ACK. Recovery latency is measured from the first transition to
 `parked` through the durable ACK that follows a recovery claim. Historical rows
 without reconstructable timestamps are excluded from latency samples.
 
+## Listener Transport Online Status
+
+Listener visibility is split into three independent layers:
+
+```text
+transport_online  the current WSS session is alive (Pong within the pong timeout)
+listener_ready    the Listener passed its local readiness checks
+delivery_status   queued / parked / inflight / acked / retry_wait / exhausted
+```
+
+Each accepted WebSocket connection gets a unique `transport_session_id`. The
+Relay sends a WebSocket control Ping on every heartbeat cadence (default 30s)
+and reads Pong/Ping/Close control frames. When no Pong arrives within
+`AGENTRELAY_WS_PONG_TIMEOUT_SECONDS` (default 90), the transport is marked
+`disconnected` with `disconnect_reason=heartbeat_timeout`, the socket is
+closed, and the coordinator stops delivering through it; Events continue
+through the existing ACK-lease retry/park/recovery paths. Online status never
+replaces ACK: an Event is delivered only when its durable ACK commits.
+
+Transport state is persisted per lane in `agent_listener_transport` and every
+update is fenced by `agent_id + listener_instance_id + readiness_epoch +
+transport_session_id`, so the teardown of a superseded connection cannot clear
+the state of its replacement. The combined reporting status
+(`online_ready`, `online_not_ready`, `offline_with_pending`, `offline_idle`,
+`unknown`) is exposed through the admin Agents API and
+`GET /agentrelay/workers/{agent_id}/status`; see
+[`admin-dashboard.md`](admin-dashboard.md).
+
 ## Expiry And Notices
 
 `task_expires_at` is a strict end-to-end deadline. The reply, requester-side

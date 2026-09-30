@@ -540,6 +540,27 @@ class AgentRelayHandler(BaseHTTPRequestHandler):
                 return
             self.respond_protocol({"timeline": timeline})
             return
+        if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/status", path):
+            agent_id = match.group(1)
+            if not self.require_agent(auth, agent_id):
+                return
+            protocol_version = first_query_value(query, "protocol_version") or self.current_protocol_version()
+            store = self.durable_store_for_protocol(protocol_version)
+            if store is None:
+                self.respond_error(
+                    410,
+                    f"delivery lane is unavailable for {protocol_version}",
+                    error_type="protocol_retired",
+                    code="task_protocol_retired",
+                    detail={"task_protocol_version": protocol_version},
+                )
+                return
+            status = store.admin_agent_status(agent_id)
+            if status is None:
+                self.respond_error(404, "agent not found", code="agent_not_found")
+                return
+            self.respond_json(status)
+            return
         if match := re.fullmatch(r"/agentrelay/workers/([^/]+)/pending", path):
             agent_id = match.group(1)
             if not self.require_agent(auth, agent_id):
