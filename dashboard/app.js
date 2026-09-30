@@ -143,12 +143,19 @@ function renderAgents() {
   );
   for (const agent of state.agents) {
     const delivery = deliveryByAgent.get(agent.agent_id) || {};
+    const transportCell = agent.status
+      ? `${badge(agent.status)}${agent.disconnect_reason ? `<div class="muted">${escapeHtml(agent.disconnect_reason)}</div>` : ""}`
+      : "-";
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><strong>${escapeHtml(agent.agent_id)}</strong><div class="muted">${escapeHtml(agent.name || "")}</div></td>
       <td>${escapeHtml(agent.owner || "")}</td>
+      <td>${transportCell}</td>
       <td>${agent.readiness_protocol_version ? badge(agent.readiness_fresh ? "ready" : "stale") : (agent.pending_task_count ?? 0)}</td>
+      <td>${agent.last_pong_at === null || agent.last_pong_at === undefined ? "-" : formatTime(agent.last_pong_at)}</td>
+      <td>${agent.observed_at === null || agent.observed_at === undefined ? "-" : formatTime(agent.observed_at)}</td>
       <td>${agent.active_task_count ?? 0}</td>
+      <td class="mono">${agent.pending_event_count ?? 0}${agent.inflight_event_count ? ` <span class="muted">(${agent.inflight_event_count} inflight)</span>` : ""}</td>
       <td>${delivery.max_inflight ?? 1}</td>
       <td class="mono">${delivery.queued ?? 0} / ${delivery.inflight ?? 0} / ${delivery.parked ?? 0}</td>
       <td>${formatLatency(delivery.ack_latency_seconds?.p95)}</td>

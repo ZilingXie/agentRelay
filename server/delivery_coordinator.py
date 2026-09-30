@@ -13,6 +13,33 @@ SendEvent = Callable[[dict[str, Any]], None]
 CloseSocket = Callable[[], None]
 
 
+class TransportLease:
+    """In-memory liveness lease for one WebSocket transport session.
+
+    The socket handler records Pong receipts; the coordinator refuses to
+    deliver through a lease whose last Pong is older than the pong timeout.
+    """
+
+    def __init__(self, *, started_at: float, pong_timeout_seconds: float):
+        self.pong_timeout_seconds = float(pong_timeout_seconds)
+        self._lock = threading.Lock()
+        self._last_pong_at = float(started_at)
+
+    def record_pong(self, now: float | None = None) -> None:
+        timestamp = time.time() if now is None else float(now)
+        with self._lock:
+            self._last_pong_at = timestamp
+
+    def last_pong_at(self) -> float:
+        with self._lock:
+            return self._last_pong_at
+
+    def is_valid(self, now: float | None = None) -> bool:
+        timestamp = time.time() if now is None else float(now)
+        with self._lock:
+            return timestamp - self._last_pong_at <= self.pong_timeout_seconds
+
+
 @dataclass(frozen=True)
 class SocketRegistration:
     agent_id: str
@@ -20,6 +47,8 @@ class SocketRegistration:
     readiness_epoch: int
     send: SendEvent
     close: CloseSocket | None = None
+    transport_session_id: str = ""
+    lease: TransportLease | None = None
 
 
 class DeliveryCoordinator:
@@ -54,6 +83,9 @@ class DeliveryCoordinator:
         readiness_epoch: int,
         send: SendEvent,
         close: CloseSocket | None = None,
+        *,
+        transport_session_id: str = "",
+        lease: TransportLease | None = None,
     ) -> SocketRegistration:
         self.store.assert_listener_epoch(agent_id, listener_instance_id, readiness_epoch)
         registration = SocketRegistration(
@@ -62,6 +94,8 @@ class DeliveryCoordinator:
             readiness_epoch=readiness_epoch,
             send=send,
             close=close,
+            transport_session_id=transport_session_id,
+            lease=lease,
         )
         previous: SocketRegistration | None
         with self._lock:
@@ -145,6 +179,16 @@ class DeliveryCoordinator:
                     failed += 1
                     blocked_agents.add(agent_id)
                     continue
+                if registration.lease is not None and not registration.lease.is_valid():
+                    self.unregister_socket(registration)
+                    if registration.close:
+                        registration.close()
+                    self.store.record_attempt_failure(
+                        event["event_id"], "listener_unavailable", now=timestamp
+                    )
+                    failed += 1
+                    blocked_agents.add(agent_id)
+                    continue
                 try:
                     registration.send(format_event_message(event, self.protocol_version))
                 except Exception:
@@ -189,7 +233,9 @@ class DeliveryCoordinator:
             registrations = list(self._sockets.values())
         closed = 0
         for registration in registrations:
-            if self._registration_is_current(registration):
+            if self._registration_is_current(registration) and (
+                registration.lease is None or registration.lease.is_valid()
+            ):
                 continue
             self.unregister_socket(registration)
             if registration.close:
