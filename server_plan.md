@@ -30,8 +30,9 @@ Store fail-closed checks, client-reported runtime audit, and per-protocol drain
 metrics. This remains implementation-under-review until its Server and Client
 PRs merge and production verification completes.
 
-Listener transport online status shipped through Server PR #PRN and Client PR
-#PRN: durable lanes persist per-agent transport sessions in an additive
+Listener transport online status shipped through Server
+[PR #95](https://github.com/ZilingXie/agentRelay/pull/95) and Client
+[PR #99](https://github.com/ZilingXie/agent-relay-mcp/pull/99): durable lanes persist per-agent transport sessions in an additive
 `agent_listener_transport` table fenced by `listener_instance_id +
 readiness_epoch + transport_session_id`, so a superseded connection cannot
 clear its replacement's state. The WebSocket service sends RFC 6455 control
