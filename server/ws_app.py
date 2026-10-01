@@ -244,12 +244,12 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
                 close=mark_superseded,
                 transport_session_id=transport_session_id,
                 lease=lease,
-            )
-            store.record_transport_connected(
-                agent_id,
-                listener_instance_id=listener_instance_id,
-                readiness_epoch=readiness_epoch,
-                transport_session_id=transport_session_id,
+                on_registered=lambda _registration: store.record_transport_connected(
+                    agent_id,
+                    listener_instance_id=listener_instance_id,
+                    readiness_epoch=readiness_epoch,
+                    transport_session_id=transport_session_id,
+                ),
             )
             reader_thread.start()
             while not self._current_closed.wait(self.poll_interval_seconds):

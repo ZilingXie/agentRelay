@@ -86,6 +86,7 @@ class DeliveryCoordinator:
         *,
         transport_session_id: str = "",
         lease: TransportLease | None = None,
+        on_registered: Callable[[SocketRegistration], None] | None = None,
     ) -> SocketRegistration:
         self.store.assert_listener_epoch(agent_id, listener_instance_id, readiness_epoch)
         registration = SocketRegistration(
@@ -101,6 +102,19 @@ class DeliveryCoordinator:
         with self._lock:
             previous = self._sockets.get(agent_id)
             self._sockets[agent_id] = registration
+            try:
+                if on_registered is not None:
+                    # Persisting the transport row inside the registration
+                    # critical section keeps the persisted session in lockstep
+                    # with the selected socket: a slower older connection can
+                    # never overwrite a newer session's row after the fact.
+                    on_registered(registration)
+            except Exception:
+                if previous is not None:
+                    self._sockets[agent_id] = previous
+                else:
+                    self._sockets.pop(agent_id, None)
+                raise
         if previous and previous != registration and previous.close:
             previous.close()
         self.wake()

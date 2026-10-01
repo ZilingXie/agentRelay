@@ -52,6 +52,20 @@ delivery, clean close reasons, offline parked recovery, and the v0.5 drain
 lane) plus a coordinator lease-expiry scenario in
 `scripts/protocol_v05_delivery_coordinator_test.py`.
 
+The first acceptance review of PR #95 reproduced an interleaved-registration
+defect over the real WebSocket entry: a slower superseded connection could
+still run its unconditional `record_transport_connected` after the newer
+connection had registered and persisted, overwriting the transport row to
+`disconnected/superseded` while the coordinator kept delivering through the
+new socket (API then reported `offline_idle`). The fix (Server PR #PRN) moves
+the transport persist into the coordinator's registration critical section
+via an `on_registered` callback with rollback to the previous registration on
+persistence failure, and adds `AGENTRELAY_WS_PONG_TIMEOUT_SECONDS` pass-through
+to both Compose services. Regression coverage: coordinator-level
+interleaving/rollback scenarios in both protocol test files plus a WS-level
+assertion that the replacement session stays `online_ready` with Pong
+bookkeeping advancing after the superseded connection's teardown.
+
 ## Purpose
 
 This file is the server-side working plan for the AgentRelay relay project. It is for implementation planning, repository hygiene, validation notes, and server-specific next steps.

@@ -68,10 +68,13 @@ AGENTRELAY_WS_HEARTBEAT_SECONDS      text heartbeat + WebSocket Ping cadence (de
 AGENTRELAY_WS_PONG_TIMEOUT_SECONDS   no Pong for this long => transport offline (default 90)
 ```
 
-Set `AGENTRELAY_WS_PONG_TIMEOUT_SECONDS` to the same value in both services;
-the API container uses it only to evaluate the reported `transport_online`
-fields. A connection whose Pong times out is closed and its Events fall back
-to the existing ACK-lease retry/park/recovery paths.
+`docker-compose.yml` passes `AGENTRELAY_WS_PONG_TIMEOUT_SECONDS` through to
+both containers from the host environment (default 90); the API container
+uses it only to evaluate the reported `transport_online` fields. A connection
+whose Pong times out is closed and its Events fall back to the existing
+ACK-lease retry/park/recovery paths. Socket selection and transport-row
+persistence commit in one coordinator registration critical section, so a
+slower superseded connection can never overwrite a newer session's row.
 
 The API sends authenticated best-effort wake requests to the WebSocket service
 after ACK/NACK, readiness, and recovery mutations. Both services must receive

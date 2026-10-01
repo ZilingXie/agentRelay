@@ -25,6 +25,8 @@ def main() -> None:
         lease_exhaustion(Path(tmp) / "lease-exhaustion.sqlite3")
         epoch_replacement(Path(tmp) / "epoch.sqlite3")
         transport_lease_expiry(Path(tmp) / "transport-lease.sqlite3")
+        transport_registration_order(Path(tmp) / "transport-order.sqlite3")
+        transport_persist_failure_rolls_back(Path(tmp) / "transport-rollback.sqlite3")
         restart_retry_persistence(Path(tmp) / "restart.sqlite3")
         informational_event_exhaustion(Path(tmp) / "informational.sqlite3")
     print("protocol v0.5 delivery coordinator passed (20/20)")
@@ -218,6 +220,115 @@ def restart_retry_persistence(path: Path) -> None:
     assert restarted.claim_due_event(B, now=next_retry_at - 1) is None
     second = restarted.claim_due_event(B, now=next_retry_at)
     assert second is not None and second["outbox_attempts"] == 2
+
+
+def persist_transport(registration, store, *, transport_session_id, now):
+    def callback(selected):
+        store.record_transport_connected(
+            selected.agent_id,
+            listener_instance_id=selected.listener_instance_id,
+            readiness_epoch=selected.readiness_epoch,
+            transport_session_id=transport_session_id,
+            now=now,
+        )
+    return callback
+
+
+def transport_registration_order(path: Path) -> None:
+    now = BASE + 8000
+    store, listeners = prepare(path, now)
+    coordinator = DeliveryCoordinator(store)
+    old_closed: list[bool] = []
+    sent: list[dict] = []
+
+    # The old connection registers and persists atomically; when
+    # register_socket returns, the row already reflects that session.
+    old_registration = coordinator.register_socket(
+        B,
+        *listeners[B],
+        sent.append,
+        close=lambda: old_closed.append(True),
+        transport_session_id="ts-old",
+        on_registered=persist_transport(B, store, transport_session_id="ts-old", now=now),
+    )
+    assert store.get_transport(B)["transport_session_id"] == "ts-old"
+
+    # A newer connection replaces it; its selection and persistence stay in
+    # lockstep, so a slower older connection can no longer overwrite the row.
+    coordinator.register_socket(
+        B,
+        *listeners[B],
+        sent.append,
+        transport_session_id="ts-new",
+        on_registered=persist_transport(B, store, transport_session_id="ts-new", now=now + 1),
+    )
+    assert old_closed == [True]
+    assert store.get_transport(B)["transport_session_id"] == "ts-new"
+
+    # The superseded connection finishes its teardown afterwards: its fenced
+    # disconnect must miss, the row must keep pointing at the new session,
+    # and the new session's Pong must keep landing.
+    coordinator.unregister_socket(old_registration)
+    assert (
+        store.record_transport_disconnected(
+            B,
+            listener_instance_id=listeners[B][0],
+            readiness_epoch=listeners[B][1],
+            transport_session_id="ts-old",
+            reason="superseded",
+            now=now + 2,
+        )
+        is False
+    )
+    row = store.get_transport(B)
+    assert row["state"] == "connected" and row["transport_session_id"] == "ts-new"
+    assert (
+        store.record_transport_pong(
+            B,
+            listener_instance_id=listeners[B][0],
+            readiness_epoch=listeners[B][1],
+            transport_session_id="ts-new",
+            now=now + 3,
+        )
+        is True
+    )
+
+
+def transport_persist_failure_rolls_back(path: Path) -> None:
+    now = BASE + 8500
+    store, listeners = prepare(path, now)
+    coordinator = DeliveryCoordinator(store)
+    sent: list[dict] = []
+    coordinator.register_socket(
+        B,
+        *listeners[B],
+        sent.append,
+        transport_session_id="ts-old",
+        on_registered=persist_transport(B, store, transport_session_id="ts-old", now=now),
+    )
+
+    def failing_persist(_selected):
+        raise RuntimeError("transport persistence failed")
+
+    try:
+        coordinator.register_socket(
+            B,
+            *listeners[B],
+            sent.append,
+            transport_session_id="ts-new",
+            on_registered=failing_persist,
+        )
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("a failing transport persist must propagate")
+    # The in-memory selection rolls back to the previous registration, so it
+    # still agrees with the persisted row and keeps delivering.
+    row = store.get_transport(B)
+    assert row["transport_session_id"] == "ts-old" and row["state"] == "connected"
+    task = create(store, "persist-failure", now)
+    result = coordinator.run_once(now=now + 1)
+    assert result["sent"] == 1 and sent[0]["taskId"] == task["task"]["task_id"]
 
 
 def informational_event_exhaustion(path: Path) -> None:

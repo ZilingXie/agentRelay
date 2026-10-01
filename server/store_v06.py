@@ -524,6 +524,10 @@ class V06Store:
         transport_session_id: str,
         now: int | None = None,
     ) -> dict[str, Any]:
+        # Unconditional newest-wins upsert. Callers must serialize connected
+        # writes in registration order: the coordinator's registration
+        # critical section invokes this via on_registered so a slower older
+        # connection cannot overwrite a newer session's row.
         timestamp = _now(now)
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
