@@ -67,6 +67,22 @@ interleaving/rollback scenarios in both protocol test files plus a WS-level
 assertion that the replacement session stays `online_ready` with Pong
 bookkeeping advancing after the superseded connection's teardown.
 
+The second acceptance review of PR #96 found a remaining epoch-fencing gap: a
+connection that passed the pre-lock epoch check could still overwrite a newer
+Listener that advanced the epoch via HTTP readiness and completed its own
+registration meanwhile (memory and row rolled back to the stale epoch, the
+new socket was closed, and the stale sweep then left no usable connection).
+The fix re-validates `listener_instance_id + readiness_epoch` inside the same
+`BEGIN IMMEDIATE` transaction as the `record_transport_connected` upsert in
+both stores, so a stale connection raises `stale_readiness_epoch` and the
+existing registration rollback keeps the newer connection; the WS handler
+treats that ConflictError as an expected race. Synchronization-barrier
+regressions in both protocol test files now cover the exact interleave (stale
+connection parks after its epoch pre-check, newer Listener completes, stale
+connection resumes) and assert the current connection is not closed, the row
+keeps the new epoch/session, the new session's Pong lands, and the combined
+status stays `online_ready`; the barrier test fails on the pre-fix stores.
+
 ## Purpose
 
 This file is the server-side working plan for the AgentRelay relay project. It is for implementation planning, repository hygiene, validation notes, and server-specific next steps.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -10,6 +11,7 @@ sys.path.insert(0, str(ROOT))
 
 from server.delivery_coordinator import DeliveryCoordinator, TransportLease
 from server.protocol_v05 import PROTOCOL_V05
+from server.store import ConflictError
 from server.store_v05 import V05Store
 
 
@@ -27,6 +29,7 @@ def main() -> None:
         transport_lease_expiry(Path(tmp) / "transport-lease.sqlite3")
         transport_registration_order(Path(tmp) / "transport-order.sqlite3")
         transport_persist_failure_rolls_back(Path(tmp) / "transport-rollback.sqlite3")
+        stale_epoch_registration_barrier(Path(tmp) / "stale-epoch.sqlite3")
         restart_retry_persistence(Path(tmp) / "restart.sqlite3")
         informational_event_exhaustion(Path(tmp) / "informational.sqlite3")
     print("protocol v0.5 delivery coordinator passed (20/20)")
@@ -202,6 +205,107 @@ def transport_lease_expiry(path: Path) -> None:
     assert sent == []
     visibility = store.visibility(task["task"]["task_id"], now=now)
     assert visibility["outbox"]["last_error"] == "listener_unavailable"
+
+
+def stale_epoch_registration_barrier(path: Path) -> None:
+    # Barrier regression: a connection that already passed the pre-lock epoch
+    # check must not overwrite a newer Listener that advanced the epoch and
+    # completed its own registration meanwhile.
+    now = BASE + 9000
+    store, listeners = prepare(path, now)
+    coordinator = DeliveryCoordinator(store)
+    sent: list[dict] = []
+    new_closed: list[bool] = []
+    outcome: dict[str, BaseException] = {}
+    original_assert = store.assert_listener_epoch
+    checked = threading.Event()
+    release = threading.Event()
+
+    def persist(session_id, timestamp):
+        def callback(selected):
+            store.record_transport_connected(
+                selected.agent_id,
+                listener_instance_id=selected.listener_instance_id,
+                readiness_epoch=selected.readiness_epoch,
+                transport_session_id=session_id,
+                now=timestamp,
+            )
+
+        return callback
+
+    def stale_connection() -> None:
+        try:
+            coordinator.register_socket(
+                B,
+                *listeners[B],
+                sent.append,
+                transport_session_id="ts-stale-epoch",
+                on_registered=persist("ts-stale-epoch", now + 30),
+            )
+        except BaseException as exc:  # noqa: BLE001 - captured for assertion
+            outcome["error"] = exc
+
+    def gated_assert(agent_id, listener_instance_id, readiness_epoch):
+        original_assert(agent_id, listener_instance_id, readiness_epoch)
+        checked.set()
+        assert release.wait(5), "barrier was never released"
+
+    store.assert_listener_epoch = gated_assert
+    thread = threading.Thread(target=stale_connection)
+    thread.start()
+    assert checked.wait(5), "stale connection never passed its epoch pre-check"
+    store.assert_listener_epoch = original_assert
+
+    replacement = store.register_listener(
+        B,
+        listener_instance_id="listener-frank-agent-2",
+        client_version="0.5.0",
+        workspace_version="2",
+        transport="websocket",
+        now=now + 10,
+    )
+    new_epoch = int(replacement["readiness_epoch"])
+    assert new_epoch > int(listeners[B][1])
+    store.publish_readiness(
+        B,
+        listener_instance_id="listener-frank-agent-2",
+        readiness_epoch=new_epoch,
+        ready=True,
+        now=now + 15,
+    )
+    coordinator.register_socket(
+        B,
+        "listener-frank-agent-2",
+        new_epoch,
+        sent.append,
+        close=lambda: new_closed.append(True),
+        transport_session_id="ts-current-epoch",
+        on_registered=persist("ts-current-epoch", now + 20),
+    )
+
+    release.set()
+    thread.join(5)
+    assert not thread.is_alive(), "stale registration never finished"
+    stale_error = outcome.get("error")
+    assert isinstance(stale_error, ConflictError), stale_error
+    assert stale_error.code == "stale_readiness_epoch"
+    assert new_closed == [], "the current connection must not be closed by a stale one"
+    row = store.get_transport(B)
+    assert row["readiness_epoch"] == new_epoch, row
+    assert row["transport_session_id"] == "ts-current-epoch", row
+    assert row["state"] == "connected", row
+    assert (
+        store.record_transport_pong(
+            B,
+            listener_instance_id="listener-frank-agent-2",
+            readiness_epoch=new_epoch,
+            transport_session_id="ts-current-epoch",
+            now=now + 40,
+        )
+        is True
+    )
+    agent = [a for a in store.admin_agents(now=now + 40) if a["agent_id"] == B][0]
+    assert agent["status"] == "online_ready", agent["status"]
 
 
 def restart_retry_persistence(path: Path) -> None:

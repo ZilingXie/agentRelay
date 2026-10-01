@@ -261,6 +261,10 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
                         disconnect_reason.set_once("heartbeat_timeout")
                         break
                     next_heartbeat_at = now + self.heartbeat_seconds
+        except ConflictError:
+            # A stale-epoch registration raced a newer Listener's readiness
+            # advance; the rollback kept the newer connection registered.
+            return
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, socket.timeout):
             return
         except OSError:
