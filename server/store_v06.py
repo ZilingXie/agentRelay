@@ -524,10 +524,19 @@ class V06Store:
         transport_session_id: str,
         now: int | None = None,
     ) -> dict[str, Any]:
+        # Newest-wins upsert guarded by an in-transaction epoch check. The
+        # epoch is re-validated inside the same BEGIN IMMEDIATE transaction as
+        # the upsert because a Listener can advance the epoch (HTTP readiness
+        # register) between the caller's pre-check and this write; a stale
+        # connection must raise stale_readiness_epoch instead of overwriting
+        # the newer Listener's row.
         timestamp = _now(now)
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             self._require_agent_conn(conn, agent_id)
+            self._assert_listener_epoch_conn(
+                conn, agent_id, listener_instance_id, readiness_epoch
+            )
             conn.execute(
                 """
                 INSERT INTO agent_listener_transport (

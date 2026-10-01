@@ -8,6 +8,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -15,8 +16,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from server.delivery_coordinator import DeliveryCoordinator
 from server.protocol_v06 import PROTOCOL_V06
 from server.protocol_v05 import PROTOCOL_V05
+from server.store import ConflictError
 from server.store_v05 import V05Store
 from server.store_v06 import V06Store
 
@@ -40,8 +43,255 @@ PONG_TIMEOUT_SECONDS = 1.2
 def main() -> None:
     os.environ["AGENTRELAY_WS_PONG_TIMEOUT_SECONDS"] = str(PONG_TIMEOUT_SECONDS)
     store_level_checks(Path(tempfile.mkdtemp(prefix="agentrelay-transport-")))
+    registration_order_checks(Path(tempfile.mkdtemp(prefix="agentrelay-order-")))
+    stale_epoch_registration_barrier_checks(
+        Path(tempfile.mkdtemp(prefix="agentrelay-stale-epoch-"))
+    )
     with tempfile.TemporaryDirectory() as temp_dir:
         ws_level_checks(Path(temp_dir))
+
+
+def stale_epoch_registration_barrier_checks(root: Path) -> None:
+    # Barrier regression for the epoch-fencing gap: a connection that already
+    # passed the pre-lock epoch check must not overwrite a newer Listener that
+    # advanced the epoch and completed its own registration meanwhile.
+    previous_timeout = os.environ.get("AGENTRELAY_WS_PONG_TIMEOUT_SECONDS")
+    os.environ["AGENTRELAY_WS_PONG_TIMEOUT_SECONDS"] = "90"
+    try:
+        store = V06Store(str(root / "stale-epoch.sqlite3"))
+        for agent_id in (REQUESTER, TARGET):
+            store.upsert_agent(
+                agent_id,
+                name=agent_id,
+                owner=agent_id,
+                enabled=True,
+                protocol_capabilities=[PROTOCOL_V06],
+                now=100,
+            )
+        first = store.register_listener(
+            TARGET,
+            listener_instance_id="listener-barrier-1",
+            client_version="0.6.0",
+            workspace_version="2",
+            transport="websocket",
+            now=100,
+        )
+        old_epoch = int(first["readiness_epoch"])
+        store.publish_readiness(
+            TARGET,
+            listener_instance_id="listener-barrier-1",
+            readiness_epoch=old_epoch,
+            ready=True,
+            now=100,
+        )
+
+        def persist(session_id: str, timestamp: int):
+            def callback(selected):
+                store.record_transport_connected(
+                    selected.agent_id,
+                    listener_instance_id=selected.listener_instance_id,
+                    readiness_epoch=selected.readiness_epoch,
+                    transport_session_id=session_id,
+                    now=timestamp,
+                )
+
+            return callback
+
+        coordinator = DeliveryCoordinator(store)
+        sent: list[dict] = []
+        new_closed: list[bool] = []
+        outcome: dict[str, BaseException] = {}
+        original_assert = store.assert_listener_epoch
+        checked = threading.Event()
+        release = threading.Event()
+
+        def gated_assert(agent_id, listener_instance_id, readiness_epoch):
+            original_assert(agent_id, listener_instance_id, readiness_epoch)
+            checked.set()
+            assert release.wait(5), "barrier was never released"
+
+        def stale_connection() -> None:
+            try:
+                coordinator.register_socket(
+                    TARGET,
+                    "listener-barrier-1",
+                    old_epoch,
+                    sent.append,
+                    transport_session_id="ts-stale-epoch",
+                    on_registered=persist("ts-stale-epoch", 130),
+                )
+            except BaseException as exc:  # noqa: BLE001 - captured for assertion
+                outcome["error"] = exc
+
+        store.assert_listener_epoch = gated_assert
+        thread = threading.Thread(target=stale_connection)
+        thread.start()
+        assert checked.wait(5), "stale connection never passed its epoch pre-check"
+        store.assert_listener_epoch = original_assert
+
+        # The newer Listener advances the epoch and completes registration
+        # while the old connection is parked between its pre-check and the
+        # registration critical section.
+        second = store.register_listener(
+            TARGET,
+            listener_instance_id="listener-barrier-2",
+            client_version="0.6.0",
+            workspace_version="2",
+            transport="websocket",
+            now=110,
+        )
+        new_epoch = int(second["readiness_epoch"])
+        assert new_epoch > old_epoch
+        store.publish_readiness(
+            TARGET,
+            listener_instance_id="listener-barrier-2",
+            readiness_epoch=new_epoch,
+            ready=True,
+            now=115,
+        )
+        coordinator.register_socket(
+            TARGET,
+            "listener-barrier-2",
+            new_epoch,
+            sent.append,
+            close=lambda: new_closed.append(True),
+            transport_session_id="ts-current-epoch",
+            on_registered=persist("ts-current-epoch", 120),
+        )
+
+        release.set()
+        thread.join(5)
+        assert not thread.is_alive(), "stale registration never finished"
+
+        stale_error = outcome.get("error")
+        assert isinstance(stale_error, ConflictError), stale_error
+        assert stale_error.code == "stale_readiness_epoch"
+        assert new_closed == [], "the current connection must not be closed by a stale one"
+        row = store.get_transport(TARGET)
+        assert row["readiness_epoch"] == new_epoch, row
+        assert row["transport_session_id"] == "ts-current-epoch", row
+        assert row["state"] == "connected", row
+        assert (
+            store.record_transport_pong(
+                TARGET,
+                listener_instance_id="listener-barrier-2",
+                readiness_epoch=new_epoch,
+                transport_session_id="ts-current-epoch",
+                now=140,
+            )
+            is True
+        )
+        agent = _admin_agent(store, TARGET, now=140)
+        assert agent["status"] == "online_ready", agent["status"]
+    finally:
+        if previous_timeout is None:
+            os.environ.pop("AGENTRELAY_WS_PONG_TIMEOUT_SECONDS", None)
+        else:
+            os.environ["AGENTRELAY_WS_PONG_TIMEOUT_SECONDS"] = previous_timeout
+    print("stale-epoch registration barrier checks passed (v0.6)")
+
+
+def registration_order_checks(root: Path) -> None:
+    # Regression for the interleaved-registration defect: a slower older
+    # connection must never overwrite a newer session's transport row after
+    # the newer connection already registered and persisted.
+    previous_timeout = os.environ.get("AGENTRELAY_WS_PONG_TIMEOUT_SECONDS")
+    os.environ["AGENTRELAY_WS_PONG_TIMEOUT_SECONDS"] = "90"
+    try:
+        store = V06Store(str(root / "registration-order.sqlite3"))
+        store.upsert_agent(
+            TARGET,
+            name=TARGET,
+            owner=TARGET,
+            enabled=True,
+            protocol_capabilities=[PROTOCOL_V06],
+            now=100,
+        )
+        registered = store.register_listener(
+            TARGET,
+            listener_instance_id="listener-order",
+            client_version="0.6.0",
+            workspace_version="2",
+            transport="websocket",
+            now=100,
+        )
+        instance = registered["listener_instance_id"]
+        epoch = int(registered["readiness_epoch"])
+        store.publish_readiness(
+            TARGET,
+            listener_instance_id=instance,
+            readiness_epoch=epoch,
+            ready=True,
+            now=100,
+        )
+
+        def persist(session_id: str, timestamp: int):
+            def callback(selected):
+                store.record_transport_connected(
+                    selected.agent_id,
+                    listener_instance_id=selected.listener_instance_id,
+                    readiness_epoch=selected.readiness_epoch,
+                    transport_session_id=session_id,
+                    now=timestamp,
+                )
+
+            return callback
+
+        coordinator = DeliveryCoordinator(store)
+        sent: list[dict] = []
+        old_registration = coordinator.register_socket(
+            TARGET,
+            instance,
+            epoch,
+            sent.append,
+            transport_session_id="ts-old",
+            on_registered=persist("ts-old", 110),
+        )
+        assert store.get_transport(TARGET)["transport_session_id"] == "ts-old"
+        coordinator.register_socket(
+            TARGET,
+            instance,
+            epoch,
+            sent.append,
+            transport_session_id="ts-new",
+            on_registered=persist("ts-new", 120),
+        )
+        # Socket selection and transport persistence are one critical
+        # section: when register returns, the row already names this session.
+        assert store.get_transport(TARGET)["transport_session_id"] == "ts-new"
+
+        coordinator.unregister_socket(old_registration)
+        assert (
+            store.record_transport_disconnected(
+                TARGET,
+                listener_instance_id=instance,
+                readiness_epoch=epoch,
+                transport_session_id="ts-old",
+                reason="superseded",
+                now=130,
+            )
+            is False
+        )
+        row = store.get_transport(TARGET)
+        assert row["transport_session_id"] == "ts-new" and row["state"] == "connected"
+        assert (
+            store.record_transport_pong(
+                TARGET,
+                listener_instance_id=instance,
+                readiness_epoch=epoch,
+                transport_session_id="ts-new",
+                now=140,
+            )
+            is True
+        )
+        agent = _admin_agent(store, TARGET, now=140)
+        assert agent["status"] == "online_ready", agent["status"]
+    finally:
+        if previous_timeout is None:
+            os.environ.pop("AGENTRELAY_WS_PONG_TIMEOUT_SECONDS", None)
+        else:
+            os.environ["AGENTRELAY_WS_PONG_TIMEOUT_SECONDS"] = previous_timeout
+    print("transport registration-order checks passed (v0.6)")
 
 
 def store_level_checks(root: Path) -> None:
@@ -332,6 +582,23 @@ def ws_level_checks(root: Path) -> None:
         visibility = store.visibility(created["task"]["task_id"])
         assert visibility["outbox"]["outbox_status"] == "inflight"
         assert visibility["current_message"]["delivery_status"] == "pending"
+
+        # The superseded connection's late teardown must leave the new
+        # session online: Pong bookkeeping keeps landing and the combined
+        # status reports online_ready, not a stale offline_idle row.
+        pong_before = store.get_transport(TARGET)["last_pong_at"]
+        pong_wait_started = time.time()
+        while time.time() - pong_wait_started < 3:
+            read_json_auto_pong(replacement, idle_ok=True, timeout=1.0)
+            if store.get_transport(TARGET)["last_pong_at"] > pong_before:
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("replacement session Pong bookkeeping stopped advancing")
+        live_status = _admin_agent(store, TARGET, now=int(time.time()))
+        assert live_status["transport_online"] is True, live_status
+        assert live_status["status"] == "online_ready", live_status["status"]
+
         store.ack_message(
             TARGET,
             {

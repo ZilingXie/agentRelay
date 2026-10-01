@@ -244,12 +244,12 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
                 close=mark_superseded,
                 transport_session_id=transport_session_id,
                 lease=lease,
-            )
-            store.record_transport_connected(
-                agent_id,
-                listener_instance_id=listener_instance_id,
-                readiness_epoch=readiness_epoch,
-                transport_session_id=transport_session_id,
+                on_registered=lambda _registration: store.record_transport_connected(
+                    agent_id,
+                    listener_instance_id=listener_instance_id,
+                    readiness_epoch=readiness_epoch,
+                    transport_session_id=transport_session_id,
+                ),
             )
             reader_thread.start()
             while not self._current_closed.wait(self.poll_interval_seconds):
@@ -261,6 +261,10 @@ class AgentRelayWebSocketHandler(BaseHTTPRequestHandler):
                         disconnect_reason.set_once("heartbeat_timeout")
                         break
                     next_heartbeat_at = now + self.heartbeat_seconds
+        except ConflictError:
+            # A stale-epoch registration raced a newer Listener's readiness
+            # advance; the rollback kept the newer connection registered.
+            return
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, socket.timeout):
             return
         except OSError:
